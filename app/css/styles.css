@@ -1,0 +1,1118 @@
+/* ===================================================================
+   BINDER — design tokens
+   A trading-card-binder aesthetic: dark "album" surfaces with a
+   violet→teal foil edge used sparingly as the app's signature accent.
+=================================================================== */
+
+:root {
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --foil-1: #8B6CFF;
+  --foil-2: #33D6C0;
+  --foil-gradient: linear-gradient(120deg, var(--foil-1), var(--foil-2));
+
+  --gold: #E8B24D;
+  --danger: #FF6B6B;
+
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+
+  --shadow-sheet: 0 -8px 30px rgba(0,0,0,0.35);
+  --shadow-card: 0 2px 10px rgba(0,0,0,0.18);
+
+  --tab-bar-height: 64px;
+  --header-height: 56px;
+}
+
+:root[data-theme="dark"] {
+  --bg: #121319;
+  --surface: #1B1D26;
+  --surface-2: #242732;
+  --surface-3: #2E313E;
+  --border: #323544;
+  --text: #F0EFF6;
+  --text-dim: #9496A8;
+  --text-faint: #6B6D7E;
+  --overlay-scrim: rgba(8, 8, 12, 0.6);
+}
+
+:root[data-theme="light"] {
+  --bg: #F3F2F8;
+  --surface: #FFFFFF;
+  --surface-2: #F6F5FA;
+  --surface-3: #ECEAF4;
+  --border: #DEDCE9;
+  --text: #1B1B24;
+  --text-dim: #63647A;
+  --text-faint: #9798A8;
+  --overlay-scrim: rgba(20, 18, 30, 0.35);
+}
+
+:root[data-font-size="small"] { font-size: 14px; }
+:root[data-font-size="medium"] { font-size: 16px; }
+:root[data-font-size="large"] { font-size: 18px; }
+
+/* ===================================================================
+   Reset & base
+=================================================================== */
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+}
+body {
+  font-family: var(--font-body);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, h3 { font-family: var(--font-display); margin: 0; }
+p { margin: 0; }
+button { font-family: inherit; color: inherit; cursor: pointer; }
+input { font-family: inherit; color: inherit; }
+svg {
+  width: 22px; height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+:focus-visible {
+  outline: 2px solid var(--foil-2);
+  outline-offset: 2px;
+}
+.hidden { display: none !important; }
+
+/* ===================================================================
+   App frame — centers as a phone-width column on wide viewports
+=================================================================== */
+.app-frame {
+  position: relative;
+  max-width: 480px;
+  min-height: 100dvh;
+  margin: 0 auto;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+/* ===================================================================
+   Header
+=================================================================== */
+.app-header {
+  height: var(--header-height);
+  min-height: var(--header-height);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.header-titles { flex: 1; min-width: 0; }
+.header-title {
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.header-subtitle {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  margin-top: 1px;
+}
+.header-mark span {
+  display: block;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--foil-gradient);
+  background-size: 200% 200%;
+  animation: shimmer 3.5s ease-in-out infinite;
+}
+@keyframes shimmer {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .header-mark span { animation: none; }
+}
+.icon-btn {
+  width: 34px; height: 34px;
+  display: flex; align-items: center; justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  flex-shrink: 0;
+}
+.icon-btn:hover { background: var(--surface-2); }
+.icon-btn svg { width: 20px; height: 20px; }
+
+/* ===================================================================
+   Main / views
+=================================================================== */
+#view-root {
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: calc(var(--tab-bar-height) + 12px);
+  position: relative;
+}
+.view { display: none; height: 100%; }
+.view.is-active { display: block; }
+.subview { padding: 16px; }
+
+/* ===================================================================
+   Empty states
+=================================================================== */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  padding: 64px 32px;
+  color: var(--text-dim);
+}
+.empty-icon {
+  width: 56px; height: 56px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-faint);
+  margin-bottom: 6px;
+}
+.empty-icon svg { width: 26px; height: 26px; }
+.empty-state h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.empty-state p { font-size: 0.85rem; max-width: 26em; }
+
+/* ===================================================================
+   Collection list
+=================================================================== */
+.list-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.list-count {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.collection-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.collection-card {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px 14px 14px;
+  text-align: left;
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+.collection-card::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: var(--foil-gradient);
+}
+.collection-card:active { transform: scale(0.98); }
+.collection-card-delete {
+  position: absolute;
+  top: 8px; right: 8px;
+  width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  border: none;
+  background: var(--surface-2);
+  color: var(--text-faint);
+  z-index: 1;
+}
+.collection-card-delete svg { width: 13px; height: 13px; stroke-width: 2; }
+.collection-card-delete:hover { background: var(--danger); color: #fff; }
+.collection-card .game-dots { display: flex; gap: 5px; margin-bottom: 14px; }
+.collection-card .game-dots .game-dot { width: 9px; height: 9px; }
+.collection-card .game-dots-empty {
+  font-size: 0.68rem;
+  color: var(--text-faint);
+  margin-bottom: 14px;
+  display: block;
+}
+.collection-card h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+  overflow-wrap: anywhere;
+}
+.collection-card .card-count {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+.collection-card .new-collection-plus {
+  display: none;
+}
+.collection-card--new {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-style: dashed;
+  color: var(--text-dim);
+  min-height: 96px;
+}
+.collection-card--new svg { width: 24px; height: 24px; }
+.collection-card--new::before { display: none; }
+
+.game-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-dim);
+}
+.game-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.game-dot--mtg { background: #E8B24D; }
+.game-dot--pokemon { background: #F2A33C; }
+.game-dot--yugioh { background: #7A5CFF; }
+
+/* ===================================================================
+   Detail toolbar (search + delete-collection)
+=================================================================== */
+.detail-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.detail-toolbar .search-bar { flex: 1; margin-bottom: 0; }
+.icon-btn--danger {
+  width: 42px; height: 42px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius-md);
+  flex-shrink: 0;
+}
+.icon-btn--danger:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
+.icon-btn--danger svg { width: 18px; height: 18px; }
+
+/* ===================================================================
+   Search bar
+=================================================================== */
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+.search-bar svg { width: 18px; height: 18px; color: var(--text-faint); flex-shrink: 0; }
+.search-bar input {
+  border: none;
+  outline: none;
+  background: transparent;
+  width: 100%;
+  font-size: 0.9rem;
+}
+.search-bar input::placeholder { color: var(--text-faint); }
+
+/* ===================================================================
+   Card list (inside a collection, and search results)
+=================================================================== */
+.card-list { display: flex; flex-direction: column; gap: 8px; }
+.card-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+}
+.card-thumb {
+  width: 40px; height: 56px;
+  border-radius: 5px;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-faint);
+  overflow: hidden;
+}
+.card-thumb svg { width: 16px; height: 16px; }
+.card-thumb img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  border-radius: 4px;
+}
+.card-info { flex: 1; min-width: 0; }
+.card-info .card-name {
+  font-size: 0.88rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.card-info .card-meta {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.card-info .card-meta .game-dot { width: 6px; height: 6px; flex-shrink: 0; }
+.condition-badge {
+  margin-left: 2px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 0.65rem;
+  letter-spacing: 0.02em;
+}
+.card-row--owned .card-thumb,
+.card-row--owned .card-info { cursor: pointer; }
+.card-qty {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+.qty-btn {
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  display: flex; align-items: center; justify-content: center;
+}
+.qty-btn svg { width: 12px; height: 12px; }
+.card-row--result { cursor: pointer; }
+.card-row--result .add-icon {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: var(--foil-gradient);
+  color: #10111A;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.card-row--result .add-icon svg { width: 14px; height: 14px; stroke-width: 2.4; }
+
+/* ===================================================================
+   Floating action button
+=================================================================== */
+.fab {
+  position: absolute;
+  right: 20px;
+  bottom: calc(var(--tab-bar-height) + 20px);
+  width: 54px; height: 54px;
+  border-radius: 50%;
+  border: none;
+  background: var(--foil-gradient);
+  color: #10111A;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 8px 24px rgba(139, 108, 255, 0.35);
+  z-index: 5;
+}
+.fab svg { width: 24px; height: 24px; stroke-width: 2.2; }
+.fab:active { transform: scale(0.94); }
+
+/* ===================================================================
+   Tab bar
+=================================================================== */
+.tab-bar {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: var(--tab-bar-height);
+  display: flex;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding-bottom: env(safe-area-inset-bottom);
+  z-index: 10;
+}
+.tab-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  background: transparent;
+  border: none;
+  color: var(--text-faint);
+  font-size: 0.68rem;
+  font-weight: 500;
+  position: relative;
+}
+.tab-btn svg { width: 21px; height: 21px; }
+.tab-btn.is-active { color: var(--foil-1); }
+:root[data-theme="light"] .tab-btn.is-active { color: #6E4FE0; }
+.tab-btn.is-active::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  width: 22px; height: 3px;
+  border-radius: 3px;
+  background: var(--foil-gradient);
+}
+
+/* ===================================================================
+   Card detail lightbox
+=================================================================== */
+.sheet--card-detail {
+  position: relative;
+  text-align: center;
+}
+.card-detail-close {
+  position: absolute;
+  top: 10px; right: 10px;
+  background: var(--surface-2);
+}
+.card-detail-image {
+  width: 62%;
+  max-width: 220px;
+  aspect-ratio: 63 / 88;
+  margin: 6px auto 16px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-card);
+  display: flex; align-items: center; justify-content: center;
+}
+.card-detail-image img { width: 100%; height: 100%; object-fit: cover; }
+.card-detail-placeholder { color: var(--text-faint); }
+.card-detail-placeholder svg { width: 40px; height: 40px; }
+.card-detail-name {
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.card-detail-meta {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  margin-bottom: 18px;
+}
+.sheet--card-detail .field-label { text-align: left; margin-top: 0; }
+.segmented--condition button { font-size: 0.72rem; padding: 8px 2px; }
+.card-qty--large {
+  justify-content: center;
+  gap: 18px;
+  font-size: 1.1rem;
+  margin-top: 6px;
+}
+.card-qty--large .qty-btn { width: 34px; height: 34px; }
+.card-qty--large .qty-btn svg { width: 15px; height: 15px; }
+
+/* ===================================================================
+   Overlays / bottom sheets
+=================================================================== */
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: var(--overlay-scrim);
+  display: flex;
+  align-items: flex-end;
+  z-index: 20;
+}
+.overlay.is-full { align-items: stretch; }
+.sheet {
+  width: 100%;
+  background: var(--surface);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  padding: 10px 20px 24px;
+  box-shadow: var(--shadow-sheet);
+  max-height: 85%;
+  overflow-y: auto;
+}
+.sheet--compact { padding-bottom: 20px; }
+.sheet--full {
+  border-radius: 0;
+  max-height: none;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 16px 16px;
+}
+.sheet-handle {
+  width: 36px; height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  margin: 4px auto 14px;
+}
+.sheet--full .sheet-handle { display: none; }
+.sheet-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.sheet-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin-bottom: 14px;
+}
+.sheet-title--inline { margin-bottom: 0; }
+
+.field-label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 14px 0 6px;
+}
+.field-input {
+  width: 100%;
+  padding: 11px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  font-size: 0.92rem;
+  outline: none;
+}
+.field-input:focus { border-color: var(--foil-1); }
+.field-hint {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  margin-top: 10px;
+  line-height: 1.4;
+}
+.field-hint--warning {
+  color: var(--gold);
+}
+.field-hint--error {
+  color: var(--danger);
+}
+.link-btn {
+  display: block;
+  margin: 12px auto 0;
+  padding: 4px;
+  background: none;
+  border: none;
+  color: var(--foil-1);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.link-btn:hover { text-decoration: underline; }
+
+.game-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.game-picker button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  text-align: left;
+  font-size: 0.88rem;
+}
+.game-picker button.is-selected {
+  border-color: var(--foil-1);
+  background: var(--surface-3);
+}
+.game-picker .game-dot { width: 10px; height: 10px; }
+
+.sheet-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}
+.btn {
+  flex: 1;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  border: none;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.btn-primary {
+  background: var(--foil-gradient);
+  color: #10111A;
+}
+.btn-primary:disabled { opacity: 0.4; }
+.btn-secondary {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+.btn-danger {
+  background: var(--danger);
+  color: #fff;
+}
+.btn-danger:disabled { opacity: 0.5; }
+.btn-block { width: 100%; margin-top: 14px; }
+
+.segmented--game {
+  margin-bottom: 12px;
+}
+.segmented--game button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.segmented--game .game-dot { width: 7px; height: 7px; }
+
+.choice-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.choice-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 22px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+.choice-btn svg { width: 26px; height: 26px; color: var(--foil-1); }
+.choice-btn:active { background: var(--surface-3); }
+
+.card-list--results { flex: 1; overflow-y: auto; margin-top: 12px; }
+
+/* scan */
+.scan-frame {
+  position: relative;
+  flex: 1;
+  min-height: 300px;
+  border-radius: var(--radius-md);
+  background: #05060A;
+  overflow: hidden;
+  margin-top: 12px;
+}
+.scan-frame video {
+  position: absolute;
+  inset: 0;
+  width: 100%; height: 100%;
+  object-fit: cover;
+}
+.scan-frame img.scan-frozen-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%; height: 100%;
+  object-fit: cover;
+}
+.scan-frame canvas#scan-bbox-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+}
+.scan-auto-note {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  text-align: center;
+  margin-top: 10px;
+  line-height: 1.4;
+}
+.scan-hint {
+  position: absolute;
+  bottom: 14px;
+  left: 0; right: 0;
+  text-align: center;
+  font-size: 0.78rem;
+  color: #E8E7F2;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+}
+.scan-frame.is-confirming .scan-hint { opacity: 0; }
+.scan-meta {
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  margin-top: 10px;
+}
+
+/* scan — capture confirmation popup (shown over the still-live camera
+   feed after a card is identified; auto-capture stays paused until the
+   person confirms or rejects the match, then normal scanning resumes) */
+.scan-confirm-popup {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+  box-shadow: var(--shadow-sheet);
+  animation: scan-confirm-in 0.18s ease-out;
+}
+@keyframes scan-confirm-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.scan-confirm-thumb {
+  width: 40px; height: 56px;
+  border-radius: 5px;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-faint);
+  overflow: hidden;
+}
+.scan-confirm-thumb svg { width: 16px; height: 16px; }
+.scan-confirm-thumb img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  border-radius: 4px;
+}
+.scan-confirm-info { flex: 1; min-width: 0; }
+.scan-confirm-name {
+  font-size: 0.86rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.scan-confirm-set {
+  font-size: 0.71rem;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.scan-confirm-condition {
+  width: 92px;
+  flex-shrink: 0;
+  height: 34px;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 0.72rem;
+  font-family: inherit;
+}
+.scan-confirm-condition:focus { outline: 1px solid var(--text-faint); }
+.scan-confirm-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.scan-confirm-btn {
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.scan-confirm-btn svg {
+  width: 18px; height: 18px;
+  stroke-width: 2.5;
+}
+.scan-confirm-btn--reject { color: var(--danger); }
+.scan-confirm-btn--reject:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
+.scan-confirm-btn--accept { color: #4ADE80; }
+.scan-confirm-btn--accept:hover { background: #4ADE80; color: #10111A; border-color: #4ADE80; }
+
+/* ===================================================================
+   Settings
+=================================================================== */
+.settings-scroll { padding: 16px; }
+.settings-group { margin-bottom: 26px; }
+.settings-group-title {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  margin-bottom: 10px;
+}
+.setting-row {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  margin-bottom: 10px;
+}
+.setting-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 12px;
+}
+.setting-label > span:first-child { font-size: 0.9rem; font-weight: 500; }
+.setting-hint { font-size: 0.75rem; color: var(--text-dim); }
+
+.segmented {
+  display: flex;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  padding: 3px;
+  gap: 3px;
+}
+.segmented button {
+  flex: 1;
+  padding: 8px 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+.segmented button.is-selected {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-card);
+}
+:root[data-theme="light"] .segmented button.is-selected { color: #6E4FE0; }
+
+.account-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px;
+}
+.account-avatar {
+  width: 44px; height: 44px;
+  border-radius: 50%;
+  background: var(--foil-gradient);
+  color: #10111A;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.account-avatar svg { width: 22px; height: 22px; stroke-width: 2; }
+.account-info { flex: 1; min-width: 0; }
+.account-name {
+  font-size: 0.88rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-hint {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+.account-action {
+  flex-shrink: 0;
+  padding: 9px 16px;
+  font-size: 0.82rem;
+}
+.account-card.is-signed-in .account-avatar { background: var(--surface-3); color: var(--foil-1); }
+.account-card.is-signed-in .account-action { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+
+.settings-footnote {
+  text-align: center;
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  margin-top: 8px;
+}
+
+/* ===================================================================
+   Toast
+=================================================================== */
+.toast {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--tab-bar-height) + 16px);
+  transform: translateX(-50%);
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 10px 16px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  box-shadow: var(--shadow-card);
+  z-index: 40;
+  white-space: nowrap;
+}
+
+/* ===================================================================
+   Responsive layout — tablet / desktop
+   Placed at the END of the file on purpose: these rules override
+   component base styles declared above (.tab-bar, .tab-btn, .sheet,
+   .overlay, etc.), and CSS resolves same-specificity conflicts by
+   source order, not by which one is wrapped in a media query. Keeping
+   this block earlier caused later, unconditional base rules (e.g.
+   .tab-bar's mobile height: var(--tab-bar-height)) to silently win
+   over the desktop overrides below even while the media query
+   matched — collapsing the sidebar to a stub instead of a full-height
+   column. Everything below only adds/overrides what's above.
+=================================================================== */
+
+/* Tablet / narrow desktop: keep the app as a centered "phone card" —
+   reads as a native app widget rather than stretching thin content
+   across the whole window. */
+@media (min-width: 540px) and (max-width: 899px) {
+  body { background: var(--surface-3); }
+  .app-frame {
+    min-height: 92dvh;
+    margin: 4dvh auto;
+    border-radius: 28px;
+    box-shadow: 0 30px 60px rgba(0,0,0,0.28);
+    border: 1px solid var(--border);
+  }
+}
+
+/* Desktop: a real desktop layout — sidebar navigation instead of a
+   bottom tab bar, and the whole app frame fills the window instead of
+   floating as a capped-width card, the way a real desktop app does.
+   Individual content columns (card lists, settings, etc.) keep their
+   own sensible reading-width caps below, just not the outer frame. */
+@media (min-width: 900px) {
+  :root { --sidebar-width: 232px; }
+
+  body {
+    background: var(--surface-3);
+    display: flex;
+  }
+  .app-frame {
+    max-width: none;
+    width: 100%;
+    min-height: 100dvh;
+    margin: 0;
+    box-shadow: none;
+    border: none;
+    border-radius: 0;
+  }
+
+  /* sidebar replaces the bottom tab bar */
+  .tab-bar {
+    top: 0;
+    left: 0;
+    right: auto;
+    bottom: 0;
+    width: var(--sidebar-width);
+    height: auto;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 4px;
+    padding: 28px 12px;
+    border-top: none;
+    border-right: 1px solid var(--border);
+  }
+  .tab-btn {
+    flex: none; /* base .tab-btn's flex:1 was meant for an even 3-way split of a short horizontal bar — with the sidebar now its full height, that would stretch each button to a third of the screen */
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 11px 14px;
+    border-radius: var(--radius-sm);
+    font-size: 0.68rem;
+  }
+  .tab-btn svg { width: 21px; height: 21px; }
+  .tab-btn.is-active { background: var(--surface-2); }
+  .tab-btn.is-active::before { display: none; }
+
+  .app-header, #view-root { margin-left: var(--sidebar-width); }
+  .app-header {
+    height: 68px;
+    min-height: 68px;
+    padding: 0 32px;
+  }
+  .header-title { font-size: 1.35rem; }
+  #view-root { padding-bottom: 40px; }
+  .subview, .settings-scroll { padding: 28px 32px; max-width: 900px; }
+
+  .collection-grid { grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .card-list { max-width: 720px; }
+  .settings-group { max-width: 640px; }
+
+  .fab { right: 44px; bottom: 40px; }
+  .toast { left: calc(50% + var(--sidebar-width) / 2); }
+
+  /* modals become centered dialogs rather than edge-to-edge sheets */
+  .overlay { left: var(--sidebar-width); align-items: center; justify-content: center; }
+  .sheet {
+    width: 90%;
+    max-width: 480px;
+    border-radius: var(--radius-lg);
+    box-shadow: 0 30px 70px rgba(0,0,0,0.35);
+  }
+  .sheet--full {
+    height: 85vh;
+    max-height: 720px;
+    border-radius: var(--radius-lg);
+    padding: 24px 28px 28px;
+  }
+
+  /* The scanner needs the camera feed to actually be usable at desktop
+     size — cap it like other modals and it reads as a small floating
+     box in a sea of empty overlay instead of a real full-screen scanner.
+     Stretch this one modal edge-to-edge across the content area instead. */
+  #modal-scan { align-items: stretch; }
+  #modal-scan .sheet--full {
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    max-height: none;
+    border-radius: 0;
+  }
+}
+
+@media (min-width: 1400px) {
+  .collection-grid { grid-template-columns: repeat(4, 1fr); }
+}
+
+@media (min-width: 1800px) {
+  .collection-grid { grid-template-columns: repeat(5, 1fr); }
+  .subview, .settings-scroll { max-width: 1100px; }
+}

@@ -1,0 +1,62 @@
+# Binder — Card Tracker backend
+# -----------------------------------------------------------------
+# Install with:
+#   pip install -r requirements.txt
+#
+# Notes:
+# - torch is used both for the DINOv2 art-similarity fallback
+#   (scanner.py) and pulled in by ultralytics for YOLO. It's listed
+#   explicitly since scanner.py imports it directly.
+# - PaddleOCR 3.x's CPU (oneDNN) backend has a known bug on some
+#   machines (NotImplementedError: ConvertPirAttribute2RuntimeAttribute).
+#   scanner.py already works around it with enable_mkldnn=False, so no
+#   version pin is required here — but if you'd rather have full
+#   oneDNN speed back, pin paddlepaddle==3.2.2 instead and drop that
+#   workaround.
+# - faiss-cpu is the pip package name; `import faiss` is correct even
+#   though the package name has the `-cpu` suffix.
+
+flask
+
+# packaged-app path resolution (see backend/paths.py) — picks the right
+# per-user app-data directory on each OS for db.json/logs/the card catalog
+platformdirs
+
+# pywebview's native window backend differs per OS:
+# - Windows: uses the WebView2 runtime that ships with Windows 10/11 —
+#   nothing extra to install.
+# - macOS: needs pyobjc's Cocoa/WebKit bindings (pulled in below).
+# - Linux: needs the GTK WebKit backend, which ALSO needs a system package
+#   that pip can't install — see BUILD.md before building on Linux.
+pywebview
+pywebview[gtk]; sys_platform == "linux"
+pyobjc-framework-Cocoa; sys_platform == "darwin"
+pyobjc-framework-WebKit; sys_platform == "darwin"
+pyobjc-framework-Quartz; sys_platform == "darwin"
+
+# image handling / computer vision
+opencv-python
+numpy
+Pillow
+
+# card catalog + fuzzy matching
+duckdb
+rapidfuzz
+
+# scanner pipeline: detection, OCR, embeddings, similarity search
+ultralytics
+paddleocr
+paddlepaddle
+torch
+faiss-cpu
+
+# paddlex (pulled in by paddleocr) imports chardet directly and
+# unconditionally — unlike requests, which treats it as optional and only
+# checks its version *if* it's present. Pinning below 6.0.0 keeps both
+# happy: paddlex gets the module it hard-requires, and requests' own
+# compatibility check (chardet < 6.0.0) doesn't fire a warning about it.
+chardet<6.0.0
+
+# build_scanner_models.py only (one-time catalog build)
+requests
+tqdm

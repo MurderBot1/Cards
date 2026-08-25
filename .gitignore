@@ -1,0 +1,7 @@
+build
+dist
+__pycache__
+app/venv
+app/backend/data
+app/backend/logs
+app/backend/db.json

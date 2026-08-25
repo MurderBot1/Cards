@@ -1,0 +1,9 @@
+# Build-only tooling — not needed to run Binder from source, only to
+# package it. Install on top of backend/requirements.txt:
+#   pip install -r backend/requirements.txt
+#   pip install -r packaging/requirements-build.txt
+
+pyinstaller>=6.6
+# community hooks for packages PyInstaller doesn't know how to bundle
+# out of the box (several of Binder's ML deps rely on these)
+pyinstaller-hooks-contrib

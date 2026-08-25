@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark" data-font-size="medium">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Binder &mdash; Card Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<div id="app" class="app-frame">
+
+  <!-- ============ HEADER ============ -->
+  <header class="app-header" id="app-header">
+    <button class="icon-btn header-back hidden" id="header-back-btn" aria-label="Back">
+      <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <div class="header-titles">
+      <h1 class="header-title" id="header-title">Shop</h1>
+      <p class="header-subtitle hidden" id="header-subtitle"></p>
+    </div>
+    <div class="header-mark" aria-hidden="true"><span></span></div>
+  </header>
+
+  <!-- ============ MAIN VIEWS ============ -->
+  <main id="view-root">
+
+    <!-- ---------- SHOP (placeholder) ---------- -->
+    <section class="view" id="view-shop" data-view="shop">
+      <div class="empty-state">
+        <div class="empty-icon">
+          <svg viewBox="0 0 24 24"><path d="M6 2l1.5 4.5M18 2l-1.5 4.5M3 6.5h18l-1.7 12.2a2 2 0 01-2 1.8H6.7a2 2 0 01-2-1.8L3 6.5z"/><path d="M8.5 10.5v4M15.5 10.5v4"/></svg>
+        </div>
+        <h2>The shop is still being built</h2>
+        <p>Buying and trading singles will land here soon.</p>
+      </div>
+    </section>
+
+    <!-- ---------- COLLECTION ---------- -->
+    <section class="view" id="view-collection" data-view="collection">
+
+      <!-- collection list sub-view -->
+      <div class="subview" id="subview-collection-list">
+        <div class="list-toolbar">
+          <p class="list-count" id="collection-count">0 collections</p>
+        </div>
+        <div class="collection-grid" id="collection-grid"><!-- collection cards injected --></div>
+        <div class="empty-state hidden" id="collection-empty">
+          <div class="empty-icon">
+            <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9h16M9 4v16"/></svg>
+          </div>
+          <h2>No collections yet</h2>
+          <p>Start a binder for your MTG, Pok&eacute;mon or Yu-Gi-Oh! cards.</p>
+        </div>
+      </div>
+
+      <!-- collection detail sub-view -->
+      <div class="subview hidden" id="subview-collection-detail">
+        <div class="detail-toolbar">
+          <div class="search-bar">
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input type="search" id="collection-search-input" placeholder="Search this collection&hellip;">
+          </div>
+          <button class="icon-btn icon-btn--danger" id="delete-collection-btn" aria-label="Delete collection">
+            <svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>
+          </button>
+        </div>
+        <p class="list-count" id="collection-detail-count">0 cards</p>
+        <div class="card-list" id="collection-card-list"><!-- cards injected --></div>
+        <div class="empty-state hidden" id="collection-detail-empty">
+          <div class="empty-icon">
+            <svg viewBox="0 0 24 24"><path d="M12 3l2.5 5.5L20 9l-4 4 1 6-5-3-5 3 1-6-4-4 5.5-.5z"/></svg>
+          </div>
+          <h2>This binder is empty</h2>
+          <p>Tap the + button to search the database or scan a card.</p>
+        </div>
+      </div>
+
+      <!-- floating add button, only visible inside a collection -->
+      <button class="fab hidden" id="fab-add-card" aria-label="Add card">
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+    </section>
+
+    <!-- ---------- ACCOUNT ---------- -->
+    <section class="view" id="view-settings" data-view="settings">
+      <div class="settings-scroll">
+
+        <div class="settings-group">
+          <div class="account-card" id="account-card">
+            <div class="account-avatar" id="account-avatar">
+              <svg viewBox="0 0 24 24"><path d="M20 21a8 8 0 10-16 0"/><circle cx="12" cy="8" r="5"/></svg>
+            </div>
+            <div class="account-info">
+              <p class="account-name" id="account-name">You're browsing as a guest</p>
+              <p class="account-hint" id="account-hint">Sign in to sync your collections across devices</p>
+            </div>
+            <button class="btn btn-primary account-action" id="account-signin-btn">Sign in</button>
+          </div>
+        </div>
+
+        <div class="settings-group">
+          <h3 class="settings-group-title">Appearance</h3>
+
+          <div class="setting-row">
+            <div class="setting-label">
+              <span>Theme</span>
+              <span class="setting-hint">Applies across the whole app</span>
+            </div>
+            <div class="segmented" data-setting="theme" role="tablist" aria-label="Theme">
+              <button data-value="light" role="tab">Light</button>
+              <button data-value="dark" role="tab">Dark</button>
+              <button data-value="system" role="tab">System</button>
+            </div>
+          </div>
+
+          <div class="setting-row">
+            <div class="setting-label">
+              <span>Font size</span>
+              <span class="setting-hint">Scales all text in the app</span>
+            </div>
+            <div class="segmented" data-setting="fontSize" role="tablist" aria-label="Font size">
+              <button data-value="small" role="tab">Small</button>
+              <button data-value="medium" role="tab">Medium</button>
+              <button data-value="large" role="tab">Large</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-group">
+          <h3 class="settings-group-title">Scanner</h3>
+
+          <div class="setting-row">
+            <div class="setting-label">
+              <span>Manual request rate</span>
+              <span class="setting-hint">How often scans are sent for identification</span>
+            </div>
+            <div class="segmented" data-setting="requestRate" role="tablist" aria-label="Manual request rate">
+              <button data-value="low" role="tab">Low</button>
+              <button data-value="medium" role="tab">Medium</button>
+              <button data-value="high" role="tab">High</button>
+            </div>
+          </div>
+
+          <div class="setting-row">
+            <div class="setting-label">
+              <span>Minimum image quality</span>
+              <span class="setting-hint">Scans below this quality are rejected</span>
+            </div>
+            <div class="segmented" data-setting="minImageQuality" role="tablist" aria-label="Minimum image quality">
+              <button data-value="low" role="tab">Low</button>
+              <button data-value="medium" role="tab">Medium</button>
+              <button data-value="high" role="tab">High</button>
+            </div>
+          </div>
+        </div>
+
+        <p class="settings-footnote">Binder v0.1</p>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ============ BOTTOM TAB BAR ============ -->
+  <nav class="tab-bar" id="tab-bar">
+    <button class="tab-btn is-active" data-tab="shop" aria-label="Shop">
+      <svg viewBox="0 0 24 24"><path d="M6 2l1.5 4.5M18 2l-1.5 4.5M3 6.5h18l-1.7 12.2a2 2 0 01-2 1.8H6.7a2 2 0 01-2-1.8L3 6.5z"/><path d="M8.5 10.5v4M15.5 10.5v4"/></svg>
+      <span>Shop</span>
+    </button>
+    <button class="tab-btn" data-tab="collection" aria-label="Collection">
+      <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9h16M9 4v16"/></svg>
+      <span>Collection</span>
+    </button>
+    <button class="tab-btn" data-tab="settings" aria-label="Account">
+      <svg viewBox="0 0 24 24"><path d="M20 21a8 8 0 10-16 0"/><circle cx="12" cy="8" r="5"/></svg>
+      <span>Account</span>
+    </button>
+  </nav>
+</div>
+
+<!-- ============ OVERLAYS / MODALS ============ -->
+
+<!-- new collection modal -->
+<div class="overlay hidden" id="modal-new-collection">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <h2 class="sheet-title">New collection</h2>
+    <label class="field-label" for="new-collection-name">Name</label>
+    <input class="field-input" id="new-collection-name" type="text" placeholder="e.g. Modern Deck Staples" maxlength="40">
+    <p class="field-hint">You can add Magic, Pok&eacute;mon, and Yu-Gi-Oh! cards to any collection.</p>
+    <div class="sheet-actions">
+      <button class="btn btn-secondary" id="new-collection-cancel">Cancel</button>
+      <button class="btn btn-primary" id="new-collection-create" disabled>Create collection</button>
+    </div>
+  </div>
+</div>
+
+<!-- add-card action sheet (search / scan) -->
+<div class="overlay hidden" id="modal-add-choice">
+  <div class="sheet sheet--compact">
+    <div class="sheet-handle"></div>
+    <h2 class="sheet-title">Add a card</h2>
+    <div class="choice-row">
+      <button class="choice-btn" id="choice-search">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        <span>Search</span>
+      </button>
+      <button class="choice-btn" id="choice-scan">
+        <svg viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 011-1h3M20 8V5a1 1 0 00-1-1h-3M4 16v3a1 1 0 001 1h3M20 16v3a1 1 0 01-1 1h-3"/><rect x="7" y="9" width="10" height="6" rx="1"/></svg>
+        <span>Scan</span>
+      </button>
+    </div>
+    <button class="btn btn-secondary" id="add-choice-cancel">Cancel</button>
+  </div>
+</div>
+
+<!-- card search modal -->
+<div class="overlay hidden" id="modal-search">
+  <div class="sheet sheet--full">
+    <div class="sheet-header">
+      <button class="icon-btn" id="search-modal-back" aria-label="Close">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+      <h2 class="sheet-title sheet-title--inline">Search the database</h2>
+    </div>
+    <div class="segmented segmented--game" id="search-game-picker" role="tablist" aria-label="Game">
+      <button data-value="mtg" role="tab"><span class="game-dot game-dot--mtg"></span>Magic</button>
+      <button data-value="pokemon" role="tab"><span class="game-dot game-dot--pokemon"></span>Pok&eacute;mon</button>
+      <button data-value="yugioh" role="tab"><span class="game-dot game-dot--yugioh"></span>Yu-Gi-Oh!</button>
+    </div>
+    <div class="search-bar">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+      <input type="search" id="db-search-input" placeholder="Search by card name&hellip;">
+    </div>
+    <div class="card-list card-list--results" id="db-search-results"></div>
+    <div class="empty-state" id="db-search-empty">
+      <div class="empty-icon">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+      </div>
+      <h2>Search for a card</h2>
+      <p>Pick a game above, then search by name.</p>
+    </div>
+  </div>
+</div>
+
+<!-- scan modal -->
+<div class="overlay hidden" id="modal-scan">
+  <div class="sheet sheet--full">
+    <div class="sheet-header">
+      <button class="icon-btn" id="scan-modal-back" aria-label="Close">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+      <h2 class="sheet-title sheet-title--inline">Scan a card</h2>
+    </div>
+    <div class="segmented segmented--game" id="scan-game-picker" role="tablist" aria-label="Game">
+      <button data-value="mtg" role="tab"><span class="game-dot game-dot--mtg"></span>Magic</button>
+      <button data-value="pokemon" role="tab"><span class="game-dot game-dot--pokemon"></span>Pok&eacute;mon</button>
+      <button data-value="yugioh" role="tab"><span class="game-dot game-dot--yugioh"></span>Yu-Gi-Oh!</button>
+    </div>
+    <div class="scan-frame" id="scan-frame">
+      <video id="scan-video" autoplay playsinline muted></video>
+      <img id="scan-frozen-frame" class="scan-frozen-frame hidden" alt="">
+      <canvas id="scan-bbox-overlay"></canvas>
+      <p class="scan-hint" id="scan-hint">Hold the card steady in view</p>
+      <div class="scan-confirm-popup hidden" id="scan-confirm-popup">
+        <div class="scan-confirm-thumb" id="scan-confirm-thumb"></div>
+        <div class="scan-confirm-info">
+          <p class="scan-confirm-name" id="scan-confirm-name"></p>
+          <p class="scan-confirm-set" id="scan-confirm-set"></p>
+        </div>
+        <select class="scan-confirm-condition" id="scan-confirm-condition" aria-label="Card condition"></select>
+        <div class="scan-confirm-actions">
+          <button class="scan-confirm-btn scan-confirm-btn--accept" id="scan-confirm-accept" aria-label="Confirm card">
+            <svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+          </button>
+          <button class="scan-confirm-btn scan-confirm-btn--reject" id="scan-confirm-reject" aria-label="Not this card">
+            <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+    <p class="scan-auto-note">Auto-capture is on &mdash; hold the card steady and it'll be sent automatically.</p>
+    <p class="scan-meta" id="scan-meta"></p>
+  </div>
+</div>
+
+
+<!-- confirm delete collection -->
+<div class="overlay hidden" id="modal-confirm-delete">
+  <div class="sheet sheet--compact">
+    <div class="sheet-handle"></div>
+    <h2 class="sheet-title">Delete collection?</h2>
+    <p class="field-hint" id="confirm-delete-text">This will permanently delete this collection and every card in it. This can't be undone.</p>
+    <div class="sheet-actions">
+      <button class="btn btn-secondary" id="confirm-delete-cancel">Cancel</button>
+      <button class="btn btn-danger" id="confirm-delete-submit">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- card detail lightbox -->
+<div class="overlay hidden" id="modal-card-detail">
+  <div class="sheet sheet--card-detail">
+    <div class="sheet-handle"></div>
+    <button class="icon-btn card-detail-close" id="card-detail-close" aria-label="Close">
+      <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+    <div class="card-detail-image" id="card-detail-image"></div>
+    <h2 class="card-detail-name" id="card-detail-name"></h2>
+    <p class="card-detail-meta" id="card-detail-meta"></p>
+
+    <p class="field-label">Condition</p>
+    <div class="segmented segmented--condition" id="card-detail-condition" role="tablist" aria-label="Condition">
+      <button data-value="Near Mint" role="tab">NM</button>
+      <button data-value="Lightly Played" role="tab">LP</button>
+      <button data-value="Moderately Played" role="tab">MP</button>
+      <button data-value="Heavily Played" role="tab">HP</button>
+      <button data-value="Damaged" role="tab">DMG</button>
+    </div>
+
+    <p class="field-label">Quantity</p>
+    <div class="card-qty card-qty--large">
+      <button class="qty-btn" data-action="dec" aria-label="Decrease quantity"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+      <span id="card-detail-qty">1</span>
+      <button class="qty-btn" data-action="inc" aria-label="Increase quantity"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+    </div>
+  </div>
+</div>
+
+<!-- sign in -->
+<div class="overlay hidden" id="modal-signin">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <h2 class="sheet-title" id="signin-title">Sign in</h2>
+    <label class="field-label" for="signin-email">Username</label>
+    <input class="field-input" id="signin-email" type="text" placeholder="yourname" autocomplete="username">
+    <label class="field-label" for="signin-password">Password</label>
+    <input class="field-input" id="signin-password" type="password" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;" autocomplete="current-password">
+    <p class="field-hint field-hint--error hidden" id="signin-error"></p>
+    <div class="sheet-actions">
+      <button class="btn btn-secondary" id="signin-cancel">Cancel</button>
+      <button class="btn btn-primary" id="signin-submit" disabled>Sign in</button>
+    </div>
+    <button type="button" class="link-btn" id="signin-mode-toggle">New here? Create an account</button>
+  </div>
+</div>
+
+<!-- toast -->
+<div class="toast hidden" id="toast"></div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
