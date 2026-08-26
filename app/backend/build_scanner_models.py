@@ -6,12 +6,14 @@ Yu-Gi-Oh! cards:
 
   1. Ingests bulk card data into DuckDB (data/cards.duckdb):
        - MTG:        Scryfall "all_cards" bulk export (every printing,
-                      including extra languages/promos)
+                      including extra languages/promos) — downloaded as
+                      a gzipped JSONL file, per Scryfall's July 2026
+                      bulk-data format change (see NOTE below)
        - Pokémon:    PokemonTCG/pokemon-tcg-data (GitHub, per-set JSON)
        - Yu-Gi-Oh!:  YGOPRODeck cardinfo.php bulk export
-     Every bulk download is cached as raw JSON under data/cache/, so
-     re-running the script re-uses what it already fetched instead of
-     re-downloading (pass --refresh-cache to force a fresh pull).
+     Every bulk download is cached under data/cache/, so re-running the
+     script re-uses what it already fetched instead of re-downloading
+     (pass --refresh-cache to force a fresh pull).
   2. Downloads a small art-crop image per card into
        data/card-images/<game>/<uid>.jpg
      — purely a scratch copy used to compute step 3's vectors. The app
@@ -38,6 +40,18 @@ bulk downloads already cached in data/cache/), so if it gets
 interrupted partway through, just run it again.
 
 ------------------------------------------------------------------
+NOTE on Scryfall's bulk-data format (as of July 20, 2026)
+------------------------------------------------------------------
+Scryfall used to serve bulk data as a single big JSON array (fetched
+via each bulk_data object's `download_uri`). As of July 20, 2026,
+that format is retired — bulk files are now served exclusively as
+gzipped JSONL (`jsonl_download_uri`): one JSON object per line, no
+wrapping array, no commas between objects. `cached_get_jsonl()` below
+downloads+caches the raw `.jsonl.gz` bytes and decompresses/parses
+them line by line, which is also far more memory-friendly than
+loading Scryfall's entire ~2GB "all_cards" dump as one JSON array.
+
+------------------------------------------------------------------
 NOTE on YOLOv8 card detection / game classification
 ------------------------------------------------------------------
 This script does NOT produce data/yolo_card_detector.pt. Training
@@ -55,6 +69,7 @@ when the app's on-screen guide box is already framing the card) and
 figures out the game type from OCR content instead of a classifier.
 """
 import argparse
+import gzip
 import io
 import json
 import re
@@ -119,8 +134,9 @@ HTTP_HEADERS = {
 session = requests.Session()
 session.headers.update(HTTP_HEADERS)
 
-# When true (--refresh-cache), cached_get_json ignores whatever's on disk
-# and re-downloads. Set by main() before any ingest_* function runs.
+# When true (--refresh-cache), cached_get_json/cached_get_jsonl ignore
+# whatever's on disk and re-download. Set by main() before any ingest_*
+# function runs.
 REFRESH_CACHE = False
 
 
@@ -148,6 +164,40 @@ def cached_get_json(url, cache_key, timeout=HTTP_TIMEOUT):
     with open(cache_path, "w", encoding="utf-8") as f:
         json.dump(data, f)
     return data
+
+
+def cached_get_jsonl(url, cache_key, timeout=HTTP_TIMEOUT):
+    """GETs a gzipped JSONL URL — the format Scryfall bulk data files have
+    been served in exclusively since July 20, 2026 (one JSON object per
+    line, no wrapping array, no commas). Caches the raw .jsonl.gz bytes
+    under data/cache/<cache_key>.jsonl.gz so re-running the script doesn't
+    re-download. Pass --refresh-cache to force a fresh download.
+
+    Streams the decompressed lines rather than pulling the whole file into
+    memory as text, since Scryfall's "all_cards" dump is multiple GB
+    uncompressed. Raises requests.HTTPError on a non-2xx response.
+    """
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cache_path = CACHE_DIR / f"{cache_key}.jsonl.gz"
+
+    if cache_path.exists() and not REFRESH_CACHE:
+        raw_source = cache_path.open("rb")
+    else:
+        r = session.get(url, timeout=timeout, stream=True)
+        r.raise_for_status()
+        with open(cache_path, "wb") as f:
+            for chunk in r.iter_content(chunk_size=1024 * 1024):
+                f.write(chunk)
+        raw_source = cache_path.open("rb")
+
+    objects = []
+    with raw_source, gzip.GzipFile(fileobj=raw_source) as gz:
+        for line in gz:
+            line = line.strip()
+            if not line:
+                continue
+            objects.append(json.loads(line))
+    return objects
 
 
 def get_db():
@@ -204,9 +254,24 @@ def ingest_mtg(con):
     # extra languages/promos that "default_cards" leaves out) — bigger
     # download, but a more complete catalog for scan matching.
     all_cards_entry = next(e for e in entries if e["type"] == "all_cards")
-    print(f"[mtg] downloading {all_cards_entry['size'] / 1e6:.0f}MB card dump "
-          f"(cached at {CACHE_DIR / 'scryfall_all_cards.json'})...")
-    cards = cached_get_json(all_cards_entry["download_uri"], "scryfall_all_cards", timeout=120)
+    jsonl_uri = all_cards_entry.get("jsonl_download_uri")
+    if not jsonl_uri:
+        # Shouldn't happen post-July-2026, but fail loudly instead of
+        # silently trying the retired JSON-array format.
+        raise RuntimeError(
+            "[mtg] bulk-data entry has no jsonl_download_uri — Scryfall's "
+            "API response shape may have changed again; check "
+            "https://scryfall.com/docs/api/bulk-data"
+        )
+    # 'size' isn't guaranteed to be present in every bulk-data entry (it's
+    # dropped from some responses since Scryfall's July 2026 JSONL switch),
+    # so don't let a missing/renamed field crash the download over a
+    # cosmetic log line.
+    size_bytes = all_cards_entry.get("size")
+    size_note = f"{size_bytes / 1e6:.0f}MB" if isinstance(size_bytes, (int, float)) else "size unknown"
+    print(f"[mtg] downloading {size_note} card dump (gzipped JSONL, "
+          f"cached at {CACHE_DIR / 'scryfall_all_cards.jsonl.gz'})...")
+    cards = cached_get_jsonl(jsonl_uri, "scryfall_all_cards", timeout=120)
     print(f"[mtg] ingesting {len(cards)} printings...")
 
     for c in tqdm(cards, desc="mtg"):
@@ -489,7 +554,7 @@ def main():
     )
     parser.add_argument(
         "--refresh-cache", action="store_true",
-        help="ignore data/cache/*.json and re-download bulk data instead of reusing it",
+        help="ignore data/cache/*.json[.gz] and re-download bulk data instead of reusing it",
     )
     parser.add_argument(
         "--image-workers", type=int, default=DEFAULT_IMAGE_WORKERS,
