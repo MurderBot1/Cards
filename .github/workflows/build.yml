@@ -1,0 +1,124 @@
+name: Build
+
+# Manual runs plus tagged releases only — these are full desktop/mobile
+# builds (PyInstaller + a Gradle/Chaquopy build), not something to run on
+# every push or PR.
+on:
+  workflow_dispatch: {}
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Build
+        shell: pwsh
+        run: ./app/packaging/build-windows.ps1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Binder-windows
+          path: app/dist/Binder-windows.zip
+          if-no-files-found: error
+
+  macos:
+    name: macOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Build
+        run: bash app/packaging/build-macos.sh
+
+      # macos-latest runners are arm64, so this .app only runs on Apple
+      # Silicon Macs — named accordingly rather than as a plain universal
+      # "Binder-macos" build. It's also unsigned/unnotarized; see
+      # app/BUILD.md's macOS section for what that means for anyone who
+      # downloads it.
+      - name: Zip app bundle
+        run: |
+          cd app/dist
+          ditto -c -k --sequesterRsrc --keepParent Binder.app Binder-macos-arm64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Binder-macos-arm64
+          path: app/dist/Binder-macos-arm64.zip
+          if-no-files-found: error
+
+  linux:
+    name: Linux
+    # 24.04's repos dropped gir1.2-webkit2-4.0 (4.1 only) and its GObject
+    # introspection stack has shifted enough to trip up pywebview's GTK
+    # backend; 22.04 is the well-trodden combination for this dependency.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pywebview's GTK/WebKit build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1 \
+            libgirepository1.0-dev libcairo2-dev pkg-config
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Build
+        run: bash app/packaging/build-linux.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Binder-linux
+          path: app/dist/Binder-linux.zip
+          if-no-files-found: error
+
+  android:
+    name: Android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # Chaquopy is pinned to Python 3.10 (android/app/build.gradle.kts) to
+      # match opencv-python's newest wheel in Chaquopy's own package
+      # repository — the build machine needs a matching 3.10 on PATH for
+      # Chaquopy's own tooling, separate from whatever runs the app itself.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Build debug APK
+        working-directory: android
+        run: gradle assembleDebug
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Binder-android-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

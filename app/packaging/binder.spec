@@ -19,8 +19,8 @@
 #
 # PyInstaller does NOT cross-compile: run this on an actual Windows
 # machine to get the Windows build, an actual Mac for the macOS
-# build, etc. See .github/workflows/build-desktop.yml for a CI matrix
-# that does all three automatically.
+# build, etc. See .github/workflows/build.yml for a CI matrix that does
+# all three automatically.
 # -----------------------------------------------------------------
 import sys
 from pathlib import Path

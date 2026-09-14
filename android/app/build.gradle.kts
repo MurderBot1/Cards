@@ -93,9 +93,9 @@ val repoRoot = rootDir.parentFile
 val backendDir = repoRoot.resolve("app/backend")
 
 tasks.register<Copy>("copyFrontendAssets") {
-    from(repoRoot.resolve("index.html"))
-    from(repoRoot.resolve("css")) { into("css") }
-    from(repoRoot.resolve("js")) { into("js") }
+    from(repoRoot.resolve("app/index.html"))
+    from(repoRoot.resolve("app/css")) { into("css") }
+    from(repoRoot.resolve("app/js")) { into("js") }
     into("src/main/assets/frontend")
 }
 

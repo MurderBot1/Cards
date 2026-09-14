@@ -10,7 +10,7 @@ anywhere — it resolves everything off its own location:
 It always builds for the OS it's running ON. PyInstaller doesn't
 cross-compile, so getting all three desktop platforms means running
 this once each on a real (or CI) Windows, macOS, and Linux machine —
-see .github/workflows/build-desktop.yml for a matrix that does that
+see .github/workflows/build.yml for a matrix that does that
 automatically and uploads all three as build artifacts.
 
 What it does:

@@ -86,11 +86,12 @@ already installed both requirements files.
 
 ## Building all three automatically (CI)
 
-`.github/workflows/build-desktop.yml` builds Windows, macOS, and Linux
-in parallel on GitHub's own runners and uploads each as a workflow
-artifact. Trigger it from the Actions tab (`workflow_dispatch`) or by
-pushing a tag matching `v*`. This is the easiest way to get all three
-platforms without owning three machines.
+`.github/workflows/build.yml` builds Windows, macOS, Linux, and an
+Android debug APK in parallel on GitHub's own runners and uploads each
+as a workflow artifact. Trigger it from the Actions tab
+(`workflow_dispatch`) or by pushing a tag matching `v*`. This is the
+easiest way to get all four platforms without owning that much
+hardware.
 
 ## Why `onedir`, not a single `.exe`
 
