@@ -114,6 +114,22 @@ tasks.named("preBuild") {
     dependsOn("copyFrontendAssets", "copyPythonBackend")
 }
 
+// preBuild.dependsOn above only sequences the two Copy tasks before the
+// build starts — it doesn't tell Gradle that specific later tasks read
+// what they wrote to disk. Chaquopy's per-variant mergeXPythonSources
+// task (reads src/main/python) and AGP's per-variant mergeXAssets task
+// (reads src/main/assets, including our frontend/ subdirectory) both do,
+// and Gradle 8.9's task-validation fails the build over that undeclared
+// dependency ("uses this output ... without declaring an explicit or
+// implicit dependency") rather than just risking wrong output — wire
+// the real dependency directly instead of relying on ordering.
+tasks.matching { it.name.endsWith("PythonSources") }.configureEach {
+    dependsOn("copyPythonBackend")
+}
+tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach {
+    dependsOn("copyFrontendAssets")
+}
+
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.activity:activity-ktx:1.9.1") // registerForActivityResult
