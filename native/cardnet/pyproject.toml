@@ -1,0 +1,20 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "pybind11>=2.12"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "cardnet"
+version = "1.0.0"
+description = "ONNX Runtime-backed YOLOv8 detection, DINOv2 embedding, and PaddleOCR-style text recognition for Binder's scanning pipeline — an Android-NDK-friendly replacement for ultralytics/torch.hub/paddleocr."
+requires-python = ">=3.9"
+dependencies = ["numpy"]
+
+[tool.scikit-build]
+cmake.build-type = "Release"
+wheel.expand-macos-universal-tags = true
+
+[tool.scikit-build.cmake.define]
+CARDNET_BUILD_PYTHON = "ON"
+CARDNET_BUILD_TESTS = "OFF"
+# ONNXRUNTIME_ROOT_DIR must still be passed explicitly, e.g.:
+#   pip install ./native/cardnet --config-settings=cmake.define.ONNXRUNTIME_ROOT_DIR=/path/to/onnxruntime-<platform>-<version>

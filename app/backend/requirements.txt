@@ -4,17 +4,23 @@
 #   pip install -r requirements.txt
 #
 # Notes:
-# - torch is used both for the DINOv2 art-similarity fallback
-#   (scanner.py) and pulled in by ultralytics for YOLO. It's listed
-#   explicitly since scanner.py imports it directly.
-# - PaddleOCR 3.x's CPU (oneDNN) backend has a known bug on some
-#   machines (NotImplementedError: ConvertPirAttribute2RuntimeAttribute).
-#   scanner.py already works around it with enable_mkldnn=False, so no
-#   version pin is required here — but if you'd rather have full
-#   oneDNN speed back, pin paddlepaddle==3.2.2 instead and drop that
-#   workaround.
-# - faiss-cpu is the pip package name; `import faiss` is correct even
-#   though the package name has the `-cpu` suffix.
+# - cardvec (../native/cardvec) replaces faiss-cpu: a small in-repo C++/
+#   pybind11 library implementing just the one FAISS feature Binder used
+#   (IndexFlatIP + normalize_L2 + read_index/write_index), so the app has
+#   a build path to Android — real FAISS has no supported NDK build.
+#   Install it with `pip install ./native/cardvec` (from the repo root)
+#   before running scanner.py or build_scanner_models.py; see
+#   native/cardvec/README.md for details, including cross-compiling for
+#   Android.
+# - cardnet (../native/cardnet) replaces ultralytics + torch + paddleocr +
+#   paddlepaddle: an in-repo C++/pybind11 library that runs the same
+#   trained YOLOv8/DINOv2/PaddleOCR models (each exported to ONNX once —
+#   see native/cardnet/export/) via ONNX Runtime instead, since none of
+#   those four frameworks have a supported Android/NDK build path and
+#   ONNX Runtime does. Install it with
+#   `pip install ./native/cardnet --config-settings=cmake.define.ONNXRUNTIME_ROOT_DIR=...`
+#   (see native/cardnet/README.md) before running scanner.py or
+#   build_scanner_models.py.
 
 flask
 
@@ -39,23 +45,18 @@ opencv-python
 numpy
 Pillow
 
-# card catalog + fuzzy matching
-duckdb
-rapidfuzz
+# card catalog + fuzzy matching: both used to be third-party (duckdb,
+# rapidfuzz). Neither publishes an Android wheel or appears in Chaquopy's
+# native package repository at any Python version, so the catalog moved to
+# the standard library's sqlite3 and fuzzy title matching to difflib — see
+# build_scanner_models.get_db() and scanner._title_candidates(). Nothing to
+# install for either; they ship with CPython.
 
-# scanner pipeline: detection, OCR, embeddings, similarity search
-ultralytics
-paddleocr
-paddlepaddle
-torch
-faiss-cpu
-
-# paddlex (pulled in by paddleocr) imports chardet directly and
-# unconditionally — unlike requests, which treats it as optional and only
-# checks its version *if* it's present. Pinning below 6.0.0 keeps both
-# happy: paddlex gets the module it hard-requires, and requests' own
-# compatibility check (chardet < 6.0.0) doesn't fire a warning about it.
-chardet<6.0.0
+# scanner pipeline: detection, OCR, embeddings, similarity search now
+# live in cardvec + cardnet (native/) — neither is on PyPI, so
+# `pip install -r requirements.txt` will not install them; run the
+# `pip install ./native/cardvec` and `pip install ./native/cardnet ...`
+# commands from the notes above, before or after this file.
 
 # build_scanner_models.py only (one-time catalog build)
 requests

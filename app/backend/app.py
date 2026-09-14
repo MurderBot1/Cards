@@ -5,18 +5,18 @@ A small Flask app that implements every endpoint the frontend's
 js/api.js expects, serves the frontend itself, and does REAL card
 recognition for MTG, Pokémon and Yu-Gi-Oh! using the multi-TCG
 scanner pipeline in scanner.py (YOLOv8 detect+classify -> OpenCV
-perspective warp -> per-game OCR -> DuckDB exact lookup -> DINOv2 +
-FAISS art-similarity fallback).
+perspective warp -> per-game OCR -> SQLite exact lookup -> DINOv2 +
+cardvec art-similarity fallback).
 
 Storage for collections/settings: a single JSON file (db.json) next
 to this script — good enough for a personal project.
 
-Storage for the card catalog itself: data/cards.duckdb (which stores
+Storage for the card catalog itself: data/cards.sqlite3 (which stores
 each card's original image URL from Scryfall/PokemonTCG/YGOPRODeck —
 the frontend loads art directly from there, nothing is hosted locally)
-+ a FAISS vector index at data/card-vectors.faiss — both built by
++ a cardvec vector index at data/card-vectors.cvi — both built by
 build_scanner_models.py, which only keeps local art-crop images around
-long enough to compute the FAISS vectors before deleting them.
+long enough to compute the cardvec vectors before deleting them.
 
 Run (dev):
     pip install -r requirements.txt
@@ -43,7 +43,6 @@ import threading
 import cv2
 import numpy as np
 from flask import Flask, g, jsonify, request, send_from_directory
-import webview
 
 import paths
 
@@ -363,7 +362,7 @@ def update_card(collection_id, card_id):
 
 
 # ---------------------------------------------------------------------
-# card database search — now backed by the unified DuckDB catalog
+# card database search — now backed by the unified SQLite catalog
 # built by build_scanner_models.py, across all three games.
 # ---------------------------------------------------------------------
 @app.get("/api/search")
@@ -375,8 +374,8 @@ def search_cards():
 
 # ---------------------------------------------------------------------
 # detect — lightweight, detection-only pass used by the scan modal's live
-# preview loop. Unlike /api/scan, this does NOT run OCR, hit the DuckDB
-# catalog, or touch FAISS — it only answers "is there a card-shaped thing
+# preview loop. Unlike /api/scan, this does NOT run OCR, hit the SQLite
+# catalog, or touch cardvec — it only answers "is there a card-shaped thing
 # in this frame, and roughly where." That keeps it fast enough for the
 # frontend to call in a tight loop, once per frame of the live video
 # stream, waiting for each response before sending the next.
@@ -398,7 +397,7 @@ def detect_card():
 # ---------------------------------------------------------------------
 # scan — accepts an uploaded image, runs it through the multi-TCG
 # scanner pipeline (scanner.py): detect+classify -> perspective warp
-# -> per-game OCR -> exact DuckDB lookup -> DINOv2+FAISS art fallback.
+# -> per-game OCR -> exact SQLite lookup -> DINOv2+cardvec art fallback.
 # ---------------------------------------------------------------------
 @app.post("/api/scan")
 def scan_card():
@@ -499,7 +498,7 @@ def _run():
     if not DB_PATH.exists():
         save_db({"collections": [], "settings": dict(DEFAULT_SETTINGS)})
 
-    # Load PaddleOCR/YOLO/DINOv2/FAISS now, in the background, instead of
+    # Load PaddleOCR/YOLO/DINOv2/cardvec now, in the background, instead of
     # letting them trigger on whichever scan request happens to hit them
     # first — that first-touch cost is several seconds and floods stdout
     # with "Creating model" (see scanner.warm_up() for details). Daemon
@@ -523,6 +522,14 @@ def _run():
         target=run_flask, kwargs={"host": "127.0.0.1", "port": args.port}, daemon=True
     )
     server_thread.start()
+
+    # Imported here, not at module level, so this module stays importable
+    # without pywebview installed at all — needed for android_main.py
+    # (see android/app/src/main/python/), which imports this module but
+    # never calls _run(): Android supplies its own native WebView instead
+    # (see MainActivity.kt), so pywebview — a desktop-only window shell
+    # with no Android build — is never touched on that platform.
+    import webview
 
     # 2. Create the webview window pointing to your local Flask URL
     webview.create_window("Card Master", f"http://127.0.0.1:{args.port}")

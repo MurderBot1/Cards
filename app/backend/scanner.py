@@ -7,20 +7,23 @@ The unified multi-TCG recognition pipeline:
           -> perspective-warp to 750x1050
           -> per-game OCR of the region(s) that carry an exact
              identifier (set+collector#, or YGO passcode+set code)
-          -> exact DuckDB lookup
-          -> [fallback] title OCR + RapidFuzz name matching
-          -> [fallback] DINOv2 art-crop embedding + FAISS similarity
+          -> exact SQLite lookup
+          -> [fallback] title OCR + fuzzy name matching
+          -> [fallback] DINOv2 art-crop embedding + cardvec similarity
              search, restricted to the fuzzy-matched name candidates
 
-Everything is written to degrade gracefully: if data/cards.duckdb or
-data/card-vectors.faiss don't exist yet (build_scanner_models.py
+Everything is written to degrade gracefully: if data/cards.sqlite3 or
+data/card-vectors.cvi don't exist yet (build_scanner_models.py
 hasn't been run), identify() just returns None instead of crashing.
-Heavy ML deps (torch, ultralytics, paddleocr) are imported lazily so
+The YOLO/DINOv2/OCR models (see native/cardnet/) are each ONNX exports
+loaded on demand, gated on their .onnx file existing under data/, so
 importing this module — and thus starting the Flask app — stays fast
-and doesn't hard-require them until a scan actually happens.
+and doesn't require any of them until a scan actually happens.
 """
+import json
 import os
 import re
+import sqlite3
 import threading
 from pathlib import Path
 
@@ -33,9 +36,14 @@ BASE_DIR = Path(__file__).resolve().parent
 # read-only once installed. Unset (plain `python app.py` from source) ->
 # same behavior as before.
 DATA_DIR = Path(os.environ["BINDER_DATA_DIR"]) if os.environ.get("BINDER_DATA_DIR") else (BASE_DIR / "data")
-DB_PATH = DATA_DIR / "cards.duckdb"
-FAISS_PATH = DATA_DIR / "card-vectors.faiss"
-YOLO_WEIGHTS = DATA_DIR / "yolo_card_detector.pt"
+DB_PATH = DATA_DIR / "cards.sqlite3"
+VECTOR_INDEX_PATH = DATA_DIR / "card-vectors.cvi"
+YOLO_ONNX_PATH = DATA_DIR / "yolo_card_detector.onnx"
+YOLO_NAMES_PATH = DATA_DIR / "yolo_card_detector.names.json"
+DINO_ONNX_PATH = DATA_DIR / "dinov2_vits14.onnx"
+OCR_DET_PATH = DATA_DIR / "ocr_det.onnx"
+OCR_REC_PATH = DATA_DIR / "ocr_rec.onnx"
+OCR_DICT_PATH = DATA_DIR / "ocr_dict.txt"
 
 WARP_W, WARP_H = 750, 1050
 GAMES = ("mtg", "pokemon", "yugioh")
@@ -68,19 +76,39 @@ PKM_VINTAGE_RE = re.compile(r"(\d{1,3}/\d{1,3})")
 YGO_PASSCODE_RE = re.compile(r"\d{8}")
 YGO_SETCODE_RE = re.compile(r"([A-Z0-9]{3,4}-[A-Z]{0,2}\d{3})")
 
-FUZZY_MATCH_THRESHOLD = 88  # RapidFuzz score (0-100) to accept a title-OCR match outright
-FAISS_TOP_K = 8
+# Score (0-100) at which a fuzzy title-OCR match is accepted outright,
+# without falling through to the art-vector path.
+#
+# This was 88 against rapidfuzz's fuzz.WRatio. It is now compared against
+# difflib.SequenceMatcher's ratio (see _title_candidates) because rapidfuzz
+# has no Android wheel and isn't in Chaquopy's package repository — the
+# same wall duckdb hit. This is NOT a drop-in swap: WRatio returns the
+# *maximum* of several sub-scorers (plain ratio, partial_ratio,
+# token_sort_ratio, token_set_ratio), so at any given numeric threshold it
+# is strictly more permissive than the single plain ratio used here. 80 is
+# a deliberate loosening to partly compensate; it has not been re-tuned
+# against real scan data, and the effect of getting it wrong is graceful —
+# too high just sends more scans down the art-vector fallback, which
+# resolves most of them anyway.
+FUZZY_MATCH_THRESHOLD = 80
+
+# Ratio (0-1) below which a name isn't even considered a candidate. Only
+# affects which names reach the art-vector fallback's candidate_uids set,
+# so it's deliberately looser than FUZZY_MATCH_THRESHOLD.
+FUZZY_CANDIDATE_CUTOFF = 0.55
+VECTOR_TOP_K = 8
 
 # ---------------------------------------------------------------------
 # lazily-constructed singletons (only touched once a scan actually runs)
 # ---------------------------------------------------------------------
 _yolo_model = None
+_yolo_names = None  # class_id (int) -> game name, from the trained model's own dataset yaml
 _yolo_load_attempted = False
 _ocr_engine = None
-_dino_model = None
-_dino_device = None
-_faiss_index = None
-_name_cache = {}  # game -> [(uid, name), ...] pulled from DuckDB, for fuzzy matching
+_ocr_load_attempted = False
+_dino_embedder = None
+_vector_index = None
+_name_cache = {}  # game -> {normalized name: uid}, pulled from SQLite, for fuzzy matching
 
 # guards the four _get_*() singletons below. Without this, app.py's startup
 # warm_up() (running on a background thread) racing against an early real
@@ -91,104 +119,155 @@ _singleton_lock = threading.Lock()
 
 
 def _get_yolo():
-    """Returns a loaded YOLO model, or None if no trained weights exist."""
-    global _yolo_model, _yolo_load_attempted
+    """Returns (detector, names) — a loaded cardnet.YoloDetector and its
+    class_id -> game-name mapping (from export_yolo.py's sidecar JSON) —
+    or (None, None) if no exported detector exists."""
+    global _yolo_model, _yolo_names, _yolo_load_attempted
     if _yolo_load_attempted:
-        return _yolo_model
+        return _yolo_model, _yolo_names
     with _singleton_lock:
         if _yolo_load_attempted:
-            return _yolo_model
+            return _yolo_model, _yolo_names
         _yolo_load_attempted = True
-        if not YOLO_WEIGHTS.exists():
-            return None
+        if not YOLO_ONNX_PATH.exists():
+            return None, None
         try:
-            from ultralytics import YOLO
-            _yolo_model = YOLO(str(YOLO_WEIGHTS))
+            import cardnet
+            _yolo_model = cardnet.YoloDetector(str(YOLO_ONNX_PATH))
+            names = json.loads(YOLO_NAMES_PATH.read_text()) if YOLO_NAMES_PATH.exists() else {}
+            _yolo_names = {int(k): v for k, v in names.items()}
         except Exception as e:
-            print(f"[scanner] could not load YOLO weights ({e}); falling back to contour detection")
+            print(f"[scanner] could not load YOLO detector ({e}); falling back to contour detection")
             _yolo_model = None
-    return _yolo_model
+    return _yolo_model, _yolo_names
 
 
 def _get_ocr():
-    global _ocr_engine
-    if _ocr_engine is None:
-        with _singleton_lock:
-            if _ocr_engine is None:
-                from paddleocr import PaddleOCR
-                # PaddleOCR 3.x replaced use_angle_cls/show_log with these — crops
-                # here are already-warped single-region card cutouts, so the doc-level
-                # orientation/unwarping models are unnecessary overhead; textline
-                # orientation stays on since scanned cards can be tilted.
-                # enable_mkldnn=False works around a bug in PaddlePaddle 3.3.x's
-                # oneDNN CPU backend (NotImplementedError: ConvertPirAttribute2Run-
-                # timeAttribute...) that otherwise crashes every inference call —
-                # see https://github.com/PaddlePaddle/Paddle/issues/77340. Costs
-                # some CPU speed; drop this once upstream fixes it or you pin an
-                # unaffected paddlepaddle version.
-                _ocr_engine = PaddleOCR(
-                    use_doc_orientation_classify=False,
-                    use_doc_unwarping=False,
-                    use_textline_orientation=True,
-                    lang="en",
-                    enable_mkldnn=False,
-                )
+    """Returns a loaded cardnet.OcrPipeline, or None if the det/rec/dict
+    files haven't been exported yet (see native/cardnet/export/export_paddleocr.py)."""
+    global _ocr_engine, _ocr_load_attempted
+    if _ocr_load_attempted:
+        return _ocr_engine
+    with _singleton_lock:
+        if _ocr_load_attempted:
+            return _ocr_engine
+        _ocr_load_attempted = True
+        if not (OCR_DET_PATH.exists() and OCR_REC_PATH.exists() and OCR_DICT_PATH.exists()):
+            return None
+        try:
+            import cardnet
+            _ocr_engine = cardnet.OcrPipeline(str(OCR_DET_PATH), str(OCR_REC_PATH), str(OCR_DICT_PATH))
+        except Exception as e:
+            print(f"[scanner] could not load OCR pipeline ({e})")
+            _ocr_engine = None
     return _ocr_engine
 
 
 def _get_dino():
-    global _dino_model, _dino_device
-    if _dino_model is None:
+    """Returns a loaded cardnet.DinoEmbedder, or None if it hasn't been
+    exported yet (see native/cardnet/export/export_dino.py)."""
+    global _dino_embedder
+    if _dino_embedder is None and DINO_ONNX_PATH.exists():
         with _singleton_lock:
-            if _dino_model is None:
-                import torch
-                _dino_device = "cuda" if torch.cuda.is_available() else "cpu"
-                _dino_model = torch.hub.load("facebookresearch/dinov2", "dinov2_vits14")
-                _dino_model.eval().to(_dino_device)
-    return _dino_model, _dino_device
+            if _dino_embedder is None:
+                import cardnet
+                _dino_embedder = cardnet.DinoEmbedder(str(DINO_ONNX_PATH))
+    return _dino_embedder
 
 
-def _get_faiss():
-    global _faiss_index
-    if _faiss_index is None and FAISS_PATH.exists():
+def _get_vector_index():
+    global _vector_index
+    if _vector_index is None and VECTOR_INDEX_PATH.exists():
         with _singleton_lock:
-            if _faiss_index is None:
-                import faiss
-                _faiss_index = faiss.read_index(str(FAISS_PATH))
-    return _faiss_index
+            if _vector_index is None:
+                import cardvec
+                _vector_index = cardvec.read_index(str(VECTOR_INDEX_PATH))
+    return _vector_index
 
 
 def _get_db():
-    import duckdb
+    """Opens a fresh read-only connection to the SQLite card catalog, or
+    returns None if build_scanner_models.py hasn't produced one yet.
+
+    Fresh per call, closed by the caller's `finally` — sqlite3 connections
+    can't be shared across threads by default and Flask serves requests on
+    many, so this must never become a module-level singleton the way the
+    ONNX/cardvec objects above are.
+
+    row_factory = sqlite3.Row is what lets every call site below do
+    `dict(row)`. DuckDB, which this replaced, exposed `.description` on the
+    *connection*; sqlite3 exposes it on the cursor `execute()` returns, so
+    the old `dict(zip([d[0] for d in con.description], row))` pattern would
+    raise AttributeError here.
+    """
     if not DB_PATH.exists():
         return None
-    return duckdb.connect(str(DB_PATH), read_only=True)
+    # mode=ro needs the URI form. It makes an accidental write raise rather
+    # than mutate a catalog this module only ever reads. as_uri() rather
+    # than an f-string because the path is user-data-directory-derived and
+    # so contains the account name: percent-encoding is what keeps a "#"
+    # or "?" in it from truncating the URI.
+    con = sqlite3.connect(DB_PATH.as_uri() + "?mode=ro", uri=True)
+    con.row_factory = sqlite3.Row
+    return con
+
+
+def _normalize_title(text):
+    r"""Lowercase, drop punctuation, and collapse runs of whitespace.
+    Applied to both sides of every fuzzy comparison so punctuation the OCR
+    dropped (or invented) doesn't count against a match — rapidfuzz's
+    WRatio did the equivalent internally via its default processor, so
+    keeping it preserves that much of the old behaviour even though the
+    scorer itself changed.
+
+    `\w` and `str.lower()` are both Unicode-aware, and that matters here:
+    build_scanner_models.py ingests Scryfall's "all_cards" dump, which
+    includes every language a card was printed in. An ASCII-only class
+    like `[^0-9a-z ]` would erase Japanese, Chinese, Korean and Cyrillic
+    names to the empty string outright, and strip the accents off French
+    and German ones.
+    """
+    return " ".join(re.sub(r"[^\w ]+", " ", text.lower(), flags=re.UNICODE).split())
 
 
 def _get_names(game):
-    """Cached (uid, name) list for a game, used for RapidFuzz title matching."""
+    """Cached {normalized name: uid} map for a game, used for fuzzy title
+    matching.
+
+    Deliberately keyed by *name*, not printing: a heavily-reprinted card
+    contributes one entry here rather than dozens of identical strings,
+    which cuts what the fuzzy scan has to walk by several-fold on MTG.
+    Losing the other printings costs nothing, because whichever uid comes
+    back is only used to resolve a *name* — _best_printing_by_art() then
+    picks the actual printing from the art crop.
+    """
     if game not in _name_cache:
         con = _get_db()
         if con is None:
-            _name_cache[game] = []
+            _name_cache[game] = {}
         else:
-            rows = con.execute("SELECT uid, name FROM cards WHERE game = ?", [game]).fetchall()
-            _name_cache[game] = rows
-            con.close()
+            try:
+                rows = con.execute(
+                    "SELECT name, MIN(uid) FROM cards WHERE game = ? AND name IS NOT NULL GROUP BY name",
+                    [game],
+                ).fetchall()
+            finally:
+                con.close()
+            _name_cache[game] = {_normalize_title(name): uid for name, uid in rows if name}
     return _name_cache[game]
 
 
 def is_ready():
-    """Whether the DuckDB catalog exists at all (build_scanner_models.py has run)."""
+    """Whether the SQLite catalog exists at all (build_scanner_models.py has run)."""
     return DB_PATH.exists()
 
 
 def warm_up():
     """Eagerly constructs every lazy singleton above instead of leaving them
-    to trigger on whichever request happens to hit them first. Building
-    PaddleOCR's pipeline (and, on a fallback-path scan, DINOv2) the first
-    time takes several seconds and floods stdout with "Creating model" —
-    call this once, on a background thread, right after the app starts
+    to trigger on whichever request happens to hit them first. Loading the
+    OCR pipeline's ONNX Runtime sessions (and, on a fallback-path scan,
+    DINOv2's) the first time takes a little while — call this once, on a
+    background thread, right after the app starts
     (see app.py's _run()) so that cost lands during startup, while the
     user's still looking at the collection screen, instead of surprising
     them on their first scan. A no-op if the catalog isn't built yet, and
@@ -200,16 +279,15 @@ def warm_up():
     for label, getter in (
         ("YOLO detector", _get_yolo),
         ("OCR engine", _get_ocr),
-        ("FAISS index", _get_faiss),
+        ("cardvec index", _get_vector_index),
         ("DINOv2 embedder", _get_dino),
     ):
         try:
             getter()
         except Exception as e:
-            # Best-effort — a warm-up failure (e.g. DINOv2 needs to be
-            # fetched via torch.hub and the machine is offline) just means
-            # that one falls back to loading lazily, on whichever request
-            # needs it first, same as before this function existed.
+            # Best-effort — a warm-up failure just means that one falls
+            # back to loading lazily, on whichever request needs it
+            # first, same as before this function existed.
             print(f"[scanner] warm_up: {label} failed to preload ({e}); will retry lazily on first use")
 
 
@@ -243,13 +321,13 @@ def blur_score(image_bgr):
 def detect_and_classify(frame_bgr):
     """Returns (bbox, game_or_None). bbox is (x0,y0,x1,y1) in frame_bgr's
     own pixel space, or None to mean "use the whole frame"."""
-    yolo = _get_yolo()
+    yolo, names = _get_yolo()
     if yolo is not None:
-        results = yolo.predict(frame_bgr, verbose=False)[0]
-        if len(results.boxes) > 0:
-            best = max(results.boxes, key=lambda b: float(b.conf[0]))
-            x0, y0, x1, y1 = [int(v) for v in best.xyxy[0].tolist()]
-            game = yolo.names[int(best.cls[0])]
+        detections = yolo.detect(frame_bgr)
+        if detections:
+            best = max(detections, key=lambda d: d.score)
+            x0, y0, x1, y1 = int(best.x0), int(best.y0), int(best.x1), int(best.y1)
+            game = names.get(best.class_id) if names else None
             return (x0, y0, x1, y1), (game if game in GAMES else None)
     return None, None  # no trained detector — caller uses the whole frame
 
@@ -257,7 +335,7 @@ def detect_and_classify(frame_bgr):
 def detect_bbox_only(frame_bgr):
     """Lightweight, detection-only pass for the live-preview loop: 'is
     there a card-shaped thing in frame, and roughly where' — no OCR, no
-    DuckDB lookup, no FAISS art search. Uses the trained YOLO detector if
+    SQLite lookup, no cardvec art search. Uses the trained YOLO detector if
     one is loaded; otherwise falls back to the same contour-based quad
     finder warp_perspective uses. Cheap enough to call on every frame of
     a live video stream, and works even before build_scanner_models.py
@@ -344,21 +422,24 @@ def warp_perspective(frame_bgr):
 
 def _crop(warped, roi):
     x0, y0, x1, y1 = roi
-    return warped[y0:y1, x0:x1]
+    # np.ascontiguousarray: a column-sliced view isn't C-contiguous, and
+    # cardnet's pybind11 layer requires C-contiguous arrays (zero-copy
+    # access into numpy's buffer) rather than silently copying — a crop
+    # is small enough that copying here is free either way.
+    return np.ascontiguousarray(warped[y0:y1, x0:x1])
 
 
 # =====================================================================
-# Step 3: per-game OCR + exact DuckDB lookup
+# Step 3: per-game OCR + exact SQLite lookup
 # =====================================================================
 def _ocr_text(image_bgr):
     if image_bgr.size == 0:
         return ""
     ocr = _get_ocr()
-    result = ocr.predict(image_bgr)
-    if not result:
+    if ocr is None:
         return ""
-    texts = result[0].get("rec_texts") or []
-    return " ".join(t for t in texts if t)
+    lines = ocr.recognize(image_bgr)
+    return " ".join(line.text for line in lines if line.text)
 
 
 def _lookup(con, game, **fields):
@@ -373,8 +454,7 @@ def _lookup(con, game, **fields):
     row = con.execute(query, [game] + params).fetchone()
     if not row:
         return None
-    cols = [d[0] for d in con.description]
-    return dict(zip(cols, row))
+    return dict(row)
 
 
 def _try_mtg_primary(con, warped):
@@ -421,74 +501,67 @@ _PRIMARY_PARSERS = {"mtg": _try_mtg_primary, "pokemon": _try_pokemon_primary, "y
 
 
 # =====================================================================
-# Step 3 fallback: title OCR + RapidFuzz
+# Step 3 fallback: title OCR + fuzzy name matching
 # =====================================================================
 def _title_candidates(game, warped, limit=5):
-    from rapidfuzz import process, fuzz
-    text = _ocr_text(_crop(warped, ROIS[game]["title"])).strip()
+    """Fuzzy-matches the OCR'd title region against every known card name
+    for `game`. Returns [(matched_name, score_0_to_100, uid), ...], best
+    first — the same shape the rapidfuzz `process.extract` call this
+    replaced returned, so identify() didn't have to change.
+
+    difflib does the work rapidfuzz used to. See FUZZY_MATCH_THRESHOLD for
+    why (no Android wheel) and for what that costs in match quality.
+    get_close_matches is the right stdlib entry point rather than a manual
+    loop: it gates each candidate through SequenceMatcher's O(n)
+    real_quick_ratio/quick_ratio upper bounds and only pays for the full
+    quadratic ratio on the few that could still make the cutoff.
+
+    That still isn't free. Measured at ~130-190ms per call over 26k unique
+    names (roughly MTG's real count) on a desktop CPU, so expect a few
+    hundred ms to ~1s per game on a phone, and up to 3x that when no game
+    hint narrows it down. Acceptable because this is the *fallback* path —
+    it only runs when the primary set-code/collector-number OCR already
+    failed — but it is the slowest pure-Python step in a scan, and the
+    first place to look if Android scans feel sluggish.
+    """
+    import difflib
+
+    text = _normalize_title(_ocr_text(_crop(warped, ROIS[game]["title"])))
     if not text:
         return []
     names = _get_names(game)
     if not names:
         return []
-    choices = {uid: name for uid, name in names}
-    matches = process.extract(text, choices, scorer=fuzz.WRatio, limit=limit)
-    # matches: [(matched_name, score, uid), ...]
-    return matches
+    close = difflib.get_close_matches(text, names.keys(), n=limit, cutoff=FUZZY_CANDIDATE_CUTOFF)
+    return [
+        (name, difflib.SequenceMatcher(None, text, name).ratio() * 100.0, names[name])
+        for name in close
+    ]
 
 
 # =====================================================================
-# Step 4: DINOv2 + FAISS art disambiguation (universal fallback)
+# Step 4: DINOv2 + cardvec art disambiguation (universal fallback)
 # =====================================================================
-DINO_INPUT_SIZE = 224
-IMAGENET_MEAN = (0.485, 0.456, 0.406)
-IMAGENET_STD = (0.229, 0.224, 0.225)
-
-
-def _preprocess_for_dino(pil_image):
-    """Resize-shorter-side + center-crop + normalize, by hand — deliberately
-    not using torchvision.transforms, since torchvision/torch version
-    mismatches (e.g. pulled in transitively by ultralytics) are a common
-    source of breakage and this needs nothing beyond numpy + torch, which
-    we already depend on."""
-    import numpy as np
-    import torch
-    from PIL import Image
-
-    w, h = pil_image.size
-    scale = DINO_INPUT_SIZE / min(w, h)
-    new_w, new_h = round(w * scale), round(h * scale)
-    img = pil_image.resize((new_w, new_h), Image.BICUBIC)
-
-    left = (new_w - DINO_INPUT_SIZE) // 2
-    top = (new_h - DINO_INPUT_SIZE) // 2
-    img = img.crop((left, top, left + DINO_INPUT_SIZE, top + DINO_INPUT_SIZE))
-
-    arr = np.asarray(img).astype("float32") / 255.0  # HWC, [0,1]
-    arr = (arr - np.array(IMAGENET_MEAN, dtype="float32")) / np.array(IMAGENET_STD, dtype="float32")
-    arr = arr.transpose(2, 0, 1)  # CHW
-    return torch.from_numpy(arr)
-
-
 def _embed_art(warped, game):
-    import torch
-    import faiss
-    from PIL import Image as PILImage
+    import cardvec
 
     art = _crop(warped, ROIS[game]["art"])
     if art.size == 0:
         return None
-    model, device = _get_dino()
-    img = PILImage.fromarray(cv2.cvtColor(art, cv2.COLOR_BGR2RGB))
-    tensor = _preprocess_for_dino(img).unsqueeze(0).to(device)
-    with torch.no_grad():
-        vec = model(tensor).cpu().numpy().astype("float32")
-    faiss.normalize_L2(vec)
+    embedder = _get_dino()
+    if embedder is None:
+        return None
+    # cardnet.DinoEmbedder.embed() takes the raw BGR crop directly — the
+    # resize/center-crop/ImageNet-normalize preprocessing that used to
+    # live here (_preprocess_for_dino) is now done in C++; see
+    # native/cardnet/src/dino_embedder.cpp.
+    vec = embedder.embed(art).astype("float32").reshape(1, -1)
+    cardvec.normalize_L2(vec)
     return vec
 
 
-def _art_lookup(con, warped, candidate_games, candidate_uids=None):
-    index = _get_faiss()
+def _art_lookup(con, warped, candidate_games, candidate_names=None):
+    index = _get_vector_index()
     if index is None or index.ntotal == 0:
         return None
 
@@ -497,7 +570,7 @@ def _art_lookup(con, warped, candidate_games, candidate_uids=None):
         vec = _embed_art(warped, game)
         if vec is None:
             continue
-        scores, idxs = index.search(vec, FAISS_TOP_K)
+        scores, idxs = index.search(vec, VECTOR_TOP_K)
         for score, vector_idx in zip(scores[0], idxs[0]):
             if vector_idx < 0:
                 continue
@@ -506,9 +579,13 @@ def _art_lookup(con, warped, candidate_games, candidate_uids=None):
             ).fetchone()
             if not row:
                 continue
-            cols = [d[0] for d in con.description]
-            card = dict(zip(cols, row))
-            if candidate_uids and card["uid"] not in candidate_uids:
+            card = dict(row)
+            # Filter by *name*, not uid. The cardvec index holds one row per
+            # printing, while the fuzzy candidates upstream are per unique
+            # name (see _get_names) — comparing uids would reject every
+            # printing except whichever one happened to represent the name,
+            # silently killing this fallback for most cards.
+            if candidate_names and _normalize_title(card["name"]) not in candidate_names:
                 continue
             return card  # top hit within the allowed game/candidate set
     return best_card
@@ -532,10 +609,10 @@ def _best_printing_by_art(con, warped, game, name):
 
     Returns a raw DB row dict (not the API-shaped card — pass it through
     _row_to_api_card), or None if art-based verification wasn't possible
-    (FAISS index missing, no art crop, etc.). Callers should keep their
+    (cardvec index missing, no art crop, etc.). Callers should keep their
     existing result in that case rather than treat None as "no match".
     """
-    index = _get_faiss()
+    index = _get_vector_index()
     if index is None or index.ntotal == 0:
         return None
 
@@ -563,8 +640,7 @@ def _best_printing_by_art(con, warped, game, name):
     row = con.execute("SELECT * FROM cards WHERE uid = ?", [best_uid]).fetchone()
     if not row:
         return None
-    cols = [d[0] for d in con.description]
-    return dict(zip(cols, row))
+    return dict(row)
 
 
 # =====================================================================
@@ -575,7 +651,7 @@ def _row_to_api_card(row):
     # (Scryfall for MTG, PokemonTCG for Pokémon, YGOPRODeck for Yu-Gi-Oh! —
     # see build_scanner_models.py's ingest_* functions) rather than from a
     # local copy: build_scanner_models.py only ever downloads art crops
-    # transiently, to compute the DINOv2/FAISS vectors, and deletes them
+    # transiently, to compute the DINOv2/cardvec vectors, and deletes them
     # once that's done (see cleanup_local_images() there).
     return {
         "id": row["uid"],
@@ -628,18 +704,17 @@ def identify(image_bgr, game_hint=None):
 
         # --- fuzzy title-OCR fallback -----------------------------------
         if result is None:
-            all_candidates = []  # (game, uid, score)
+            all_candidates = []  # (game, normalized name, uid, score)
             for game in games_to_try:
-                for _name, score, uid in _title_candidates(game, warped):
-                    all_candidates.append((game, uid, score))
-            all_candidates.sort(key=lambda t: t[2], reverse=True)
+                for name, score, uid in _title_candidates(game, warped):
+                    all_candidates.append((game, name, uid, score))
+            all_candidates.sort(key=lambda t: t[3], reverse=True)
 
-            if all_candidates and all_candidates[0][2] >= FUZZY_MATCH_THRESHOLD:
-                game, uid, _score = all_candidates[0]
+            if all_candidates and all_candidates[0][3] >= FUZZY_MATCH_THRESHOLD:
+                game, _name, uid, _score = all_candidates[0]
                 row = con.execute("SELECT * FROM cards WHERE uid = ?", [uid]).fetchone()
                 if row:
-                    cols = [d[0] for d in con.description]
-                    row = dict(zip(cols, row))
+                    row = dict(row)
                     result = _row_to_api_card(row)
                     matched_game, matched_name = row["game"], row["name"]
 
@@ -647,9 +722,9 @@ def identify(image_bgr, game_hint=None):
             # (only reached when the name itself is still unknown — no
             # primary-parser hit and no confident fuzzy title match)
             if result is None:
-                candidate_uids = {uid for _g, uid, _s in all_candidates} or None
-                candidate_games = list({g for g, _u, _s in all_candidates}) or games_to_try
-                card = _art_lookup(con, warped, candidate_games, candidate_uids)
+                candidate_names = {n for _g, n, _u, _s in all_candidates} or None
+                candidate_games = list({g for g, _n, _u, _s in all_candidates}) or games_to_try
+                card = _art_lookup(con, warped, candidate_games, candidate_names)
                 if card:
                     result = _row_to_api_card(card)
                     matched_game, matched_name = card["game"], card["name"]
@@ -702,15 +777,20 @@ def search(game, query, limit=30):
                 f"SELECT * FROM cards WHERE game IN ({placeholders}) LIMIT ?", games + [limit]
             ).fetchall()
         else:
+            # name_lower is a stored column, not `lower(name)`: SQLite's
+            # own lower() is ASCII-only (DuckDB's was Unicode-aware), so
+            # calling it here would stop matching every name whose
+            # uppercase form isn't ASCII — "Übermut", "Éclair", Cyrillic
+            # and Greek names. build_scanner_models.py fills the column
+            # using Python's Unicode-aware str.lower() at ingest instead.
             rows = con.execute(
                 f"""
-                SELECT * FROM cards WHERE game IN ({placeholders}) AND lower(name) LIKE ?
-                ORDER BY (lower(name) LIKE ?) DESC, name
+                SELECT * FROM cards WHERE game IN ({placeholders}) AND name_lower LIKE ?
+                ORDER BY (name_lower LIKE ?) DESC, name
                 LIMIT ?
                 """,
                 games + [f"%{q}%", f"{q}%", limit],
             ).fetchall()
-        cols = [d[0] for d in con.description]
-        return [_row_to_api_card(dict(zip(cols, r))) for r in rows]
+        return [_row_to_api_card(dict(r)) for r in rows]
     finally:
         con.close()

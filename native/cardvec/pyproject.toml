@@ -1,0 +1,18 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "pybind11>=2.12"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "cardvec"
+version = "1.0.0"
+description = "Brute-force cosine/inner-product vector search used by Binder's DINOv2 art-crop matching — a from-scratch, Android-NDK-friendly replacement for the one FAISS feature (IndexFlatIP) the app relies on."
+requires-python = ">=3.9"
+dependencies = ["numpy"]
+
+[tool.scikit-build]
+cmake.build-type = "Release"
+wheel.expand-macos-universal-tags = true
+
+[tool.scikit-build.cmake.define]
+CARDVEC_BUILD_PYTHON = "ON"
+CARDVEC_BUILD_TESTS = "OFF"

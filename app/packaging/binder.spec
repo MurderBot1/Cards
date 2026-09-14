@@ -33,13 +33,8 @@ BACKEND_DIR = REPO_ROOT / "backend"
 # --- packages with data files / dynamic libs PyInstaller can't infer on
 #     its own (config yamls, char dicts, compiled extensions, ...) --------
 COLLECT_ALL_PACKAGES = [
-    "ultralytics",
-    "paddleocr",
-    "paddlex",
-    "paddle",
-    "faiss",
-    "duckdb",
-    "rapidfuzz",
+    "cardvec",
+    "cardnet",
     "cv2",
 ]
 datas = []
@@ -64,7 +59,7 @@ datas += [
 ]
 
 # --- optional prebuilt card catalog: drop build_scanner_models.py's
-#     output at packaging/bundled_data/{cards.duckdb,card-vectors.faiss,
+#     output at packaging/bundled_data/{cards.sqlite3,card-vectors.cvi,
 #     yolo_card_detector.pt} to ship scanning working out of the box.
 #     See packaging/bundled_data/README.md. Skipped entirely if empty. ----
 BUNDLED_DATA = REPO_ROOT / "packaging" / "bundled_data"

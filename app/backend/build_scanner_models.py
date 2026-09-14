@@ -4,7 +4,7 @@ build_scanner_models.py
 Builds everything scanner.py needs to recognize MTG / Pokémon /
 Yu-Gi-Oh! cards:
 
-  1. Ingests bulk card data into DuckDB (data/cards.duckdb):
+  1. Ingests bulk card data into SQLite (data/cards.sqlite3):
        - MTG:        Scryfall "all_cards" bulk export (every printing,
                       including extra languages/promos) — downloaded as
                       a gzipped JSONL file, per Scryfall's July 2026
@@ -19,10 +19,11 @@ Yu-Gi-Oh! cards:
      — purely a scratch copy used to compute step 3's vectors. The app
      itself never reads these; it loads card art straight from each
      card's image_url (Scryfall / PokemonTCG / YGOPRODeck), which is
-     stored in DuckDB during ingest.
-  3. Embeds every art crop with DINOv2 (dinov2_vits14, via torch.hub)
-     and builds a FAISS cosine-similarity index over all of them
-     (data/card-vectors.faiss), recording which DuckDB row each
+     stored in SQLite during ingest.
+  3. Embeds every art crop with DINOv2 (dinov2_vits14, exported to ONNX —
+     see native/cardnet/export/export_dino.py — and run via cardnet)
+     and builds a cardvec cosine-similarity index over all of them
+     (data/card-vectors.cvi), recording which SQLite row each
      vector belongs to.
   4. Deletes data/card-images/ now that the vectors are built (pass
      --keep-images to keep them around for debugging).
@@ -35,7 +36,7 @@ Run:
     python build_scanner_models.py --refresh-cache  # ignore cached bulk data
 
 It's safe to re-run: each step skips work that's already done (rows
-already in DuckDB, images already on disk, vectors already indexed,
+already in SQLite, images already on disk, vectors already indexed,
 bulk downloads already cached in data/cache/), so if it gets
 interrupted partway through, just run it again.
 
@@ -78,7 +79,9 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-import duckdb
+import cv2
+import sqlite3
+import numpy as np
 import requests
 from PIL import Image
 from tqdm import tqdm
@@ -87,41 +90,12 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 IMAGES_DIR = DATA_DIR / "card-images"
 CACHE_DIR = DATA_DIR / "cache"
-DB_PATH = DATA_DIR / "cards.duckdb"
-FAISS_PATH = DATA_DIR / "card-vectors.faiss"
+DB_PATH = DATA_DIR / "cards.sqlite3"
+VECTOR_INDEX_PATH = DATA_DIR / "card-vectors.cvi"
+DINO_ONNX_PATH = DATA_DIR / "dinov2_vits14.onnx"
 
 HTTP_TIMEOUT = 30
 REQUEST_PAUSE_SEC = 0.05  # be polite to the free APIs we're hitting
-
-DINO_INPUT_SIZE = 224
-IMAGENET_MEAN = (0.485, 0.456, 0.406)
-IMAGENET_STD = (0.229, 0.224, 0.225)
-
-
-def preprocess_for_dino(pil_image):
-    """Resize-shorter-side + center-crop + normalize, by hand — deliberately
-    NOT using torchvision.transforms here. torchvision ships as a separate
-    package from torch with its own version compatibility matrix, and
-    pulling it in (directly, or transitively via ultralytics) is a common
-    source of 'operator torchvision::nms does not exist'-style breakage
-    if the two versions don't line up. This needs numpy, ubiquitous, and
-    torch, which we need anyway — nothing else."""
-    import numpy as np
-    import torch
-
-    w, h = pil_image.size
-    scale = DINO_INPUT_SIZE / min(w, h)
-    new_w, new_h = round(w * scale), round(h * scale)
-    img = pil_image.resize((new_w, new_h), Image.BICUBIC)
-
-    left = (new_w - DINO_INPUT_SIZE) // 2
-    top = (new_h - DINO_INPUT_SIZE) // 2
-    img = img.crop((left, top, left + DINO_INPUT_SIZE, top + DINO_INPUT_SIZE))
-
-    arr = np.asarray(img).astype("float32") / 255.0  # HWC, [0,1]
-    arr = (arr - np.array(IMAGENET_MEAN, dtype="float32")) / np.array(IMAGENET_STD, dtype="float32")
-    arr = arr.transpose(2, 0, 1)  # CHW
-    return torch.from_numpy(arr)
 
 # Scryfall's API rejects requests that don't send a descriptive User-Agent
 # and an Accept header (returns 400 Bad Request otherwise) — see
@@ -201,43 +175,120 @@ def cached_get_jsonl(url, cache_key, timeout=HTTP_TIMEOUT):
 
 
 def get_db():
+    """Opens (creating if needed) the SQLite card catalog.
+
+    This used to be DuckDB. SQLite is what Android can actually run:
+    duckdb publishes no Android wheel and isn't in Chaquopy's native
+    package repository at any Python version, whereas sqlite3 is in
+    CPython's own standard library on every platform including Android.
+    Nothing here needed DuckDB's analytical engine — every query in
+    scanner.py is a single-row lookup by an indexed column — so this is
+    a simplification for the desktop build too, not just an Android
+    workaround.
+    """
     DATA_DIR.mkdir(exist_ok=True)
-    con = duckdb.connect(str(DB_PATH))
+    con = sqlite3.connect(str(DB_PATH))
+    # Bulk ingest is millions of INSERTs; the default rollback journal
+    # fsyncs per transaction. WAL + NORMAL is the standard bulk-load
+    # setting and is safe against process crashes (only OS-level crashes
+    # can lose the last transactions, and this file is regenerable).
+    con.execute("PRAGMA journal_mode=WAL")
+    con.execute("PRAGMA synchronous=NORMAL")
     con.execute(
         """
         CREATE TABLE IF NOT EXISTS cards (
-            uid VARCHAR PRIMARY KEY,
-            game VARCHAR,
-            name VARCHAR,
-            set_code VARCHAR,
-            set_name VARCHAR,
-            collector_number VARCHAR,
-            rarity VARCHAR,
-            passcode VARCHAR,
-            image_url VARCHAR,   -- source URL, used to download the local copy
-            image_path VARCHAR,  -- relative path under data/card-images once downloaded
-            vector_idx INTEGER   -- row index into the FAISS index, once embedded
+            uid TEXT PRIMARY KEY,
+            game TEXT,
+            name TEXT,
+            -- name.lower() computed in Python at ingest, because SQLite's
+            -- own lower() is ASCII-only (DuckDB's, which this replaced,
+            -- was Unicode-aware). scanner.search() matches against this
+            -- column so names like "Ubermut"/"Eclair" with non-ASCII
+            -- uppercase forms, and the non-Latin printings Scryfall's
+            -- all_cards dump includes, stay searchable.
+            name_lower TEXT,
+            set_code TEXT,
+            set_name TEXT,
+            collector_number TEXT,
+            rarity TEXT,
+            passcode TEXT,
+            image_url TEXT,   -- source URL, used to download the local copy
+            image_path TEXT,  -- relative path under data/card-images once downloaded
+            vector_idx INTEGER   -- row index into the cardvec index, once embedded
         )
         """
     )
+    # DuckDB's columnar scans tolerated unindexed lookups; SQLite will do a
+    # full table scan over a multi-hundred-thousand-row catalog without
+    # these. Each one matches a WHERE clause scanner.py actually issues.
+    con.execute("CREATE INDEX IF NOT EXISTS idx_cards_game_set_num ON cards(game, set_code, collector_number)")
+    con.execute("CREATE INDEX IF NOT EXISTS idx_cards_game_passcode ON cards(game, passcode)")
+    con.execute("CREATE INDEX IF NOT EXISTS idx_cards_game_name ON cards(game, name)")
+    con.execute("CREATE INDEX IF NOT EXISTS idx_cards_vector_idx ON cards(game, vector_idx)")
+    con.execute("CREATE INDEX IF NOT EXISTS idx_cards_game_collector_number ON cards(game, collector_number)")
+    con.commit()
     return con
 
 
-def upsert_card(con, row):
-    con.execute(
+# How many card rows go into a single INSERT statement in flush_card_batch().
+# How many card rows accumulate before one executemany() call writes them.
+# The point is the transaction, not the statement count: SQLite in its
+# default autocommit mode fsyncs once per statement, so a per-card
+# con.execute() makes ingest disk-bound. Batching into one executemany()
+# per CARD_BATCH_SIZE rows (committed by the caller) is what keeps MTG's
+# multi-hundred-thousand-printing ingest from taking hours.
+CARD_BATCH_SIZE = 2000
+
+
+def _row_values(row):
+    name = row["name"] or ""
+    return [row["uid"], row["game"], name, name.lower(),
+            row.get("set_code", ""), row.get("set_name", ""),
+            row.get("collector_number", ""), row.get("rarity", ""), row.get("passcode", ""),
+            row.get("image_url", "")]
+
+
+def flush_card_batch(con, batch):
+    """Upserts many card rows with one executemany() call
+    instead of one execute() call per row (see upsert_card,
+    kept below for single-row callers). This is the main ingest
+    bottleneck fix: executemany() prepares the statement once and
+    re-binds it per row, and all CARD_BATCH_SIZE rows land inside a
+    single transaction, so SQLite pays one durability cost per batch
+    instead of one per card.
+
+    Dedupes by uid within the batch (keeping the last occurrence) first.
+    Under the previous multi-row INSERT this was mandatory — touching the
+    same ON CONFLICT target twice in one statement is an error. With
+    executemany() the duplicates would merely apply in sequence, but
+    collapsing them is still both cheaper and the same end state.
+    """
+    if not batch:
+        return
+    dedup = {row["uid"]: row for row in batch}  # last occurrence wins
+    rows = [_row_values(row) for row in dedup.values()]
+
+    con.executemany(
         """
-        INSERT INTO cards (uid, game, name, set_code, set_name, collector_number,
-                            rarity, passcode, image_url, image_path, vector_idx)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
+        INSERT INTO cards (uid, game, name, name_lower, set_code, set_name,
+                            collector_number, rarity, passcode, image_url,
+                            image_path, vector_idx)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
         ON CONFLICT (uid) DO UPDATE SET
-            name=excluded.name, set_code=excluded.set_code, set_name=excluded.set_name,
+            name=excluded.name, name_lower=excluded.name_lower,
+            set_code=excluded.set_code, set_name=excluded.set_name,
             collector_number=excluded.collector_number, rarity=excluded.rarity,
             passcode=excluded.passcode, image_url=excluded.image_url
         """,
-        [row["uid"], row["game"], row["name"], row.get("set_code", ""), row.get("set_name", ""),
-         row.get("collector_number", ""), row.get("rarity", ""), row.get("passcode", ""),
-         row.get("image_url", "")],
+        rows,
     )
+
+
+def upsert_card(con, row):
+    """Single-row upsert. Kept for callers that only ever have one row at a
+    time; bulk ingest loops should accumulate rows and call
+    flush_card_batch() instead — see CARD_BATCH_SIZE above."""
+    flush_card_batch(con, [row])
 
 
 # =====================================================================
@@ -274,6 +325,7 @@ def ingest_mtg(con):
     cards = cached_get_jsonl(jsonl_uri, "scryfall_all_cards", timeout=120)
     print(f"[mtg] ingesting {len(cards)} printings...")
 
+    batch = []
     for c in tqdm(cards, desc="mtg"):
         if c.get("layout") in ("art_series", "token", "double_faced_token"):
             continue
@@ -282,7 +334,7 @@ def ingest_mtg(con):
             image_url = c["image_uris"].get("normal")
         elif c.get("card_faces") and "image_uris" in c["card_faces"][0]:
             image_url = c["card_faces"][0]["image_uris"].get("normal")
-        upsert_card(con, {
+        batch.append({
             "uid": f"mtg-{c['id']}",
             "game": "mtg",
             "name": c["name"],
@@ -292,6 +344,10 @@ def ingest_mtg(con):
             "rarity": (c.get("rarity") or "").capitalize(),
             "image_url": image_url or "",
         })
+        if len(batch) >= CARD_BATCH_SIZE:
+            flush_card_batch(con, batch)
+            batch.clear()
+    flush_card_batch(con, batch)
     con.commit()
     print("[mtg] done.")
 
@@ -304,7 +360,7 @@ DEFAULT_INGEST_WORKERS = 16
 
 def _fetch_pokemon_set(set_id):
     """Runs in a worker thread: does the network GET (or cache read) for one
-    set's card list only. No DuckDB access — writes happen back on the main
+    set's card list only. No database access — writes happen back on the main
     thread. Returns (set_id, cards_or_None, error_or_None)."""
     url = f"https://raw.githubusercontent.com/PokemonTCG/pokemon-tcg-data/master/cards/en/{set_id}.json"
     try:
@@ -330,9 +386,10 @@ def ingest_pokemon(con, max_workers=DEFAULT_INGEST_WORKERS):
             if err is not None:
                 continue
             s = sets_by_id[set_id]
+            set_batch = []
             for c in cards:
                 image_url = (c.get("images") or {}).get("large") or (c.get("images") or {}).get("small")
-                upsert_card(con, {
+                set_batch.append({
                     "uid": f"pkm-{c['id']}",
                     "game": "pokemon",
                     "name": c.get("name", ""),
@@ -342,6 +399,7 @@ def ingest_pokemon(con, max_workers=DEFAULT_INGEST_WORKERS):
                     "rarity": c.get("rarity", "") or "",
                     "image_url": image_url or "",
                 })
+            flush_card_batch(con, set_batch)  # one statement for the whole set
             con.commit()
     print("[pokemon] done.")
 
@@ -355,6 +413,7 @@ def ingest_yugioh(con):
     printing_count = sum(len(c.get("card_sets") or [None]) for c in cards)
     print(f"[yugioh] ingesting {len(cards)} cards ({printing_count} printings)...")
 
+    batch = []
     for c in tqdm(cards, desc="yugioh"):
         passcode = str(c.get("id", ""))
         image_url = ""
@@ -364,7 +423,7 @@ def ingest_yugioh(con):
         for cs in card_sets:
             set_code = cs.get("set_code", "")
             uid = f"ygo-{passcode}-{set_code}" if set_code else f"ygo-{passcode}"
-            upsert_card(con, {
+            batch.append({
                 "uid": uid,
                 "game": "yugioh",
                 "name": c.get("name", ""),
@@ -375,6 +434,10 @@ def ingest_yugioh(con):
                 "passcode": passcode,
                 "image_url": image_url,
             })
+            if len(batch) >= CARD_BATCH_SIZE:
+                flush_card_batch(con, batch)
+                batch.clear()
+    flush_card_batch(con, batch)
     con.commit()
     print("[yugioh] done.")
 
@@ -397,7 +460,7 @@ DEFAULT_IMAGE_WORKERS = 16
 
 def _fetch_one_image(uid, game, image_url, dest, rel_path):
     """Runs in a worker thread: does the network GET + JPEG re-encode only.
-    No DuckDB access here — duckdb connections aren't safe to share across
+    No database access here — sqlite3 connections aren't safe to share across
     threads, so all DB writes happen back on the main thread once this
     returns. Returns (uid, rel_path, error_or_None)."""
     try:
@@ -459,11 +522,70 @@ def download_images(con, only_game=None, max_workers=DEFAULT_IMAGE_WORKERS):
 
 
 # =====================================================================
-# 3. Embed every downloaded image with DINOv2 and build a FAISS index
+# 3. Embed every downloaded image with DINOv2 and build a cardvec index
 # =====================================================================
-def build_vectors(con, only_game=None, batch_size=32):
-    import faiss
-    import torch
+DEFAULT_VECTOR_PREFETCH_WORKERS = 2
+
+# How many image-batches to process between checkpoints (DB commit +
+# cardvec.write_index). write_index() rewrites the *entire* index file
+# every time it's called, not just the newly-added vectors, so calling it
+# after every single small batch means the write gets more expensive as the
+# index grows over the course of a run. Checkpointing every N batches
+# instead trades a slightly bigger "redo window" on cancel/crash (up to
+# VECTOR_CHECKPOINT_BATCHES batches' worth of embedding work) for far less
+# redundant disk I/O.
+VECTOR_CHECKPOINT_BATCHES = 10
+
+
+def finalize_db(con):
+    """Folds the write-ahead log back into cards.sqlite3 and switches the
+    file out of WAL mode, so the finished catalog is a single
+    self-contained file.
+
+    This matters because the catalog gets *shipped*: copied into
+    packaging/bundled_data/ for a desktop installer, or pushed to a device
+    for the Android build (see android/README.md). journal_mode is stored
+    in the file header and survives being copied, and a WAL database is
+    really up to three files. Left as-is, either delivery path can break:
+    copying only cards.sqlite3 while committed rows still sit in an
+    un-checkpointed -wal silently truncates the catalog, and a stale -wal
+    arriving alongside it makes scanner.py's read-only open fail outright,
+    because a read-only connection cannot create the -shm file it would
+    need to replay the log.
+
+    WAL still earns its place during ingest itself (see get_db) - this
+    just undoes it once the writing is finished.
+    """
+    con.commit()
+    con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    con.execute("PRAGMA journal_mode=DELETE")
+
+
+def _bulk_update_vector_idx(con, pairs):
+    """pairs: list of (vector_idx, uid). Backfills vector_idx for many rows
+    in one transaction rather than one autocommitted UPDATE per row.
+
+    This was a single `UPDATE ... FROM (VALUES ...) AS v(idx, uid)`
+    statement under DuckDB. SQLite supports `UPDATE ... FROM`, but not
+    that derived-column-list form of table alias, so this uses
+    executemany() instead — which is the shape SQLite optimizes for
+    anyway: the statement is prepared once and re-bound per row, so the
+    per-statement planning overhead the DuckDB version was avoiding
+    doesn't apply here in the first place.
+    """
+    if not pairs:
+        return
+    con.executemany("UPDATE cards SET vector_idx = ? WHERE uid = ?", pairs)
+
+
+def build_vectors(con, only_game=None, batch_size=32, prefetch_workers=DEFAULT_VECTOR_PREFETCH_WORKERS):
+    import cardnet
+    import cardvec
+
+    if not DINO_ONNX_PATH.exists():
+        print(f"[vectors] {DINO_ONNX_PATH} doesn't exist — run native/cardnet/export/export_dino.py first.",
+              file=sys.stderr)
+        return
 
     where = "image_path IS NOT NULL AND vector_idx IS NULL"
     if only_game:
@@ -474,49 +596,77 @@ def build_vectors(con, only_game=None, batch_size=32):
         print("[vectors] nothing to do.")
         return
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"[vectors] loading DINOv2 (dinov2_vits14) on {device}...")
-    model = torch.hub.load("facebookresearch/dinov2", "dinov2_vits14")
-    model.eval().to(device)
+    print("[vectors] loading DINOv2 (dinov2_vits14) via ONNX Runtime...")
+    embedder = cardnet.DinoEmbedder(str(DINO_ONNX_PATH))
 
-    # load (or create) the FAISS index, and figure out where new vectors
+    # load (or create) the cardvec index, and figure out where new vectors
     # should start being appended so uid <-> row-index stays consistent
     dim = 384  # dinov2_vits14 embedding size
-    if FAISS_PATH.exists():
-        index = faiss.read_index(str(FAISS_PATH))
+    if VECTOR_INDEX_PATH.exists():
+        index = cardvec.read_index(str(VECTOR_INDEX_PATH))
     else:
-        index = faiss.IndexFlatIP(dim)
+        index = cardvec.IndexFlatIP(dim)
     next_idx = index.ntotal
 
     def load_batch(batch_rows):
-        tensors, uids = [], []
+        """Reads one batch's images from disk (cv2.imread — BGR uint8,
+        exactly what cardnet.DinoEmbedder.embed expects). Pure IO/JPEG-
+        decode work that releases the GIL for most of its time, so it's a
+        good fit for a background thread — see the prefetch loop below."""
+        images, uids = [], []
         for uid, image_path in batch_rows:
             full_path = IMAGES_DIR / image_path
-            try:
-                img = Image.open(full_path).convert("RGB")
-                tensors.append(preprocess_for_dino(img))
-                uids.append(uid)
-            except Exception as e:
-                print(f"[vectors] skip {uid}: {e}", file=sys.stderr)
-        return tensors, uids
+            img = cv2.imread(str(full_path))
+            if img is None:
+                print(f"[vectors] skip {uid}: could not read {full_path}", file=sys.stderr)
+                continue
+            images.append(img)
+            uids.append(uid)
+        return images, uids
 
-    for i in tqdm(range(0, len(rows), batch_size), desc="vectors"):
-        batch_rows = rows[i:i + batch_size]
-        tensors, uids = load_batch(batch_rows)
-        if not tensors:
-            continue
-        batch = torch.stack(tensors).to(device)
-        with torch.no_grad():
-            emb = model(batch).cpu().numpy().astype("float32")
-        faiss.normalize_L2(emb)  # so inner product == cosine similarity
-        index.add(emb)
-        for j, uid in enumerate(uids):
-            con.execute("UPDATE cards SET vector_idx=? WHERE uid=?", [next_idx + j, uid])
-        next_idx += len(uids)
-        con.commit()
-        faiss.write_index(index, str(FAISS_PATH))  # persist incrementally
+    batches = [rows[i:i + batch_size] for i in range(0, len(rows), batch_size)]
 
-    print(f"[vectors] done — {index.ntotal} vectors in {FAISS_PATH}")
+    # Prefetching: decoding a batch of images from disk is IO/CPU work that
+    # doesn't touch ONNX Runtime, while embedder.embed() is compute (ORT's
+    # own internal thread pool). Doing these serially means the CPU
+    # inference sits idle during every load_batch() call. Here a small
+    # thread pool loads batch N+prefetch_workers while the main thread is
+    # still embedding batch N, so disk IO overlaps with compute instead of
+    # stalling it.
+    with ThreadPoolExecutor(max_workers=prefetch_workers) as pool:
+        pending = {}
+        lookahead = max(1, prefetch_workers)
+        for i in range(min(lookahead, len(batches))):
+            pending[i] = pool.submit(load_batch, batches[i])
+
+        batches_since_checkpoint = 0
+        for i in tqdm(range(len(batches)), desc="vectors"):
+            images, uids = pending.pop(i).result()
+
+            next_i = i + lookahead
+            if next_i < len(batches):
+                pending[next_i] = pool.submit(load_batch, batches[next_i])
+
+            if not images:
+                continue
+            emb = np.stack([embedder.embed(img) for img in images]).astype("float32")
+            cardvec.normalize_L2(emb)  # so inner product == cosine similarity
+            index.add(emb)
+            _bulk_update_vector_idx(con, [(next_idx + j, uid) for j, uid in enumerate(uids)])
+            next_idx += len(uids)
+
+            batches_since_checkpoint += 1
+            if batches_since_checkpoint >= VECTOR_CHECKPOINT_BATCHES:
+                con.commit()
+                cardvec.write_index(index, str(VECTOR_INDEX_PATH))  # persist, but not every single batch
+                batches_since_checkpoint = 0
+
+        # flush whatever's left since the last checkpoint
+        if batches_since_checkpoint > 0:
+            con.commit()
+            cardvec.write_index(index, str(VECTOR_INDEX_PATH))
+
+    print(f"[vectors] done — {index.ntotal} vectors in {VECTOR_INDEX_PATH}")
 
 
 # =====================================================================
@@ -524,7 +674,7 @@ def build_vectors(con, only_game=None, batch_size=32):
 # =====================================================================
 def cleanup_local_images(only_game=None):
     """The images under data/card-images/ are only ever needed transiently,
-    to compute the DINOv2/FAISS vectors in build_vectors() above — the app
+    to compute the DINOv2/cardvec vectors in build_vectors() above — the app
     itself doesn't read them at all. It loads each card's art straight from
     the image_url captured during ingest (Scryfall for MTG, PokemonTCG for
     Pokémon, YGOPRODeck for Yu-Gi-Oh! — see scanner.py's _row_to_api_card),
@@ -549,7 +699,7 @@ def main():
     parser.add_argument("--skip-vectors", action="store_true")
     parser.add_argument(
         "--keep-images", action="store_true",
-        help="don't delete data/card-images/ after the FAISS vectors are built "
+        help="don't delete data/card-images/ after the cardvec vectors are built "
              "(useful for debugging what got downloaded/embedded)",
     )
     parser.add_argument(
@@ -563,6 +713,11 @@ def main():
     parser.add_argument(
         "--ingest-workers", type=int, default=DEFAULT_INGEST_WORKERS,
         help=f"number of concurrent per-set download threads for Pokemon ingest (default: {DEFAULT_INGEST_WORKERS})",
+    )
+    parser.add_argument(
+        "--vector-prefetch-workers", type=int, default=DEFAULT_VECTOR_PREFETCH_WORKERS,
+        help="threads used to preload/preprocess upcoming image batches while the "
+             f"model embeds the current one (default: {DEFAULT_VECTOR_PREFETCH_WORKERS})",
     )
     args = parser.parse_args()
     REFRESH_CACHE = args.refresh_cache
@@ -581,7 +736,7 @@ def main():
         download_images(con, only_game=args.only, max_workers=args.image_workers)
 
     if not args.skip_vectors:
-        build_vectors(con, only_game=args.only)
+        build_vectors(con, only_game=args.only, prefetch_workers=args.vector_prefetch_workers)
 
     # Only safe to clean up once both steps that touch data/card-images/
     # actually ran this time — if either was skipped, the images (or the
@@ -589,6 +744,7 @@ def main():
     if not args.skip_images and not args.skip_vectors and not args.keep_images:
         cleanup_local_images(only_game=args.only)
 
+    finalize_db(con)
     total = con.execute("SELECT COUNT(*) FROM cards").fetchone()[0]
     print(f"\nAll done. {total} cards in {DB_PATH}")
     con.close()

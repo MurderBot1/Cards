@@ -5,3 +5,13 @@ app/venv
 app/backend/data
 app/backend/logs
 app/backend/db.json
+
+# Android: Gradle output, local SDK path, and the two directories
+# app/build.gradle.kts's Copy tasks (re)generate from app/backend and
+# the repo-root frontend on every build — not source, don't commit.
+android/.gradle
+android/local.properties
+android/app/src/main/assets/frontend
+android/app/src/main/python/app.py
+android/app/src/main/python/scanner.py
+android/app/src/main/python/paths.py

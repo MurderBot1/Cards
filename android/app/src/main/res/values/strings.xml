@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Binder</string>
+    <string name="camera_permission_rationale">Binder needs the camera to scan cards. You can still browse your collection without it.</string>
+    <string name="server_starting">Starting Binder…</string>
+</resources>

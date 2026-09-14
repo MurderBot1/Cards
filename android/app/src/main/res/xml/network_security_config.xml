@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android blocks plaintext HTTP by default (API 28+). The WebView only
+     ever talks to Flask on 127.0.0.1 (see MainActivity.kt/android_main.py)
+     — never a real network address — so this scopes the exception to
+     loopback only, rather than allowing cleartext traffic app-wide. -->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+    </domain-config>
+</network-security-config>
