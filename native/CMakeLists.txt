@@ -25,6 +25,14 @@ if(BINDER_BUILD_TESTS)
     enable_testing()
 endif()
 
+# zlib and libcurl for the catalog tool are looked up *before* the dependencies: a from-source OpenCV that builds its own
+# bundled zlib leaves a cached ZLIB_LIBRARY naming that internal target, which a later find_package(ZLIB) would pick up.
+option(BINDER_WITH_CATALOG_TOOL "Build the catalog builder (binder-catalog); needs libcurl and zlib" ON)
+if(BINDER_WITH_CATALOG_TOOL AND NOT ANDROID)
+    find_package(ZLIB QUIET)
+    find_package(CURL QUIET)
+endif()
+
 include(cmake/Deps.cmake)
 
 add_subdirectory(cardtest)
@@ -58,10 +66,7 @@ endif()
 # The catalog builder (binder-catalog): a developer tool that downloads card data and builds the catalog and
 # vector index the app reads. It needs libcurl and zlib, which Linux and macOS have; where they're missing
 # (Windows, Android) it's skipped — the catalog files it makes are portable, so build them on a machine that has them.
-option(BINDER_WITH_CATALOG_TOOL "Build the catalog builder (binder-catalog); needs libcurl and zlib" ON)
 if(BINDER_WITH_CATALOG_TOOL AND NOT ANDROID)
-    find_package(ZLIB QUIET)
-    find_package(CURL QUIET)
     if(ZLIB_FOUND AND CURL_FOUND)
         add_subdirectory(cardfetch)
         add_subdirectory(cardingest)
