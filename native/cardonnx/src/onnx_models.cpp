@@ -57,13 +57,13 @@ bool present(const fs::path& p) {
 
 }  // namespace
 
-std::unique_ptr<cardscan::Detector> make_detector(const fs::path& onnx_path) { return std::make_unique<CardnetDetector>(onnx_path.string()); }
+std::unique_ptr<cardscan::Detector> make_detector(const fs::path& onnx_path) { return std::make_unique<CardnetDetector>(onnx_path.u8string()); }
 
 std::unique_ptr<cardscan::Ocr> make_ocr(const fs::path& det_onnx, const fs::path& rec_onnx, const fs::path& dict) {
-    return std::make_unique<CardnetOcr>(det_onnx.string(), rec_onnx.string(), dict.string());
+    return std::make_unique<CardnetOcr>(det_onnx.u8string(), rec_onnx.u8string(), dict.u8string());
 }
 
-std::unique_ptr<cardscan::Embedder> make_embedder(const fs::path& onnx_path) { return std::make_unique<CardnetEmbedder>(onnx_path.string()); }
+std::unique_ptr<cardscan::Embedder> make_embedder(const fs::path& onnx_path) { return std::make_unique<CardnetEmbedder>(onnx_path.u8string()); }
 
 std::map<int, std::string> load_class_names(const fs::path& json_path) {
     std::map<int, std::string> out;

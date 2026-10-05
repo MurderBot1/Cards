@@ -1,0 +1,83 @@
+#include "app.hpp"
+
+#include <cstdio>
+#include <thread>
+
+#include "api.hpp"
+#include "cardhttp/server.hpp"
+#include "cardlog/cardlog.hpp"
+#include "cardscan/model_source.hpp"
+#include "cardscan/pipeline_engine.hpp"
+#include "cardstore/store.hpp"
+#ifdef BINDER_HAVE_ONNX
+#include "cardonnx/onnx_models.hpp"
+#endif
+
+namespace binder {
+
+struct App::Impl {
+    AppOptions options;
+    cardstore::Store store;
+    std::shared_ptr<cardscan::PipelineEngine> engine;  // shared: the background warm-up thread outlives a quick App
+    cardlog::RotatingLog api_log;
+    cardhttp::Server server;
+    ApiContext ctx;
+
+    explicit Impl(AppOptions o)
+        : options(std::move(o)),
+          store(options.paths.db_path),
+          engine(make_engine(options)),
+          api_log(options.paths.log_dir / "api.log"),
+          ctx{store, *engine, options.auth, options.paths.frontend_dir} {}
+
+    static void say(const AppOptions& o, const std::string& message) {
+        if (o.log) o.log(message);
+        cardlog::append_line(o.paths.startup_log, cardlog::timestamp() + " " + message);
+    }
+
+    static std::shared_ptr<cardscan::PipelineEngine> make_engine(const AppOptions& o) {
+        // Recognition reads the catalog and models from the data directory. Models that aren't there yet (or
+        // aren't compiled into this build) just skip their pipeline stage.
+#ifdef BINDER_HAVE_ONNX
+        using Models = cardonnx::OnnxModelSource;
+#else
+        using Models = cardscan::DataDirModelSource;  // built without ONNX Runtime: detector/OCR/embedder unavailable
+#endif
+        return std::make_shared<cardscan::PipelineEngine>(o.paths.data_dir / cardscan::kCatalogFile,
+                                                          std::make_unique<Models>(o.paths.data_dir),
+                                                          [o](const std::string& m) { say(o, "[scanner] " + m); });
+    }
+};
+
+App::App(AppOptions options) {
+    cardpaths::ensure_dirs(options.paths);
+    cardpaths::ensure_bundled_catalog(options.paths);
+    impl_ = std::make_unique<Impl>(std::move(options));
+    impl_->store.ensure_exists();
+
+    impl_->server.on_access([this](const cardhttp::AccessLogEntry& e) {
+        if (e.path.rfind("/api/", 0) != 0) return;  // only API traffic, not the static frontend
+        char duration[32];
+        std::snprintf(duration, sizeof(duration), "%.1f", e.duration_ms);
+        impl_->api_log.write(e.method + " " + e.path + (e.query_string.empty() ? "" : "?" + e.query_string) + " -> " +
+                             std::to_string(e.status) + " (" + duration + "ms) from " + e.remote_addr);
+    });
+    register_routes(impl_->server, impl_->ctx);
+}
+
+App::~App() = default;
+
+bool App::bind(const std::string& host, int port) { return impl_->server.bind(host, port); }
+int App::bind_any_port(const std::string& host) { return impl_->server.bind_any_port(host); }
+bool App::serve() { return impl_->server.listen_after_bind(); }
+void App::stop() { impl_->server.stop(); }
+bool App::is_running() const { return impl_->server.is_running(); }
+
+void App::warm_up_in_background() {
+    auto engine = impl_->engine;
+    std::thread([engine] { engine->warm_up(); }).detach();
+}
+
+cardscan::Engine& App::engine() { return *impl_->engine; }
+
+}  // namespace binder

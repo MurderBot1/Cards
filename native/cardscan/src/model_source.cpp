@@ -28,7 +28,7 @@ private:
 std::unique_ptr<VectorIndex> load_cardvec_index(const std::filesystem::path& path) {
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) return nullptr;
-    return std::make_unique<CardvecIndex>(cardvec::FlatIndexIP::load(path.string()));
+    return std::make_unique<CardvecIndex>(cardvec::FlatIndexIP::load(path.u8string()));
 }
 
 }  // namespace cardscan

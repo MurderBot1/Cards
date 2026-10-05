@@ -2,6 +2,19 @@
 
 #include <cstdlib>
 
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#elif defined(__APPLE__)
+#include <limits.h>
+#include <mach-o/dyld.h>
+#endif
+
 namespace fs = std::filesystem;
 
 namespace cardpaths {
@@ -27,13 +40,13 @@ fs::path default_user_data_dir(const Environment& env) {
     if (env.os == "windows") {
         // Matches platformdirs' roaming layout: %APPDATA%\<author>\<app>.
         std::string appdata = env.getenv("APPDATA");
-        fs::path base = appdata.empty() ? env.home / "AppData" / "Roaming" : fs::path(appdata);
+        fs::path base = appdata.empty() ? env.home / "AppData" / "Roaming" : fs::u8path(appdata);
         return base / kAppAuthor / kAppName;
     }
     if (env.os == "macos") return env.home / "Library" / "Application Support" / kAppName;
     // linux (and the fallback): XDG data home
     std::string xdg = env.getenv("XDG_DATA_HOME");
-    fs::path base = xdg.empty() ? env.home / ".local" / "share" : fs::path(xdg);
+    fs::path base = xdg.empty() ? env.home / ".local" / "share" : fs::u8path(xdg);
     return base / kAppName;
 }
 
@@ -61,22 +74,71 @@ void add_repo_candidates(std::vector<fs::path>& v, fs::path start) {
 
 }  // namespace
 
+namespace {
+
+#if defined(_WIN32)
+// Environment variables as UTF-8 (std::getenv returns the ANSI code page, which mangles non-ASCII user names).
+std::string utf8_from_wide(const std::wstring& w) {
+    if (w.empty()) return {};
+    int n = WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), nullptr, 0, nullptr, nullptr);
+    std::string out(static_cast<size_t>(n), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), out.data(), n, nullptr, nullptr);
+    return out;
+}
+std::wstring wide_from_utf8(const std::string& s) {
+    if (s.empty()) return {};
+    int n = MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), nullptr, 0);
+    std::wstring out(static_cast<size_t>(n), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), out.data(), n);
+    return out;
+}
+std::string get_env(const std::string& name) {
+    std::wstring wname = wide_from_utf8(name);
+    DWORD len = GetEnvironmentVariableW(wname.c_str(), nullptr, 0);
+    if (len == 0) return {};
+    std::wstring value(len, L'\0');
+    DWORD got = GetEnvironmentVariableW(wname.c_str(), value.data(), len);
+    value.resize(got);
+    return utf8_from_wide(value);
+}
+#else
+std::string get_env(const std::string& name) {
+    const char* v = std::getenv(name.c_str());
+    return v ? v : "";
+}
+#endif
+
+fs::path current_executable() {
+    std::error_code ec;
+#if defined(_WIN32)
+    std::wstring buf(32768, L'\0');
+    DWORD n = GetModuleFileNameW(nullptr, buf.data(), static_cast<DWORD>(buf.size()));
+    buf.resize(n);
+    return fs::path(buf);
+#elif defined(__APPLE__)
+    char buf[PATH_MAX * 2];
+    uint32_t size = sizeof(buf);
+    if (_NSGetExecutablePath(buf, &size) != 0) return {};
+    return fs::weakly_canonical(fs::path(buf), ec);
+#elif defined(__linux__)
+    return fs::read_symlink("/proc/self/exe", ec);
+#else
+    return {};  // Android: the Kotlin side passes the directories in through Options
+#endif
+}
+
+}  // namespace
+
 Environment system_environment() {
     Environment env;
     env.os = host_os();
-    auto get = [](const std::string& k) -> std::string {
-        const char* v = std::getenv(k.c_str());
-        return v ? v : "";
-    };
-    env.getenv = get;
-    std::string home = get("HOME");
-    if (home.empty()) home = get("USERPROFILE");
-    env.home = home;
+    env.getenv = get_env;
+    std::string home = get_env("HOME");
+    if (home.empty()) home = get_env("USERPROFILE");
+    env.home = fs::u8path(home);
     std::error_code ec;
     env.cwd = fs::current_path(ec);
-#if defined(__linux__) || defined(__ANDROID__)
-    env.exe_path = fs::read_symlink("/proc/self/exe", ec);
-#endif
+    env.exe_path = current_executable();
     return env;
 }
 
@@ -86,7 +148,7 @@ Paths resolve(const Environment& env, const Options& options) {
     if (options.user_data_dir) {
         p.user_data_dir = *options.user_data_dir;
     } else if (auto e = env.getenv("BINDER_USER_DATA_DIR"); !e.empty()) {
-        p.user_data_dir = e;
+        p.user_data_dir = fs::u8path(e);
     } else {
         p.user_data_dir = default_user_data_dir(env);
     }
@@ -99,7 +161,7 @@ Paths resolve(const Environment& env, const Options& options) {
     // a source checkout.
     auto& c = p.frontend_candidates;
     if (options.frontend_dir) add_unique(c, *options.frontend_dir);
-    if (auto e = env.getenv("BINDER_FRONTEND_DIR"); !e.empty()) add_unique(c, e);
+    if (auto e = env.getenv("BINDER_FRONTEND_DIR"); !e.empty()) add_unique(c, fs::u8path(e));
     fs::path exe_dir = env.exe_path.parent_path();
     if (!exe_dir.empty()) {
         add_unique(c, exe_dir / "frontend");                               // Windows / Linux zip layout

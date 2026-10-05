@@ -7,8 +7,19 @@
 #include <cstring>
 #include <limits>
 #include <stdexcept>
+#include <string>
 #include <thread>
 #include <vector>
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
 
 namespace cardvec {
 
@@ -121,8 +132,25 @@ void FlatIndexIP::reconstruct(std::int64_t label, float* out) const {
     std::copy(data_.data() + label * dim_, data_.data() + (label + 1) * dim_, out);
 }
 
+namespace {
+// Paths are UTF-8 on every platform (Windows' narrow fopen would read them as the ANSI code page, which breaks
+// non-ASCII user names), so open through the wide API there.
+std::FILE* open_file(const std::string& utf8_path, const char* mode) {
+#ifdef _WIN32
+    int n = MultiByteToWideChar(CP_UTF8, 0, utf8_path.c_str(), -1, nullptr, 0);
+    if (n <= 0) return nullptr;
+    std::wstring wpath(static_cast<size_t>(n), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, utf8_path.c_str(), -1, wpath.data(), n);
+    std::wstring wmode(mode, mode + std::strlen(mode));
+    return _wfopen(wpath.c_str(), wmode.c_str());
+#else
+    return std::fopen(utf8_path.c_str(), mode);
+#endif
+}
+}  // namespace
+
 void FlatIndexIP::save(const std::string& path) const {
-    FileGuard fg{std::fopen(path.c_str(), "wb")};
+    FileGuard fg{open_file(path, "wb")};
     if (!fg.f) throw std::runtime_error("cardvec: could not open '" + path + "' for writing");
 
     if (std::fwrite(kMagic, 1, 4, fg.f) != 4) throw std::runtime_error("cardvec: write failed");
@@ -140,7 +168,7 @@ void FlatIndexIP::save(const std::string& path) const {
 }
 
 FlatIndexIP FlatIndexIP::load(const std::string& path) {
-    FileGuard fg{std::fopen(path.c_str(), "rb")};
+    FileGuard fg{open_file(path, "rb")};
     if (!fg.f) throw std::runtime_error("cardvec: could not open '" + path + "' for reading");
 
     char magic[4];

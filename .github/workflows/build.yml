@@ -2,8 +2,8 @@ name: Build
 
 # Every push to main, manual runs, tagged releases, and any
 # newly-created branch (e.g. "v1.1.1" cut off main) — these are full
-# desktop/mobile builds (PyInstaller + a Gradle/Chaquopy build), so they
-# deliberately don't run on PRs or pushes to other branches.
+# desktop/mobile builds (CMake for the desktop apps, Gradle for Android), so
+# they deliberately don't run on PRs or pushes to other branches.
 #
 # `create` fires for both new branches and new tags, and a `git push` of
 # a new tag fires `create` *and* `push` for the same ref — so every job
@@ -22,9 +22,10 @@ on:
   create:
 
 jobs:
-  # Gate: all three suites are dependency-light (no pytest, no network, no
-  # ML models, no ONNX Runtime), so this finishes in about a minute and
-  # every platform build below waits on it via `needs: test`.
+  # Gate: every test suite, run quickly against system libraries (about two minutes), so
+  # a broken change never reaches the slow release builds below, which wait on it via
+  # `needs: test`. The platform jobs then run the same tests again against their own
+  # release configuration.
   test:
     name: Test
     runs-on: ubuntu-22.04
@@ -57,6 +58,11 @@ jobs:
           # the window test needs a display
           xvfb-run -a ctest --test-dir build/native --output-on-failure
 
+  # The desktop apps. Each one builds in Release with OpenCV and SQLite linked statically (so the
+  # app doesn't depend on system copies), runs the same tests on its own platform, installs into the
+  # shipped layout and zips it. Dependencies that CMake downloads and compiles (OpenCV, ONNX Runtime,
+  # webview, ...) live in .deps/, which is cached so only the first run pays for compiling OpenCV.
+
   windows:
     name: Windows
     needs: test
@@ -65,18 +71,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/cache@v4
         with:
-          python-version: "3.13"
+          path: .deps
+          key: windows-deps-${{ hashFiles('native/cmake/Deps.cmake') }}
+
+      - name: Configure
+        run: cmake -S native -B build -DBINDER_STATIC_DEPS=ON -DFETCHCONTENT_BASE_DIR="${{ github.workspace }}/.deps"
 
       - name: Build
+        run: cmake --build build --config Release --parallel
+
+      # onnxruntime.dll has to be findable by the test executables (the installed app has it next to the .exe).
+      - name: Test
         shell: pwsh
-        run: ./app/packaging/build-windows.ps1
+        run: |
+          $env:PATH = "${{ github.workspace }}\.deps\onnxruntime-src\lib;$env:PATH"
+          ctest --test-dir build -C Release --output-on-failure
+
+      - name: Package
+        shell: pwsh
+        run: |
+          cmake --install build --config Release --component binder --prefix dist
+          Compress-Archive -Path dist/Binder -DestinationPath Binder-windows.zip
 
       - uses: actions/upload-artifact@v4
         with:
           name: Binder-windows
-          path: app/dist/Binder-windows.zip
+          path: Binder-windows.zip
           if-no-files-found: error
 
   macos:
@@ -87,58 +109,78 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/cache@v4
         with:
-          python-version: "3.13"
+          path: .deps
+          key: macos-deps-${{ hashFiles('native/cmake/Deps.cmake') }}
+
+      - name: Configure
+        run: |
+          cmake -S native -B build -DCMAKE_BUILD_TYPE=Release -DBINDER_STATIC_DEPS=ON \
+            -DFETCHCONTENT_BASE_DIR="${{ github.workspace }}/.deps"
 
       - name: Build
-        run: bash app/packaging/build-macos.sh
+        run: cmake --build build --parallel
 
-      # macos-latest runners are arm64, so this .app only runs on Apple
-      # Silicon Macs — named accordingly rather than as a plain universal
-      # "Binder-macos" build. It's also unsigned/unnotarized; see
-      # app/BUILD.md's macOS section for what that means for anyone who
-      # downloads it.
-      - name: Zip app bundle
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      # macos-latest runners are arm64, so this .app only runs on Apple Silicon Macs — named accordingly rather
+      # than as a plain universal "Binder-macos" build. It's also unsigned/unnotarized; see app/BUILD.md's macOS
+      # section for what that means for anyone who downloads it.
+      - name: Package
         run: |
-          cd app/dist
-          ditto -c -k --sequesterRsrc --keepParent Binder.app Binder-macos-arm64.zip
+          cmake --install build --component binder --prefix dist
+          cd dist
+          ditto -c -k --sequesterRsrc --keepParent Binder.app ../Binder-macos-arm64.zip
 
       - uses: actions/upload-artifact@v4
         with:
           name: Binder-macos-arm64
-          path: app/dist/Binder-macos-arm64.zip
+          path: Binder-macos-arm64.zip
           if-no-files-found: error
 
   linux:
     name: Linux
     needs: test
-    # 24.04's repos dropped gir1.2-webkit2-4.0 (4.1 only) and its GObject
-    # introspection stack has shifted enough to trip up pywebview's GTK
-    # backend; 22.04 is the well-trodden combination for this dependency.
+    # Built on the oldest runner that has WebKitGTK 4.1, so the binary's glibc requirement stays low.
     runs-on: ubuntu-22.04
     if: github.event_name != 'create' || github.event.ref_type == 'branch'
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install pywebview's GTK/WebKit build dependencies
+      - name: Install the window's GTK/WebKit libraries
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1 \
-            libgirepository1.0-dev libcairo2-dev pkg-config
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev xvfb
 
-      - uses: actions/setup-python@v5
+      - uses: actions/cache@v4
         with:
-          python-version: "3.13"
+          path: .deps
+          key: linux-deps-${{ hashFiles('native/cmake/Deps.cmake') }}
+
+      - name: Configure
+        run: |
+          cmake -S native -B build -DCMAKE_BUILD_TYPE=Release -DBINDER_STATIC_DEPS=ON \
+            -DFETCHCONTENT_BASE_DIR="${{ github.workspace }}/.deps"
 
       - name: Build
-        run: bash app/packaging/build-linux.sh
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: xvfb-run -a ctest --test-dir build --output-on-failure
+
+      # Running the app needs GTK 3 and WebKitGTK 4.1 installed (libwebkit2gtk-4.1-0 on Debian/Ubuntu).
+      - name: Package
+        run: |
+          cmake --install build --component binder --prefix dist
+          cd dist
+          zip -ry ../Binder-linux.zip Binder
 
       - uses: actions/upload-artifact@v4
         with:
           name: Binder-linux
-          path: app/dist/Binder-linux.zip
+          path: Binder-linux.zip
           if-no-files-found: error
 
   android:

@@ -90,7 +90,7 @@ bool exists(const fs::path& db_path) {
 // ============================================================================
 Reader::Reader(const fs::path& db_path) {
     // SQLITE_OPEN_READONLY: an accidental write raises instead of mutating a catalog this side only reads.
-    if (sqlite3_open_v2(db_path.string().c_str(), &db_, SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, nullptr) != SQLITE_OK) {
+    if (sqlite3_open_v2(db_path.u8string().c_str(), &db_, SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, nullptr) != SQLITE_OK) {
         std::string msg = db_ ? sqlite3_errmsg(db_) : "out of memory";
         sqlite3_close(db_);
         db_ = nullptr;
@@ -186,7 +186,7 @@ std::int64_t Reader::count() {
 // ============================================================================
 Writer::Writer(const fs::path& db_path) {
     if (db_path.has_parent_path()) fs::create_directories(db_path.parent_path());
-    if (sqlite3_open_v2(db_path.string().c_str(), &db_, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nullptr) != SQLITE_OK) {
+    if (sqlite3_open_v2(db_path.u8string().c_str(), &db_, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nullptr) != SQLITE_OK) {
         std::string msg = db_ ? sqlite3_errmsg(db_) : "out of memory";
         sqlite3_close(db_);
         db_ = nullptr;

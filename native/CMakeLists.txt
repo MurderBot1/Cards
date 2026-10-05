@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.18)
-project(binder_native LANGUAGES CXX)
+project(binder_native VERSION 1.0.0 LANGUAGES CXX)
+if(WIN32)
+    enable_language(RC)  # the app icon
+endif()
 
 # Superbuild for Binder's C++ modules (cardvec/cardnet are the older ones and
 # stay standalone-buildable). Each module is a small library with its own
@@ -59,3 +62,6 @@ if(BINDER_WITH_VIEW)
 endif()
 
 add_subdirectory(binder)
+if(ANDROID)
+    add_subdirectory(binder_android)  # the JNI library MainActivity loads (there's no desktop executable here)
+endif()

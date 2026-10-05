@@ -7,19 +7,12 @@
 #include <iostream>
 #include <thread>
 
-#include "api.hpp"
-#include "cardhttp/server.hpp"
+#include "app.hpp"
 #include "cardlog/cardlog.hpp"
 #include "cardpaths/cardpaths.hpp"
-#ifdef BINDER_HAVE_ONNX
-#include "cardonnx/onnx_models.hpp"
-#endif
 #ifdef BINDER_HAVE_VIEW
 #include "cardview/view.hpp"
 #endif
-#include "cardscan/model_source.hpp"
-#include "cardscan/pipeline_engine.hpp"
-#include "cardstore/store.hpp"
 
 namespace {
 
@@ -92,8 +85,9 @@ int main(int argc, char** argv) {
     cardpaths::ensure_dirs(paths);
 
     // A packaged build has no console, so everything worth knowing at startup also goes to startup.log.
+    auto print = [](const std::string& message) { std::cout << message << std::endl; };
     auto status = [&](const std::string& message) {
-        std::cout << message << std::endl;
+        print(message);
         cardlog::append_line(paths.startup_log, cardlog::timestamp() + " " + message);
     };
 
@@ -105,33 +99,8 @@ int main(int argc, char** argv) {
     }
     cardpaths::ensure_bundled_catalog(paths);
 
-    cardstore::Store store(paths.db_path);
-    store.ensure_exists();
-
-    // Recognition reads the catalog and models from the data directory. Models that aren't there yet (or aren't
-    // compiled into this build) just skip their pipeline stage. Load them now, in the background, rather than on
-    // whichever scan request happens to need them first.
-#ifdef BINDER_HAVE_ONNX
-    using Models = cardonnx::OnnxModelSource;
-#else
-    using Models = cardscan::DataDirModelSource;  // built without ONNX Runtime: detector/OCR/embedder unavailable
-#endif
-    cardscan::PipelineEngine engine(paths.data_dir / cardscan::kCatalogFile, std::make_unique<Models>(paths.data_dir),
-                                    [&](const std::string& m) { status("[scanner] " + m); });
-    std::thread([&engine] { engine.warm_up(); }).detach();
-
-    cardhttp::Server server;
-    cardlog::RotatingLog api_log(paths.log_dir / "api.log");
-    server.on_access([&api_log](const cardhttp::AccessLogEntry& e) {
-        if (e.path.rfind("/api/", 0) != 0) return;  // only API traffic, not the static frontend
-        char duration[32];
-        std::snprintf(duration, sizeof(duration), "%.1f", e.duration_ms);
-        api_log.write(e.method + " " + e.path + (e.query_string.empty() ? "" : "?" + e.query_string) + " -> " +
-                      std::to_string(e.status) + " (" + duration + "ms) from " + e.remote_addr);
-    });
-
-    binder::ApiContext ctx{store, engine, {}, paths.frontend_dir};
-    binder::register_routes(server, ctx);
+    binder::App app({paths, print, {}});  // the app writes its own messages to startup.log
+    app.warm_up_in_background();
 
     // Window mode (the default) serves on localhost only, on a free port unless one was asked for; --headless
     // serves the whole LAN on a fixed port instead.
@@ -139,9 +108,9 @@ int main(int argc, char** argv) {
     int port = args.port;
     bool bound;
     if (args.headless || args.port_given) {
-        bound = server.bind(host, port);
+        bound = app.bind(host, port);
     } else {
-        port = server.bind_any_port(host);
+        port = app.bind_any_port(host);
         bound = port > 0;
     }
     if (!bound) {
@@ -154,19 +123,19 @@ int main(int argc, char** argv) {
         status("Binder running headless on http://0.0.0.0:" + std::to_string(port) +
                " — other devices on this network can connect using this machine's LAN IP. "
                "This exposes the API to your whole LAN; only do this on networks you trust.");
-        server.listen_after_bind();
+        app.serve();
         return 0;
     }
 
 #ifdef BINDER_HAVE_VIEW
-    std::thread serving([&server] { server.listen_after_bind(); });
-    while (!server.is_running()) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    std::thread serving([&app] { app.serve(); });
+    while (!app.is_running()) std::this_thread::sleep_for(std::chrono::milliseconds(5));
     try {
         cardview::View view({"Card Master", 1200, 800, false});
         view.navigate(url);
         status("Binder running on " + url);
         view.run();  // until the window is closed
-        server.stop();
+        app.stop();
         serving.join();
         return 0;
     } catch (const std::exception& e) {
@@ -177,7 +146,7 @@ int main(int argc, char** argv) {
     }
 #else
     status("Binder running on " + url + " (built without a window; open it in a browser)");
-    server.listen_after_bind();
+    app.serve();
     return 0;
 #endif
 }

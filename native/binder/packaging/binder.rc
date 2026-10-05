@@ -1,0 +1,2 @@
+// The Windows app icon (shown on the .exe, the taskbar and in Explorer).
+IDI_ICON1 ICON "icons/icon.ico"
