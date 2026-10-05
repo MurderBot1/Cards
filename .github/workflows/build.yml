@@ -22,8 +22,42 @@ on:
   create:
 
 jobs:
+  # Gate: all three suites are dependency-light (no pytest, no network, no
+  # ML models, no ONNX Runtime), so this finishes in about a minute and
+  # every platform build below waits on it via `needs: test`.
+  test:
+    name: Test
+    runs-on: ubuntu-22.04
+    if: github.event_name != 'create' || github.event.ref_type == 'branch'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Catalog / scanner tests (Python)
+        run: python app/backend/tests/test_catalog_sqlite.py
+
+      - name: cardvec self-test (C++)
+        run: |
+          cmake -S native/cardvec -B build/cardvec \
+            -DCARDVEC_BUILD_PYTHON=OFF -DCARDVEC_BUILD_TESTS=ON
+          cmake --build build/cardvec
+          ./build/cardvec/cardvec_selftest
+
+      # The ONNX Runtime smoke test needs a runtime + model files, so only
+      # the pure-C++ half (NMS, CTC decode, geometry, DB post-process) runs.
+      - name: cardnet pure-C++ tests
+        working-directory: native/cardnet
+        run: |
+          g++ -std=c++17 -O1 -Iinclude tests/test_pure_cpp.cpp \
+            src/nms.cpp src/ctc_decode.cpp src/geometry.cpp src/db_postprocess.cpp \
+            -o "$RUNNER_TEMP/cardnet_pure_test"
+          "$RUNNER_TEMP/cardnet_pure_test"
   windows:
     name: Windows
+    needs: test
     runs-on: windows-latest
     if: github.event_name != 'create' || github.event.ref_type == 'branch'
     steps:
@@ -45,6 +79,7 @@ jobs:
 
   macos:
     name: macOS
+    needs: test
     runs-on: macos-latest
     if: github.event_name != 'create' || github.event.ref_type == 'branch'
     steps:
@@ -75,6 +110,7 @@ jobs:
 
   linux:
     name: Linux
+    needs: test
     # 24.04's repos dropped gir1.2-webkit2-4.0 (4.1 only) and its GObject
     # introspection stack has shifted enough to trip up pywebview's GTK
     # backend; 22.04 is the well-trodden combination for this dependency.
@@ -105,6 +141,7 @@ jobs:
 
   android:
     name: Android
+    needs: test
     runs-on: ubuntu-latest
     if: github.event_name != 'create' || github.event.ref_type == 'branch'
     steps:
