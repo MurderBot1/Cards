@@ -33,13 +33,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-
-      - name: Catalog / scanner tests (Python)
-        run: python app/backend/tests/test_catalog_sqlite.py
-
       # System OpenCV + SQLite keep this fast; without them CMake builds a minimal
       # OpenCV from source (see native/cmake/Deps.cmake), which is what the platforms
       # without a system copy do.
@@ -220,3 +213,45 @@ jobs:
           name: Binder-android-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+  # Publishes the finished builds to a GitHub release, once all four platforms have built (and passed their tests):
+  #   - pushing a tag like v1.2.0 creates a normal release for that tag
+  #   - every push to main refreshes the rolling "latest" pre-release with that commit's builds
+  # Branch creations and manual runs build and upload artifacts but don't publish.
+  release:
+    name: Release
+    needs: [windows, macos, linux, android]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    permissions:
+      contents: write  # create the release and its tag
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts  # one folder per artifact
+
+      - name: Collect the release files
+        run: |
+          mkdir release
+          cp artifacts/Binder-windows/Binder-windows.zip release/
+          cp artifacts/Binder-macos-arm64/Binder-macos-arm64.zip release/
+          cp artifacts/Binder-linux/Binder-linux.zip release/
+          cp artifacts/Binder-android-debug/app-debug.apk release/Binder-android-debug.apk
+          cd release
+          sha256sum * > SHA256SUMS.txt
+          ls -l
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            gh release create "${GITHUB_REF_NAME}" release/* \
+              --title "Binder ${GITHUB_REF_NAME}" --generate-notes
+          else
+            # replace the previous rolling release (and its tag) with this commit's builds
+            gh release delete latest --cleanup-tag --yes || true
+            gh release create latest release/* --prerelease --target "${GITHUB_SHA}" \
+              --title "Latest build (main)" \
+              --notes "Automated build of ${GITHUB_SHA} from \`main\`: Windows, macOS (Apple Silicon, unsigned), Linux and an unsigned Android debug APK. See BUILDING.md for what each needs to run."
+          fi

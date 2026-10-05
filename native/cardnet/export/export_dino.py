@@ -1,13 +1,16 @@
 """
 export_dino.py
 -----------------------------------------------------------------
-One-time dev step: exports DINOv2 (dinov2_vits14, the same torch.hub
-model scanner.py used before switching to cardnet) to ONNX, for
-native/cardnet's DinoEmbedder. Not part of the app's runtime and not
-bundled into a packaged build — same role as build_scanner_models.py.
+One-time dev step: exports DINOv2 (dinov2_vits14, from torch.hub) to ONNX,
+for native/cardnet's DinoEmbedder. Not part of the app's runtime and not
+bundled into a packaged build — this is the one thing in the repo that needs
+Python, because converting a trained PyTorch model needs PyTorch.
 
     pip install torch
-    python export_dino.py --output ../../app/backend/data/dinov2_vits14.onnx
+    python export_dino.py --output <data dir>/dinov2_vits14.onnx
+
+<data dir> is Binder's data directory — the one next to cards.sqlite3 (see
+BUILDING.md at the repo root).
 
 Known gotcha: torch.hub's DINOv2 implementation uses xFormers' fused
 attention kernels when xFormers is importable, and those don't always
@@ -29,7 +32,7 @@ def main():
     parser.add_argument("--opset", type=int, default=17)
     args = parser.parse_args()
 
-    print("Loading dinov2_vits14 via torch.hub (same model scanner.py used before)...")
+    print("Loading dinov2_vits14 via torch.hub...")
     model = torch.hub.load("facebookresearch/dinov2", "dinov2_vits14")
     model.eval()
 

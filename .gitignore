@@ -1,17 +1,20 @@
-build
-dist
-__pycache__
-app/venv
-app/backend/data
-app/backend/logs
-app/backend/db.json
+# CMake / build output
+build/
+build-*/
+dist/
+/.deps/
+CMakeUserPresets.json
 
-# Android: Gradle output, local SDK path, and the two directories
-# app/build.gradle.kts's Copy tasks (re)generate from app/backend and
-# the repo-root frontend on every build — not source, don't commit.
+# Android: Gradle and CMake output, local SDK path, and the directory
+# app/build.gradle.kts's Copy task regenerates from app/ on every build —
+# not source, don't commit.
 android/.gradle
+android/.cxx
+android/app/.cxx
 android/local.properties
+android/app/build
 android/app/src/main/assets/frontend
-android/app/src/main/python/app.py
-android/app/src/main/python/scanner.py
-android/app/src/main/python/paths.py
+
+# Local card catalog / models while developing (the app's data directory is per-user,
+# but it's easy to point binder-catalog at a folder inside the checkout)
+/data/

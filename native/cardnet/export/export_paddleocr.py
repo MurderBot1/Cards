@@ -16,7 +16,7 @@ do for you sight-unseen, since PaddleOCR 3.x's model cache location and
 folder-naming convention are internal, version-sensitive details of
 whatever paddleocr/paddlex version is installed:
 
-  1. Run the exact PaddleOCR(...) call from scanner.py's _get_ocr() once
+  1. Run the PaddleOCR(...) call the app used to make (English, with its default detection and recognition models) once
      (lang="en", use_textline_orientation=True) — its first run downloads
      the det+rec models and logs where to.
   2. Look for two directories, one per model, generally under something
@@ -32,7 +32,7 @@ Usage:
     python export_paddleocr.py \\
         --det-model-dir /path/to/det_infer_dir \\
         --rec-model-dir /path/to/rec_infer_dir \\
-        --output-dir ../../app/backend/data
+        --output-dir <data dir>
 
 Writes <output-dir>/ocr_det.onnx and <output-dir>/ocr_rec.onnx, and
 copies this repo's own assets/en_dict.txt to <output-dir>/ocr_dict.txt

@@ -1,19 +1,13 @@
 # cardnet
 
-ONNX Runtime-backed replacements for the three ML frameworks Binder's
-scanning pipeline depended on that have no supported Android build path:
-**ultralytics** (YOLOv8 card detection), **torch.hub** (DINOv2 art-crop
-embedding), and **paddleocr**/**paddlepaddle** (text detection +
-recognition). Each keeps using its own already-trained model — nothing
-is retrained here — just exported to ONNX once and run through [ONNX
-Runtime](https://onnxruntime.ai/), which ships an official Mobile build
-with Android support (NNAPI/XNNPACK execution providers) that those
-three frameworks don't have.
+Runs Binder's three trained models through [ONNX Runtime](https://onnxruntime.ai/): **YOLOv8** card detection,
+**DINOv2** art-crop embedding, and **PaddleOCR** text detection + recognition. Each uses its own already-trained model —
+nothing is retrained here — exported to ONNX once (see "Exporting the models") and run on ONNX Runtime, which ships an
+official build for every platform Binder targets, Android included (NNAPI/XNNPACK execution providers).
 
-This is the one piece of Binder's native code that leans on a
-third-party library rather than being from-scratch (unlike
-`native/cardvec`) — see "Why ONNX Runtime, not hand-written kernels?"
-below.
+This is the one piece of Binder's native code that leans on a third-party library rather than being from-scratch
+(unlike `native/cardvec`) — see "Why ONNX Runtime, not hand-written kernels?" below. `native/cardonnx` adapts it to the
+scanner's backend interfaces.
 
 ## What's actually from scratch here
 
@@ -47,78 +41,48 @@ has and hasn't been checked against the real trained models.
 ```
 include/cardnet/          public C++ API
 src/                       implementation (see above)
-python/bindings.cpp        pybind11 module: YoloDetector, DinoEmbedder, OcrPipeline
-export/                    one-time dev scripts: framework model -> ONNX
+export/                    one-time developer scripts: trained model -> ONNX  (the only Python in the repo)
 assets/en_dict.txt         PaddleOCR's English CTC character dictionary
-tests/                     test_pure_cpp.cpp (no ORT needed), test_ort_smoke.cpp (needs ORT)
-CMakeLists.txt             builds cardnet_core (+ optionally the Python module and/or tests)
-pyproject.toml             scikit-build-core config for `pip install .`
+tests/                     test_pure_cpp.cpp (no ORT needed), test_ort_smoke.cpp (needs ORT + a tiny model file)
+CMakeLists.txt             builds cardnet_core (+ the tests with -DCARDNET_BUILD_TESTS=ON)
 ```
 
 ## Exporting the models (one-time, per model)
 
-Run these on a machine with the *original* framework installed (same as
-`build_scanner_models.py` already required torch/ultralytics) — they are
-dev-only steps, not part of the app's runtime:
+This is the one step that can't be done in C++: converting a trained PyTorch / Ultralytics / PaddleOCR model into an
+ONNX file needs that framework itself. The scripts in `export/` are developer-only tooling, run once on a machine with
+the original framework installed — they are not part of the app, its build, or its tests:
 
 ```
-python export/export_dino.py   --output backend/data/dinov2_vits14.onnx
-python export/export_yolo.py   --weights backend/data/yolo_card_detector.pt \
-                                --output backend/data/yolo_card_detector.onnx
-python export/export_paddleocr.py --det-model-dir <...> --rec-model-dir <...> \
-                                   --output-dir backend/data
+pip install torch                 # export_dino.py
+python export/export_dino.py   --output <data dir>/dinov2_vits14.onnx
+pip install ultralytics           # export_yolo.py
+python export/export_yolo.py   --weights <data dir>/yolo_card_detector.pt --output <data dir>/yolo_card_detector.onnx
+pip install paddleocr             # export_paddleocr.py
+python export/export_paddleocr.py --det-model-dir <...> --rec-model-dir <...> --output-dir <data dir>
 ```
 
-Each script's own docstring has the full details, including
-`export_paddleocr.py`'s note on locating PaddleOCR's cached model
-directories (its one step that can't be scripted sight-unseen, since
-that cache path is an internal, version-sensitive detail of whatever
-paddleocr/paddlex version is installed).
+`<data dir>` is Binder's data directory (see [BUILDING.md](../../BUILDING.md)). Each script's own docstring has the full
+details, including `export_paddleocr.py`'s note on locating PaddleOCR's cached model directories (an internal,
+version-sensitive detail of whichever paddleocr/paddlex version is installed).
 
-All five output files (`dinov2_vits14.onnx`, `yolo_card_detector.onnx` +
-its `.names.json`, `ocr_det.onnx`, `ocr_rec.onnx`, `ocr_dict.txt`) land
-in `backend/data/` alongside `cards.duckdb`/`card-vectors.cvi` — the
-existing "developer builds these once, ships them with the packaged app
-via `packaging/bundled_data/`" convention (see `app/BUILD.md`).
+The five output files (`dinov2_vits14.onnx`, `yolo_card_detector.onnx` + its `.names.json`, `ocr_det.onnx`,
+`ocr_rec.onnx`, `ocr_dict.txt`) land next to `cards.sqlite3` and `card-vectors.cvi`. None of them is required: without a
+model the scanner skips that stage (no detector -> contour-based card detection; no OCR -> art matching only; no
+embedder -> no art matching).
 
 ## Building
 
-### Desktop (Windows / macOS / Linux)
+Part of the app's build (`native/CMakeLists.txt`, see [BUILDING.md](../../BUILDING.md)), which downloads a prebuilt ONNX
+Runtime for the platform — `-DBINDER_WITH_ONNX=OFF` builds without it. Standalone, point CMake at an extracted
+[ONNX Runtime release](https://github.com/microsoft/onnxruntime/releases) (`<root>/include` and `<root>/lib`):
 
-1. Download an ONNX Runtime release for your platform from
-   [github.com/microsoft/onnxruntime/releases](https://github.com/microsoft/onnxruntime/releases)
-   (e.g. `onnxruntime-win-x64-<version>.zip`, `onnxruntime-osx-arm64-<version>.tgz`,
-   `onnxruntime-linux-x64-<version>.tgz`) and extract it somewhere.
-2. `pip install ./native/cardnet --config-settings=cmake.define.ONNXRUNTIME_ROOT_DIR=/path/to/onnxruntime-<platform>-<version>`
+```
+cmake -S native/cardnet -B build/cardnet -DONNXRUNTIME_ROOT_DIR=/path/to/onnxruntime-<platform>-<version> -DCARDNET_BUILD_TESTS=ON
+```
 
-That builds and installs the `cardnet` extension module, matching the
-`cardvec` install pattern already documented in `app/BUILD.md`.
-
-### Android
-
-ONNX Runtime ships an official Android build (Java/Kotlin AAR *and* a
-C/C++ package) with NNAPI and XNNPACK execution providers — see [ONNX
-Runtime's Android docs](https://onnxruntime.ai/docs/build/android.html).
-Two ways to bring cardnet along, same split as `native/cardvec`'s README:
-
-- **Plain native library, called over JNI** (no embedded CPython): fetch
-  ONNX Runtime's Android C/C++ package (or build it from source with
-  `--android` per their docs), then:
-  ```sh
-  cmake -S native/cardnet -B build-android-arm64 \
-    -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
-    -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-24 \
-    -DONNXRUNTIME_ROOT_DIR=/path/to/onnxruntime-android-<version> \
-    -DCARDNET_BUILD_PYTHON=OFF
-  cmake --build build-android-arm64
-  ```
-  Link the resulting `libcardnet_core.a` into your own JNI shared
-  library, same as `native/cardvec`'s Option A.
-- **Python module, if embedding CPython** (e.g. Chaquopy): cross-compile
-  the pybind11 module against that toolchain's cross-built CPython and
-  ONNX Runtime's Android package, analogous to `native/cardvec`'s Option
-  B — the same caveat applies: which Android Python toolchain to use
-  hasn't been decided yet for Binder.
+On Android the build in `android/` fetches ONNX Runtime's official AAR (headers + one `libonnxruntime.so` per ABI) and
+links against it; Gradle packages the same release's library into the APK.
 
 ## Why ONNX Runtime, not hand-written kernels?
 
@@ -146,8 +110,10 @@ model files available to test against:
 - `tests/test_ort_smoke.cpp`: `OrtSession` end-to-end (load a model, bind
   an input tensor, run, extract outputs, surface errors as exceptions)
   against a real ONNX Runtime build and a tiny hand-built ONNX model
-  (a single MatMul+Add), checked against the hand-computed expected
-  output.
+  (a single MatMul+Add; takes the model path as an argument, so it is not part of `ctest`).
+- `native/cardonnx/tests`: `DinoEmbedder` and the whole recognition pipeline against a real ONNX Runtime with a
+  hand-assembled ONNX graph (`ReduceMean`, whose output is the per-channel mean of the normalized image — computable
+  by hand), end to end through the data directory.
 
 What is **not** yet validated, and needs a developer with the actual
 exported models to check: that `yolo_detector.cpp`'s assumed

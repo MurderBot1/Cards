@@ -2,15 +2,15 @@
 export_yolo.py
 -----------------------------------------------------------------
 One-time dev step: exports the trained YOLOv8 card detector
-(backend/data/yolo_card_detector.pt) to ONNX for native/cardnet's
+(<data dir>/yolo_card_detector.pt) to ONNX for native/cardnet's
 YoloDetector, and writes its class-id -> game-name mapping to a sidecar
 JSON file. cardnet::YoloDetector only knows about integer class ids —
-scanner.py maps those back to "mtg"/"pokemon"/"yugioh" using this file,
+the app maps those back to "mtg"/"pokemon"/"yugioh" using this file,
 same information ultralytics' `model.names` carried before.
 
     pip install ultralytics
-    python export_yolo.py --weights ../../app/backend/data/yolo_card_detector.pt \\
-        --output ../../app/backend/data/yolo_card_detector.onnx
+    python export_yolo.py --weights <data dir>/yolo_card_detector.pt \\
+        --output <data dir>/yolo_card_detector.onnx
 """
 import argparse
 import json

@@ -9,8 +9,8 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 # ---------------------------------------------------------------------------
-# Core library: no Python dependency at all, so this half cross-compiles for
-# Android with nothing but the NDK's own clang (see README.md).
+# Core library: no dependencies at all, so it cross-compiles for Android with
+# nothing but the NDK's own clang (see README.md).
 # ---------------------------------------------------------------------------
 add_library(cardvec_core STATIC
     src/flat_index.cpp
@@ -40,53 +40,16 @@ find_package(Threads REQUIRED)
 target_link_libraries(cardvec_core PUBLIC Threads::Threads)
 
 if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    # Since Python 3.8, Windows no longer searches PATH for a C extension
-    # module's dependent DLLs at import time (only the app/system32/
-    # add_dll_directory() locations) — so a MinGW-built module must not
-    # depend on MinGW's own runtime DLLs (libstdc++-6.dll, libgcc_s_seh-1.dll,
-    # libwinpthread-1.dll) being reachable at all; statically linking them
-    # in is the standard fix. Irrelevant for MSVC/clang builds.
+    # A MinGW-built program shouldn't depend on MinGW's own runtime DLLs
+    # (libstdc++-6.dll, libgcc_s_seh-1.dll, libwinpthread-1.dll) being
+    # reachable on the user's machine; statically linking them in is the
+    # standard fix. Irrelevant for MSVC/clang builds.
     target_link_options(cardvec_core PUBLIC -static-libgcc -static-libstdc++ -static -lwinpthread)
 endif()
 
 # ---------------------------------------------------------------------------
-# Python bindings (pybind11). Default ON for desktop builds; when
-# cross-compiling for Android you almost always want this OFF (see
-# README.md) unless CARDVEC_PYTHON_EXECUTABLE points at a cross-built
-# CPython (e.g. Chaquopy's), in which case leave it ON.
-# ---------------------------------------------------------------------------
-option(CARDVEC_BUILD_PYTHON "Build the pybind11 Python extension module" ON)
-if(CARDVEC_BUILD_PYTHON)
-    if(NOT DEFINED Python3_EXECUTABLE AND DEFINED CARDVEC_PYTHON_EXECUTABLE)
-        set(Python3_EXECUTABLE "${CARDVEC_PYTHON_EXECUTABLE}")
-    endif()
-    find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module)
-
-    find_package(pybind11 CONFIG QUIET)
-    if(NOT pybind11_FOUND)
-        execute_process(
-            COMMAND "${Python3_EXECUTABLE}" -m pybind11 --cmakedir
-            OUTPUT_VARIABLE _pybind11_cmake_dir
-            OUTPUT_STRIP_TRAILING_WHITESPACE
-            RESULT_VARIABLE _pybind11_find_result
-        )
-        if(NOT _pybind11_find_result EQUAL 0)
-            message(FATAL_ERROR
-                "pybind11 not found. Install it for ${Python3_EXECUTABLE} with "
-                "`pip install pybind11`, or set -Dpybind11_DIR=... yourself.")
-        endif()
-        list(APPEND CMAKE_PREFIX_PATH "${_pybind11_cmake_dir}")
-        find_package(pybind11 CONFIG REQUIRED)
-    endif()
-
-    pybind11_add_module(cardvec python/bindings.cpp)
-    target_link_libraries(cardvec PRIVATE cardvec_core)
-endif()
-
-# ---------------------------------------------------------------------------
-# Plain C++ sanity test (no Python involved) — useful when cross-compiling
-# for Android to smoke-test the core lib on-device/on-emulator without a
-# Python runtime in the loop at all.
+# Plain C++ self-test — also useful when cross-compiling for Android, to
+# smoke-test the core lib on a device/emulator.
 # ---------------------------------------------------------------------------
 option(CARDVEC_BUILD_TESTS "Build the standalone C++ self-test executable" OFF)
 if(CARDVEC_BUILD_TESTS)

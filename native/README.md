@@ -15,7 +15,12 @@ Each concern is its own small library with its own tests, in the same style as
 | `cardscan` | recognition behind an `Engine` interface: OpenCV image ops + the identify() pipeline over small detector/OCR/embedder/index interfaces | `scanner.py` |
 | `cardonnx` | ONNX Runtime-backed detector / OCR / embedder (via `cardnet`), loaded from the data directory | `cardnet.*` calls in `scanner.py` |
 | `cardview` | the native window around the system web view (WebKitGTK / WKWebView / WebView2), via `webview/webview` | pywebview |
-| `binder` | the app: wires the modules together, `/api/*` routes | `app.py` |
+| `cardfetch` | HTTP client (libcurl), on-disk cache, streaming gzipped-JSONL reader — for the catalog builder | `requests` / the cache helpers in `build_scanner_models.py` |
+| `cardingest` | Scryfall / PokemonTCG / YGOPRODeck bulk data -> catalog rows | `ingest_mtg` / `ingest_pokemon` / `ingest_yugioh` |
+| `cardvectors` | image download, batched embedding, crash-safe vector-index building | `download_images` / `build_vectors` |
+| `catalogtool` | the `binder-catalog` executable that runs the above | `build_scanner_models.py` |
+| `binder` | the app: `binder::App` (store + engine + server + `/api/*` routes), `main()` and the packaging | `app.py` |
+| `binder_android` | the JNI library the Android app loads | Chaquopy + `android_main.py` |
 | `cardvec`, `cardnet` | vector index, detection/OCR/embedding (ONNX Runtime) | faiss, ultralytics, paddleocr, torch |
 | `cardtest` | tiny header-only test helpers | — |
 
@@ -31,20 +36,19 @@ ctest --test-dir build/native --output-on-failure
 Run the app (the frontend is found in the repo automatically):
 
 ```
-build/native/binder/binder                  # opens the window
-build/native/binder/binder --headless       # no window: serve the LAN on port 5000 instead
+build/native/bin/binder                  # opens the window
+build/native/bin/binder --headless       # no window: serve the LAN on port 5000 instead
 ```
 
 The window needs the platform's web view: on Linux, `libgtk-3-dev` and `libwebkit2gtk-4.1-dev` to build and
 WebKitGTK at runtime; configure with `-DBINDER_WITH_VIEW=OFF` to build without it (the app then just serves).
 The `cardview` test opens a real window, so under CI it runs inside `xvfb-run`; with no display it's skipped.
 
-Dependencies (nlohmann/json, cpp-httplib, and where there's no system copy SQLite and a
-minimal static OpenCV) are fetched at configure time and pinned in `cmake/Deps.cmake`. With
-a fetched OpenCV, executables land in `<build>/bin/`.
+Dependencies (nlohmann/json, cpp-httplib, webview, ONNX Runtime, and where there's no system copy SQLite and a
+minimal static OpenCV) are fetched at configure time and pinned in `cmake/Deps.cmake`. Executables land in `<build>/bin/`.
+Options, packaging and everything else about building is in [BUILDING.md](../BUILDING.md).
 
-`cardvec` and `cardnet` are built by this superbuild too (their Python bindings are not — those
-are the pip packages). `cardnet` needs ONNX Runtime, which is downloaded for your platform at
+`cardvec` and `cardnet` are built by this superbuild too. `cardnet` needs ONNX Runtime, which is downloaded for your platform at
 configure time; pass `-DBINDER_WITH_ONNX=OFF` to build without it, in which case scans skip the
 detector / OCR / embedder stages and answer from whatever the catalog + vector index can.
 
