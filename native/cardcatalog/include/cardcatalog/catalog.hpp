@@ -97,6 +97,13 @@ public:
     // (vector_idx, uid) pairs, in one transaction.
     void set_vector_indexes(const std::vector<std::pair<std::int64_t, std::string>>& pairs);
     void set_image_path(const std::string& uid, const std::string& image_path);
+    void set_image_paths(const std::vector<std::pair<std::string, std::string>>& uid_and_path);  // one transaction
+
+    // Rows with a source image URL but no local image yet: (uid, game, image_url). Optionally one game only.
+    struct ImageToFetch {
+        std::string uid, game, image_url;
+    };
+    std::vector<ImageToFetch> cards_needing_images(const std::string& game = "");
 
     // Rows with an image but no vector yet: (uid, image_path). Optionally one game only.
     std::vector<std::pair<std::string, std::string>> cards_needing_vectors(const std::string& game = "");
@@ -105,6 +112,8 @@ public:
     // single self-contained file. It gets *shipped* (installer, device), and a stray -wal can truncate
     // it or make a read-only open fail outright.
     void finalize();
+
+    std::int64_t count();
 
     sqlite3* native_handle() { return db_; }
 

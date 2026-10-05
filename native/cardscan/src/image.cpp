@@ -55,6 +55,17 @@ std::optional<Image> decode_image(const std::string& bytes) {
     return from_mat(img);
 }
 
+std::optional<std::string> encode_jpeg(const Image& image, int quality) {
+    if (image.empty()) return std::nullopt;
+    std::vector<std::uint8_t> buf;
+    try {
+        if (!cv::imencode(".jpg", view(image), buf, {cv::IMWRITE_JPEG_QUALITY, quality})) return std::nullopt;
+    } catch (const cv::Exception&) {
+        return std::nullopt;
+    }
+    return std::string(buf.begin(), buf.end());
+}
+
 double blur_score(const Image& image) {
     if (image.empty()) return 0.0;
     cv::Mat bgr = view(image);

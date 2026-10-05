@@ -28,14 +28,16 @@ struct Request {
     std::map<std::string, std::string> params;  // <name> segments of the matched route pattern
     std::map<std::string, std::string> form;    // non-file fields of a multipart/form-data body
     std::map<std::string, UploadedFile> files;  // file parts, by field name
+    std::map<std::string, std::string> headers;  // request headers, names lower-cased
 };
 
 struct Response {
     int status = 200;
     std::string body;
     std::string content_type = "application/json";
+    std::map<std::string, std::string> headers;  // extra response headers (e.g. Location for a redirect)
 
-    static Response json(int status, std::string body) { return {status, std::move(body), "application/json"}; }
+    static Response json(int status, std::string body) { return {status, std::move(body), "application/json", {}}; }
 };
 
 using Handler = std::function<Response(const Request&)>;

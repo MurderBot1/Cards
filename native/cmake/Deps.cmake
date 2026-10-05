@@ -79,9 +79,15 @@ macro(binder_use_opencv)
                         WITH_FFMPEG WITH_GSTREAMER WITH_IPP WITH_ITT WITH_OPENCL WITH_QUIRC WITH_TIFF
                         WITH_WEBP WITH_JASPER WITH_OPENJPEG WITH_OPENEXR WITH_GDAL WITH_PROTOBUF
                         WITH_V4L WITH_GTK WITH_1394 WITH_EIGEN WITH_LAPACK WITH_OPENCLAMDBLAS
-                        WITH_OPENCLAMDFFT WITH_CUDA WITH_VTK WITH_ADE WITH_JPEG_PARALLEL)
+                        WITH_OPENCLAMDFFT WITH_CUDA WITH_VTK WITH_ADE WITH_JPEG_PARALLEL WITH_OBSENSOR)
                 set(${opt} OFF CACHE BOOL "" FORCE)
             endforeach()
+            if(ANDROID)  # only the libraries — not OpenCV's own Android SDK/sample projects or media NDK integration
+                foreach(opt BUILD_ANDROID_PROJECTS BUILD_ANDROID_EXAMPLES BUILD_ANDROID_SERVICE
+                            WITH_ANDROID_MEDIANDK WITH_ANDROID_NATIVE_CAMERA)
+                    set(${opt} OFF CACHE BOOL "" FORCE)
+                endforeach()
+            endif()
             set(OPENCV_GENERATE_PKGCONFIG OFF CACHE BOOL "" FORCE)
             set(BUILD_PROTOBUF OFF CACHE BOOL "" FORCE)
             FetchContent_Declare(opencv

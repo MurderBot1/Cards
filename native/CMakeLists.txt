@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.18)
-project(binder_native VERSION 1.0.0 LANGUAGES CXX)
+project(binder_native VERSION 1.0.0 LANGUAGES C CXX)  # C for the bundled SQLite amalgamation
 if(WIN32)
     enable_language(RC)  # the app icon
 endif()
@@ -55,6 +55,23 @@ if(BINDER_WITH_ONNX)
     endif()
     add_subdirectory(cardonnx)
 endif()
+# The catalog builder (binder-catalog): a developer tool that downloads card data and builds the catalog and
+# vector index the app reads. It needs libcurl and zlib, which Linux and macOS have; where they're missing
+# (Windows, Android) it's skipped — the catalog files it makes are portable, so build them on a machine that has them.
+option(BINDER_WITH_CATALOG_TOOL "Build the catalog builder (binder-catalog); needs libcurl and zlib" ON)
+if(BINDER_WITH_CATALOG_TOOL AND NOT ANDROID)
+    find_package(ZLIB QUIET)
+    find_package(CURL QUIET)
+    if(ZLIB_FOUND AND CURL_FOUND)
+        add_subdirectory(cardfetch)
+        add_subdirectory(cardingest)
+        add_subdirectory(cardvectors)
+        add_subdirectory(catalogtool)
+    else()
+        message(STATUS "binder-catalog skipped: needs libcurl and zlib (not found)")
+    endif()
+endif()
+
 # The native window. Needs the platform's web view libraries (WebKitGTK + GTK on Linux); configure with
 # -DBINDER_WITH_VIEW=OFF for a build without a window (binder then only serves, like --headless).
 if(BINDER_WITH_VIEW)

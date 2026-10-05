@@ -12,6 +12,10 @@ namespace cardcatalog {
 
 namespace {
 
+// How long a connection waits for a lock held by another before giving up. Without it SQLite reports "busy" at once,
+// which concurrent readers can hit on Windows, where file locking is stricter.
+constexpr int kBusyTimeoutMs = 5000;
+
 [[noreturn]] void fail(sqlite3* db, const std::string& what) {
     throw Error(what + ": " + (db ? sqlite3_errmsg(db) : "no database"));
 }
@@ -96,6 +100,7 @@ Reader::Reader(const fs::path& db_path) {
         db_ = nullptr;
         throw Error("could not open catalog " + db_path.string() + ": " + msg);
     }
+    sqlite3_busy_timeout(db_, kBusyTimeoutMs);
 }
 
 Reader::~Reader() { sqlite3_close(db_); }
@@ -192,6 +197,7 @@ Writer::Writer(const fs::path& db_path) {
         db_ = nullptr;
         throw Error("could not create catalog " + db_path.string() + ": " + msg);
     }
+    sqlite3_busy_timeout(db_, kBusyTimeoutMs);
     exec("PRAGMA journal_mode=WAL");
     exec("PRAGMA synchronous=NORMAL");
     exec(R"(
@@ -307,6 +313,35 @@ void Writer::set_image_path(const std::string& uid, const std::string& image_pat
     s.bind(1, image_path);
     s.bind(2, uid);
     s.step();
+}
+
+void Writer::set_image_paths(const std::vector<std::pair<std::string, std::string>>& uid_and_path) {
+    if (uid_and_path.empty()) return;
+    in_transaction(db_, [&] {
+        Stmt s(db_, "UPDATE cards SET image_path = ? WHERE uid = ?");
+        for (const auto& p : uid_and_path) {
+            s.bind(1, p.second);
+            s.bind(2, p.first);
+            s.step();
+            s.reset();
+        }
+    });
+}
+
+std::vector<Writer::ImageToFetch> Writer::cards_needing_images(const std::string& game) {
+    std::string sql = "SELECT uid, game, image_url FROM cards WHERE image_path IS NULL AND image_url != ''";
+    if (!game.empty()) sql += " AND game = ?";
+    Stmt s(db_, sql);
+    if (!game.empty()) s.bind(1, game);
+    std::vector<ImageToFetch> out;
+    while (s.step()) out.push_back({s.text(0), s.text(1), s.text(2)});
+    return out;
+}
+
+std::int64_t Writer::count() {
+    Stmt s(db_, "SELECT COUNT(*) FROM cards");
+    s.step();
+    return *s.integer(0);
 }
 
 std::vector<std::pair<std::string, std::string>> Writer::cards_needing_vectors(const std::string& game) {

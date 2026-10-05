@@ -46,7 +46,7 @@ jobs:
       - name: Install C++ build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libopencv-dev libsqlite3-dev libgtk-3-dev libwebkit2gtk-4.1-dev xvfb
+          sudo apt-get install -y libopencv-dev libsqlite3-dev libgtk-3-dev libwebkit2gtk-4.1-dev xvfb libcurl4-openssl-dev zlib1g-dev
 
       # Every C++ module's tests: cardvec, cardnet (pure parts), cardlog, cardpaths, cardstore, cardhttp,
       # cardauth, cardtext, cardcatalog, cardscan, cardonnx (against a real ONNX Runtime, downloaded at
@@ -82,12 +82,8 @@ jobs:
       - name: Build
         run: cmake --build build --config Release --parallel
 
-      # onnxruntime.dll has to be findable by the test executables (the installed app has it next to the .exe).
       - name: Test
-        shell: pwsh
-        run: |
-          $env:PATH = "${{ github.workspace }}\.deps\onnxruntime-src\lib;$env:PATH"
-          ctest --test-dir build -C Release --output-on-failure
+        run: ctest --test-dir build -C Release --output-on-failure
 
       - name: Package
         shell: pwsh
@@ -196,14 +192,6 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      # Chaquopy is pinned to Python 3.10 (android/app/build.gradle.kts) to
-      # match opencv-python's newest wheel in Chaquopy's own package
-      # repository — the build machine needs a matching 3.10 on PATH for
-      # Chaquopy's own tooling, separate from whatever runs the app itself.
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
-
       # The runner image already ships an SDK; setup-android's default
       # package list includes the legacy "tools" package, which sdkmanager
       # no longer has, so install nothing extra and just accept licenses
@@ -215,6 +203,13 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
+
+      # The native backend is built by CMake through the NDK, once per ABI; OpenCV is by far the slow part, and
+      # the CMake build directories hold it, so cache them.
+      - uses: actions/cache@v4
+        with:
+          path: android/app/.cxx
+          key: android-cxx-${{ hashFiles('native/cmake/Deps.cmake') }}
 
       - name: Build debug APK
         working-directory: android

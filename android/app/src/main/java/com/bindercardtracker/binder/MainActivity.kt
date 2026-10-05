@@ -16,23 +16,20 @@ import android.widget.ProgressBar
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import com.chaquo.python.Python
 import java.io.File
 
 /**
- * Android's replacement for pywebview: a native WebView pointed at the
- * same Flask backend the desktop build runs (see
- * android/app/src/main/python/android_main.py), instead of a
- * desktop-only window shell that has no Android build.
+ * The Android counterpart of the desktop window: a native WebView pointed at the same C++ backend the desktop
+ * app runs (see [NativeBackend]), serving the same frontend over localhost.
  */
 class MainActivity : AppCompatActivity() {
 
     companion object {
-        private const val PORT = 5000
-        private const val SERVER_URL = "http://127.0.0.1:$PORT/"
-        private const val MAX_LOAD_RETRIES = 40 // ~10s at 250ms apart — generous for a cold ONNX Runtime warm_up()
+        private const val MAX_LOAD_RETRIES = 40 // ~10s at 250ms apart
         private const val RETRY_DELAY_MS = 250L
     }
+
+    private var serverUrl = ""
 
     private lateinit var webView: WebView
     private lateinit var loadingOverlay: View
@@ -56,18 +53,23 @@ class MainActivity : AppCompatActivity() {
         }
 
         val frontendDir = extractFrontendAssets()
-        startBackend(frontendDir)
+        val port = NativeBackend.start(filesDir.absolutePath, frontendDir.absolutePath, 0)
+        if (port <= 0) {
+            // Nothing to load; the reason is in logcat (tag "Binder").
+            loadingOverlay.visibility = View.GONE
+            return
+        }
+        serverUrl = "http://127.0.0.1:$port/"
         configureWebView()
         loadWhenReady()
     }
 
     /** Copies assets/frontend/ (bundled by app/build.gradle.kts's
      * copyFrontendAssets task) to a real filesystem path under this app's
-     * private storage — Android assets aren't directly openable by
-     * Python's `open()`/Flask's send_from_directory, only via
-     * AssetManager, so this makes them a normal directory paths.py and
-     * Flask can just read like any other. Cheap enough (a few small
-     * text files) to redo on every launch rather than caching. */
+     * private storage — Android assets aren't plain files the native
+     * code can open, only reachable through AssetManager, so this makes
+     * them a normal directory the C++ server can serve. Cheap enough (a
+     * few small text files) to redo on every launch rather than caching. */
     private fun extractFrontendAssets(): File {
         val dest = File(filesDir, "frontend")
         copyAssetDir("frontend", dest)
@@ -92,11 +94,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-    }
-
-    private fun startBackend(frontendDir: File) {
-        val py = Python.getInstance()
-        py.getModule("android_main").callAttr("start", filesDir.absolutePath, frontendDir.absolutePath, PORT)
     }
 
     private fun configureWebView() {
@@ -134,9 +131,8 @@ class MainActivity : AppCompatActivity() {
                 request: WebResourceRequest,
                 error: WebResourceError,
             ) {
-                // Flask is still coming up on android_main.py's background
-                // thread — retry instead of showing a dead page. See
-                // loadWhenReady().
+                // The server thread may not be accepting yet — retry instead
+                // of showing a dead page. See loadWhenReady().
                 if (request.isForMainFrame) {
                     scheduleRetry()
                 }
@@ -146,7 +142,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun loadWhenReady() {
         loadAttempts = 0
-        webView.loadUrl(SERVER_URL)
+        webView.loadUrl(serverUrl)
     }
 
     private fun scheduleRetry() {
@@ -154,7 +150,7 @@ class MainActivity : AppCompatActivity() {
         if (loadAttempts >= MAX_LOAD_RETRIES) {
             return // give up silently rather than loop forever; onReceivedError already logged it
         }
-        mainHandler.postDelayed({ webView.loadUrl(SERVER_URL) }, RETRY_DELAY_MS)
+        mainHandler.postDelayed({ webView.loadUrl(serverUrl) }, RETRY_DELAY_MS)
     }
 
     @Suppress("DEPRECATION")

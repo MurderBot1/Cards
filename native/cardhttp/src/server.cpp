@@ -1,6 +1,7 @@
 #include "cardhttp/server.hpp"
 
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <thread>
 #include <fstream>
@@ -100,6 +101,11 @@ Request convert(const httplib::Request& h, const std::vector<std::string>& names
     auto q = h.target.find('?');
     if (q != std::string::npos) r.query_string = h.target.substr(q + 1);
     for (const auto& p : h.params) r.query.emplace(p.first, p.second);
+    for (const auto& hd : h.headers) {
+        std::string name = hd.first;
+        for (char& c : name) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        r.headers.emplace(std::move(name), hd.second);
+    }
     for (size_t i = 0; i < names.size() && i + 1 < h.matches.size(); ++i) r.params[names[i]] = h.matches[i + 1];
     // httplib reports every multipart part in `files`; the text fields are the ones with no filename.
     for (const auto& f : h.files) {
@@ -187,6 +193,7 @@ void Server::route(const std::string& method, const std::string& pattern, Handle
     auto wrapped = [handler = std::move(handler), names](const httplib::Request& hreq, httplib::Response& hres) {
         Response r = handler(convert(hreq, names));
         hres.status = r.status;
+        for (const auto& [name, value] : r.headers) hres.set_header(name, value);
         hres.set_content(r.body, r.content_type);
     };
     auto& svr = impl_->svr;

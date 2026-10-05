@@ -37,6 +37,9 @@ constexpr int kWarpHeight = 1050;
 // Decodes JPEG/PNG/etc.; nullopt if the bytes aren't a readable image.
 std::optional<Image> decode_image(const std::string& bytes);
 
+// Encodes as JPEG (quality 1-100); nullopt if the image is empty or encoding fails.
+std::optional<std::string> encode_jpeg(const Image& image, int quality = 88);
+
 // Focus measure for a full frame — variance of the Laplacian, higher is sharper. Resized to a fixed
 // width first so the score is roughly comparable across camera resolutions.
 double blur_score(const Image& image);

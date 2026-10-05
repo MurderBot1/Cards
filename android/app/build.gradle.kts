@@ -1,8 +1,11 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    id("com.chaquo.python")
 }
+
+// The backend (store, card recognition, HTTP server) is C++ — native/ — built by CMake through the NDK into
+// libbinder_native.so and loaded over JNI (NativeBackend.kt). The WebView in MainActivity talks to it over
+// localhost, exactly as the desktop app's window does.
 
 android {
     namespace = "com.bindercardtracker.binder"
@@ -10,9 +13,7 @@ android {
 
     defaultConfig {
         applicationId = "com.bindercardtracker.binder"
-        // Chaquopy requires minSdk >= 24 — see native/cardnet and
-        // native/cardvec's own Android notes for the NDK-side minimum
-        // (android-24), which matches.
+        // 24 is the minimum for the NDK-side libraries (ONNX Runtime's Android package, std::filesystem).
         minSdk = 24
         targetSdk = 34
         versionCode = 1
@@ -23,6 +24,24 @@ android {
             // run on; x86_64 is for the emulator. Drop x86_64 to shrink
             // the APK once you're not testing on an emulator anymore.
             abiFilters += listOf("arm64-v8a", "x86_64")
+        }
+
+        externalNativeBuild {
+            cmake {
+                arguments += listOf(
+                    "-DANDROID_STL=c++_shared",
+                    "-DBINDER_BUILD_TESTS=OFF",
+                    "-DBINDER_WITH_VIEW=OFF",      // the WebView is the window here
+                    "-DBINDER_STATIC_DEPS=ON",     // OpenCV and SQLite are built from source, statically
+                )
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("../../native/CMakeLists.txt")
+            version = "3.22.1"
         }
     }
 
@@ -42,55 +61,8 @@ android {
     }
 }
 
-chaquopy {
-    defaultConfig {
-        // 3.10, not a newer Python, and not Chaquopy's default-by-accident:
-        // this is pinned by opencv-python. Chaquopy serves native packages
-        // from its own repository (https://chaquo.com/pypi-13.1/) rather
-        // than PyPI, and the newest opencv-python it publishes there is
-        // 4.5.1.48, whose highest wheel tag is cp310. numpy is available
-        // for 3.10 through 3.13, so cp310 is the only Python version where
-        // both resolve — and app.py/scanner.py import cv2 at module scope.
-        //
-        // Consequence for whoever builds this: Chaquopy requires a build
-        // machine Python matching the app's, so you need Python 3.10 on
-        // PATH (or set `buildPython`) even though nothing else here does.
-        version = "3.10"
-
-        pip {
-            // Pure Python — installed from PyPI as normal.
-            install("flask")
-            install("platformdirs")
-
-            // Native, from Chaquopy's own package repository.
-            install("numpy")
-            install("opencv-python")
-
-            // NOT listed, deliberately: duckdb and rapidfuzz. Neither
-            // appears in Chaquopy's native repository at any Python
-            // version and neither publishes an Android wheel, so both were
-            // removed from the app rather than worked around — the card
-            // catalog is now stdlib sqlite3 (build_scanner_models.get_db)
-            // and fuzzy title matching is stdlib difflib
-            // (scanner._title_candidates). Don't add them back here; they
-            // will not resolve.
-
-            // cardvec / cardnet: not on PyPI at all, and need a wheel
-            // cross-compiled against Chaquopy's own bundled Python — see
-            // android/README.md and native/cardvec|cardnet/README.md.
-            // Uncomment once you've built them (note cp310, matching the
-            // version pinned above):
-            // install("libs/cardvec-1.0.0-cp310-cp310-android_24_arm64_v8a.whl")
-            // install("libs/cardnet-1.0.0-cp310-cp310-android_24_arm64_v8a.whl")
-        }
-    }
-}
-
-// --- Pull in the existing frontend + backend source instead of
-//     duplicating it under android/ — see android/README.md for why
-//     these are Copy tasks rather than Chaquopy sourceSets/symlinks. ------
+// --- Pull in the existing frontend instead of duplicating it under android/. ------
 val repoRoot = rootDir.parentFile
-val backendDir = repoRoot.resolve("app/backend")
 
 tasks.register<Copy>("copyFrontendAssets") {
     from(repoRoot.resolve("app/index.html"))
@@ -99,33 +71,14 @@ tasks.register<Copy>("copyFrontendAssets") {
     into("src/main/assets/frontend")
 }
 
-tasks.register<Copy>("copyPythonBackend") {
-    // Only the three modules android_main.py actually imports — not
-    // build_scanner_models.py (a dev-only tool with its own heavy
-    // dependencies) and not data/db.json/logs/__pycache__ (gitignored,
-    // per-run state that doesn't belong in an APK).
-    from(backendDir) {
-        include("app.py", "scanner.py", "paths.py")
-    }
-    into("src/main/python")
-}
-
 tasks.named("preBuild") {
-    dependsOn("copyFrontendAssets", "copyPythonBackend")
+    dependsOn("copyFrontendAssets")
 }
 
-// preBuild.dependsOn above only sequences the two Copy tasks before the
-// build starts — it doesn't tell Gradle that specific later tasks read
-// what they wrote to disk. Chaquopy's per-variant mergeXPythonSources
-// task (reads src/main/python) and AGP's per-variant mergeXAssets task
-// (reads src/main/assets, including our frontend/ subdirectory) both do,
-// and Gradle 8.9's task-validation fails the build over that undeclared
-// dependency ("uses this output ... without declaring an explicit or
-// implicit dependency") rather than just risking wrong output — wire
-// the real dependency directly instead of relying on ordering.
-tasks.matching { it.name.endsWith("PythonSources") }.configureEach {
-    dependsOn("copyPythonBackend")
-}
+// preBuild.dependsOn above only sequences the Copy task before the build starts — it doesn't tell Gradle that
+// AGP's per-variant mergeXAssets task (reads src/main/assets, including our frontend/ subdirectory) reads what
+// it wrote to disk. Gradle 8.9's task-validation fails the build over that undeclared dependency rather than
+// just risking wrong output, so wire the real dependency directly instead of relying on ordering.
 tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach {
     dependsOn("copyFrontendAssets")
 }
@@ -134,4 +87,9 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.activity:activity-ktx:1.9.1") // registerForActivityResult
     implementation("androidx.appcompat:appcompat:1.7.0")
+
+    // The ONNX Runtime shared library the detector/OCR/embedder load. The native build links against the same
+    // release's headers and libonnxruntime.so (native/cmake/Deps.cmake downloads this AAR itself for that);
+    // this dependency is what puts the library into the APK — keep the two versions in step.
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.19.2")
 }
