@@ -1,9 +1,9 @@
 name: Build
 
-# Manual runs, tagged releases, and any newly-created branch (e.g.
-# "v1.1.1" cut off main) — these are full desktop/mobile builds
-# (PyInstaller + a Gradle/Chaquopy build), not something to run on every
-# push or PR.
+# Every push to main, manual runs, tagged releases, and any
+# newly-created branch (e.g. "v1.1.1" cut off main) — these are full
+# desktop/mobile builds (PyInstaller + a Gradle/Chaquopy build), so they
+# deliberately don't run on PRs or pushes to other branches.
 #
 # `create` fires for both new branches and new tags, and a `git push` of
 # a new tag fires `create` *and* `push` for the same ref — so every job
@@ -15,6 +15,8 @@ name: Build
 on:
   workflow_dispatch: {}
   push:
+    branches:
+      - main
     tags:
       - "v*"
   create:
