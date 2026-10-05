@@ -47,23 +47,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libopencv-dev libsqlite3-dev
 
-      # Every C++ module's tests (cardvec, cardlog, cardpaths, cardstore, cardhttp, cardauth,
-      # cardtext, cardcatalog, cardscan, and the binder API driven over real HTTP).
+      # Every C++ module's tests: cardvec, cardnet (pure parts), cardlog, cardpaths, cardstore, cardhttp,
+      # cardauth, cardtext, cardcatalog, cardscan, cardonnx (against a real ONNX Runtime, downloaded at
+      # configure time), and the binder API driven over real HTTP.
       - name: C++ module tests (ctest)
         run: |
           cmake -S native -B build/native -DCMAKE_BUILD_TYPE=Release
           cmake --build build/native --parallel
           ctest --test-dir build/native --output-on-failure
 
-      # The ONNX Runtime smoke test needs a runtime + model files, so only
-      # the pure-C++ half (NMS, CTC decode, geometry, DB post-process) runs.
-      - name: cardnet pure-C++ tests
-        working-directory: native/cardnet
-        run: |
-          g++ -std=c++17 -O1 -Iinclude tests/test_pure_cpp.cpp \
-            src/nms.cpp src/ctc_decode.cpp src/geometry.cpp src/db_postprocess.cpp \
-            -o "$RUNNER_TEMP/cardnet_pure_test"
-          "$RUNNER_TEMP/cardnet_pure_test"
   windows:
     name: Windows
     needs: test

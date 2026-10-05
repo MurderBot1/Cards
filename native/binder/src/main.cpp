@@ -10,6 +10,9 @@
 #include "cardhttp/server.hpp"
 #include "cardlog/cardlog.hpp"
 #include "cardpaths/cardpaths.hpp"
+#ifdef BINDER_HAVE_ONNX
+#include "cardonnx/onnx_models.hpp"
+#endif
 #include "cardscan/model_source.hpp"
 #include "cardscan/pipeline_engine.hpp"
 #include "cardstore/store.hpp"
@@ -102,8 +105,12 @@ int main(int argc, char** argv) {
     // Recognition reads the catalog and models from the data directory. Models that aren't there yet (or aren't
     // compiled into this build) just skip their pipeline stage. Load them now, in the background, rather than on
     // whichever scan request happens to need them first.
-    cardscan::PipelineEngine engine(paths.data_dir / cardscan::kCatalogFile,
-                                    std::make_unique<cardscan::DataDirModelSource>(paths.data_dir),
+#ifdef BINDER_HAVE_ONNX
+    using Models = cardonnx::OnnxModelSource;
+#else
+    using Models = cardscan::DataDirModelSource;  // built without ONNX Runtime: detector/OCR/embedder unavailable
+#endif
+    cardscan::PipelineEngine engine(paths.data_dir / cardscan::kCatalogFile, std::make_unique<Models>(paths.data_dir),
                                     [&](const std::string& m) { status("[scanner] " + m); });
     std::thread([&engine] { engine.warm_up(); }).detach();
 

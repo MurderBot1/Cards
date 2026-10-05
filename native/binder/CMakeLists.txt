@@ -9,6 +9,10 @@ target_link_libraries(binder_api PUBLIC cardhttp cardstore cardauth cardscan car
 
 add_executable(binder src/main.cpp)
 target_link_libraries(binder PRIVATE binder_api cardpaths cardlog Threads::Threads)
+if(TARGET cardonnx)
+    target_link_libraries(binder PRIVATE cardonnx)
+    target_compile_definitions(binder PRIVATE BINDER_HAVE_ONNX=1)
+endif()
 
 if(BINDER_BUILD_TESTS)
     add_executable(binder_api_test tests/test_api.cpp)

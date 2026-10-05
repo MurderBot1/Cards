@@ -39,4 +39,17 @@ if(BINDER_BUILD_TESTS)
 endif()
 
 add_subdirectory(cardscan)
+
+# The ONNX Runtime-backed models (YOLO detector, OCR, art embedder). Needs a prebuilt ONNX Runtime, downloaded
+# at configure time; configure with -DBINDER_WITH_ONNX=OFF to build without (scans then skip those stages).
+if(BINDER_WITH_ONNX)
+    binder_use_onnxruntime()
+    set(CARDNET_BUILD_PYTHON OFF CACHE BOOL "" FORCE)
+    set(CARDNET_BUILD_TESTS ${BINDER_BUILD_TESTS} CACHE BOOL "" FORCE)
+    add_subdirectory(cardnet)
+    if(BINDER_BUILD_TESTS)
+        add_test(NAME cardnet_pure COMMAND cardnet_pure_test)  # (the ORT smoke test needs a model file argument)
+    endif()
+    add_subdirectory(cardonnx)
+endif()
 add_subdirectory(binder)

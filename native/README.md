@@ -12,7 +12,8 @@ Each concern is its own small library with its own tests, in the same style as
 | `cardcatalog` | the SQLite catalog: schema, read-only `Reader`, bulk-ingest `Writer` | the sqlite3 code in `scanner.py` and `build_scanner_models.py` |
 | `cardhttp` | HTTP server: routes, path params, multipart, static files, access log | Flask |
 | `cardauth` | LoginServer TCP client (`LOGIN` / `REGISTER`) | `_login_server_command` |
-| `cardscan` | recognition behind an `Engine` interface: OpenCV image ops + the identify() pipeline over small detector/OCR/embedder/index interfaces | `scanner.py` *(ONNX adapters still to come)* |
+| `cardscan` | recognition behind an `Engine` interface: OpenCV image ops + the identify() pipeline over small detector/OCR/embedder/index interfaces | `scanner.py` |
+| `cardonnx` | ONNX Runtime-backed detector / OCR / embedder (via `cardnet`), loaded from the data directory | `cardnet.*` calls in `scanner.py` |
 | `binder` | the app: wires the modules together, `/api/*` routes | `app.py` |
 | `cardvec`, `cardnet` | vector index, detection/OCR/embedding (ONNX Runtime) | faiss, ultralytics, paddleocr, torch |
 | `cardtest` | tiny header-only test helpers | — |
