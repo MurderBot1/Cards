@@ -39,6 +39,14 @@ jobs:
       - name: Catalog / scanner tests (Python)
         run: python app/backend/tests/test_catalog_sqlite.py
 
+      # cardlog / cardpaths / cardstore / cardhttp / cardauth plus the binder API,
+      # driven end to end over real HTTP (see native/CMakeLists.txt).
+      - name: C++ module tests (ctest)
+        run: |
+          cmake -S native -B build/native -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/native --parallel
+          ctest --test-dir build/native --output-on-failure
+
       - name: cardvec self-test (C++)
         run: |
           cmake -S native/cardvec -B build/cardvec \
