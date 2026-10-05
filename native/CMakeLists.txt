@@ -26,5 +26,17 @@ add_subdirectory(cardpaths)
 add_subdirectory(cardstore)
 add_subdirectory(cardhttp)
 add_subdirectory(cardauth)
+add_subdirectory(cardtext)
+add_subdirectory(cardcatalog)
+
+# cardvec is the older, standalone-buildable module; here we only want its core library (the Python
+# bindings are for the pip package, built separately).
+set(CARDVEC_BUILD_PYTHON OFF CACHE BOOL "" FORCE)
+set(CARDVEC_BUILD_TESTS ${BINDER_BUILD_TESTS} CACHE BOOL "" FORCE)
+add_subdirectory(cardvec)
+if(BINDER_BUILD_TESTS)
+    add_test(NAME cardvec COMMAND cardvec_selftest)
+endif()
+
 add_subdirectory(cardscan)
 add_subdirectory(binder)

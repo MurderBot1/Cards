@@ -10,7 +10,8 @@
 #include "cardhttp/server.hpp"
 #include "cardlog/cardlog.hpp"
 #include "cardpaths/cardpaths.hpp"
-#include "cardscan/engine.hpp"
+#include "cardscan/model_source.hpp"
+#include "cardscan/pipeline_engine.hpp"
 #include "cardstore/store.hpp"
 
 namespace {
@@ -98,7 +99,12 @@ int main(int argc, char** argv) {
     cardstore::Store store(paths.db_path);
     store.ensure_exists();
 
-    cardscan::NullEngine engine("Card recognition isn't built into this binary yet.");
+    // Recognition reads the catalog and models from the data directory. Models that aren't there yet (or aren't
+    // compiled into this build) just skip their pipeline stage. Load them now, in the background, rather than on
+    // whichever scan request happens to need them first.
+    cardscan::PipelineEngine engine(paths.data_dir / cardscan::kCatalogFile,
+                                    std::make_unique<cardscan::DataDirModelSource>(paths.data_dir),
+                                    [&](const std::string& m) { status("[scanner] " + m); });
     std::thread([&engine] { engine.warm_up(); }).detach();
 
     cardhttp::Server server;

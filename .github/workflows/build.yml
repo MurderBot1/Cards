@@ -39,20 +39,21 @@ jobs:
       - name: Catalog / scanner tests (Python)
         run: python app/backend/tests/test_catalog_sqlite.py
 
-      # cardlog / cardpaths / cardstore / cardhttp / cardauth plus the binder API,
-      # driven end to end over real HTTP (see native/CMakeLists.txt).
+      # System OpenCV + SQLite keep this fast; without them CMake builds a minimal
+      # OpenCV from source (see native/cmake/Deps.cmake), which is what the platforms
+      # without a system copy do.
+      - name: Install C++ build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libopencv-dev libsqlite3-dev
+
+      # Every C++ module's tests (cardvec, cardlog, cardpaths, cardstore, cardhttp, cardauth,
+      # cardtext, cardcatalog, cardscan, and the binder API driven over real HTTP).
       - name: C++ module tests (ctest)
         run: |
           cmake -S native -B build/native -DCMAKE_BUILD_TYPE=Release
           cmake --build build/native --parallel
           ctest --test-dir build/native --output-on-failure
-
-      - name: cardvec self-test (C++)
-        run: |
-          cmake -S native/cardvec -B build/cardvec \
-            -DCARDVEC_BUILD_PYTHON=OFF -DCARDVEC_BUILD_TESTS=ON
-          cmake --build build/cardvec
-          ./build/cardvec/cardvec_selftest
 
       # The ONNX Runtime smoke test needs a runtime + model files, so only
       # the pure-C++ half (NMS, CTC decode, geometry, DB post-process) runs.
