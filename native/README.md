@@ -14,6 +14,7 @@ Each concern is its own small library with its own tests, in the same style as
 | `cardauth` | LoginServer TCP client (`LOGIN` / `REGISTER`) | `_login_server_command` |
 | `cardscan` | recognition behind an `Engine` interface: OpenCV image ops + the identify() pipeline over small detector/OCR/embedder/index interfaces | `scanner.py` |
 | `cardonnx` | ONNX Runtime-backed detector / OCR / embedder (via `cardnet`), loaded from the data directory | `cardnet.*` calls in `scanner.py` |
+| `cardview` | the native window around the system web view (WebKitGTK / WKWebView / WebView2), via `webview/webview` | pywebview |
 | `binder` | the app: wires the modules together, `/api/*` routes | `app.py` |
 | `cardvec`, `cardnet` | vector index, detection/OCR/embedding (ONNX Runtime) | faiss, ultralytics, paddleocr, torch |
 | `cardtest` | tiny header-only test helpers | — |
@@ -27,20 +28,28 @@ cmake --build build/native --parallel
 ctest --test-dir build/native --output-on-failure
 ```
 
-Run the server (frontend is found in the repo automatically):
+Run the app (the frontend is found in the repo automatically):
 
 ```
-build/native/binder/binder --port 5000      # add --headless to listen on the LAN
+build/native/binder/binder                  # opens the window
+build/native/binder/binder --headless       # no window: serve the LAN on port 5000 instead
 ```
+
+The window needs the platform's web view: on Linux, `libgtk-3-dev` and `libwebkit2gtk-4.1-dev` to build and
+WebKitGTK at runtime; configure with `-DBINDER_WITH_VIEW=OFF` to build without it (the app then just serves).
+The `cardview` test opens a real window, so under CI it runs inside `xvfb-run`; with no display it's skipped.
 
 Dependencies (nlohmann/json, cpp-httplib, and where there's no system copy SQLite and a
 minimal static OpenCV) are fetched at configure time and pinned in `cmake/Deps.cmake`. With
 a fetched OpenCV, executables land in `<build>/bin/`.
 
-`cardvec`'s core library is part of this superbuild; `cardnet` is not yet — it needs an ONNX
-Runtime download — and is still built/tested on its own. Until its adapters land, a build
-has no detector/OCR/embedder, so scans fall back to whatever the catalog + vector index can
-answer.
+`cardvec` and `cardnet` are built by this superbuild too (their Python bindings are not — those
+are the pip packages). `cardnet` needs ONNX Runtime, which is downloaded for your platform at
+configure time; pass `-DBINDER_WITH_ONNX=OFF` to build without it, in which case scans skip the
+detector / OCR / embedder stages and answer from whatever the catalog + vector index can.
+
+Trained models are not in the repo: put the exported `.onnx` files (see `cardnet/export/`) in the
+data directory next to `cards.sqlite3` and `card-vectors.cvi`.
 
 The `difflib` port and the Unicode tables in `cardtext` were checked against CPython on
 ~200,000 code points and ~8,800 string pairs; expected values in the tests come from Python.

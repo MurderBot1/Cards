@@ -52,4 +52,10 @@ if(BINDER_WITH_ONNX)
     endif()
     add_subdirectory(cardonnx)
 endif()
+# The native window. Needs the platform's web view libraries (WebKitGTK + GTK on Linux); configure with
+# -DBINDER_WITH_VIEW=OFF for a build without a window (binder then only serves, like --headless).
+if(BINDER_WITH_VIEW)
+    add_subdirectory(cardview)
+endif()
+
 add_subdirectory(binder)

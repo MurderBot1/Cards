@@ -68,9 +68,10 @@ public:
 
     // Blocks until stop(). Returns false if the port couldn't be bound.
     bool listen(const std::string& host, int port);
-    // Two-step variant: bind port 0 -> returns the chosen port (or -1), then
-    // listen_after_bind() blocks until stop().
-    int bind_any_port(const std::string& host);
+    // Two-step variants, for when something must happen between binding and serving (opening a window
+    // pointed at the port, say): bind first, then listen_after_bind() blocks until stop().
+    bool bind(const std::string& host, int port);  // false if the port couldn't be bound
+    int bind_any_port(const std::string& host);    // the chosen port, or -1
     bool listen_after_bind();
 
     void stop();

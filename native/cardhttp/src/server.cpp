@@ -1,6 +1,8 @@
 #include "cardhttp/server.hpp"
 
+#include <atomic>
 #include <chrono>
+#include <thread>
 #include <fstream>
 #include <regex>
 #include <sstream>
@@ -114,6 +116,10 @@ Request convert(const httplib::Request& h, const std::vector<std::string>& names
 struct Server::Impl {
     httplib::Server svr;
     std::function<void(const AccessLogEntry&)> access_cb;
+    // httplib only releases its listening socket when a listen loop that was running ends: a server that was
+    // bound (bind/bind_any_port) but never listened on would keep the port until the process exits.
+    std::atomic<bool> bound{false};
+    std::atomic<bool> listened{false};
 };
 
 Server::Server() : impl_(new Impl) {
@@ -164,7 +170,16 @@ Server::Server() : impl_(new Impl) {
     });
 }
 
-Server::~Server() { stop(); }
+Server::~Server() {
+    if (impl_->bound && !impl_->listened) {
+        // Release the port: run a listen loop just long enough to stop it, which makes httplib close the socket.
+        std::thread t([this] { impl_->svr.listen_after_bind(); });
+        while (!impl_->svr.is_running()) std::this_thread::yield();
+        impl_->svr.stop();
+        t.join();
+    }
+    stop();
+}
 
 void Server::route(const std::string& method, const std::string& pattern, Handler handler) {
     std::vector<std::string> names;
@@ -219,9 +234,24 @@ void Server::serve_directory(const std::string& url_prefix, const fs::path& dir)
 
 void Server::on_access(std::function<void(const AccessLogEntry&)> callback) { impl_->access_cb = std::move(callback); }
 
-bool Server::listen(const std::string& host, int port) { return impl_->svr.listen(host, port); }
-int Server::bind_any_port(const std::string& host) { return impl_->svr.bind_to_any_port(host); }
-bool Server::listen_after_bind() { return impl_->svr.listen_after_bind(); }
+bool Server::listen(const std::string& host, int port) {
+    impl_->listened = true;
+    return impl_->svr.listen(host, port);
+}
+bool Server::bind(const std::string& host, int port) {
+    bool ok = impl_->svr.bind_to_port(host, port);
+    if (ok) impl_->bound = true;
+    return ok;
+}
+int Server::bind_any_port(const std::string& host) {
+    int port = impl_->svr.bind_to_any_port(host);
+    if (port > 0) impl_->bound = true;
+    return port;
+}
+bool Server::listen_after_bind() {
+    impl_->listened = true;
+    return impl_->svr.listen_after_bind();
+}
 void Server::stop() {
     if (impl_) impl_->svr.stop();
 }

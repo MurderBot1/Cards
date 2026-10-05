@@ -121,3 +121,24 @@ macro(binder_use_onnxruntime)
         set(ONNXRUNTIME_ROOT_DIR "${onnxruntime_SOURCE_DIR}")
     endif()
 endmacro()
+
+# webview/webview: the native window + system web view (WebKitGTK / WKWebView / WebView2).
+option(BINDER_WITH_VIEW "Build the native window (cardview) and open it from binder" ON)
+macro(binder_use_webview)
+    if(NOT TARGET webview::core_static)
+        set(WEBVIEW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+        set(WEBVIEW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+        set(WEBVIEW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+        set(WEBVIEW_INSTALL_DOCS OFF CACHE BOOL "" FORCE)
+        set(WEBVIEW_INSTALL_TARGETS OFF CACHE BOOL "" FORCE)
+        set(WEBVIEW_BUILD_SHARED_LIBRARY OFF CACHE BOOL "" FORCE)
+        set(WEBVIEW_BUILD_STATIC_LIBRARY ON CACHE BOOL "" FORCE)
+        set(WEBVIEW_ENABLE_CHECKS OFF CACHE BOOL "" FORCE)
+        set(WEBVIEW_ENABLE_PACKAGING OFF CACHE BOOL "" FORCE)
+        FetchContent_Declare(webview
+            GIT_REPOSITORY https://github.com/webview/webview.git
+            GIT_TAG 0.12.0
+            GIT_SHALLOW TRUE)
+        FetchContent_MakeAvailable(webview)
+    endif()
+endmacro()

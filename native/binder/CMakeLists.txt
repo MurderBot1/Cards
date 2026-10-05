@@ -9,6 +9,17 @@ target_link_libraries(binder_api PUBLIC cardhttp cardstore cardauth cardscan car
 
 add_executable(binder src/main.cpp)
 target_link_libraries(binder PRIVATE binder_api cardpaths cardlog Threads::Threads)
+if(TARGET cardview)
+    target_link_libraries(binder PRIVATE cardview)
+    target_compile_definitions(binder PRIVATE BINDER_HAVE_VIEW=1)
+endif()
+if(WIN32)
+    # A GUI-subsystem executable, so launching it doesn't pop up a console window (errors go to startup.log).
+    set_target_properties(binder PROPERTIES WIN32_EXECUTABLE ON)
+    if(MSVC)
+        target_link_options(binder PRIVATE /ENTRY:mainCRTStartup)
+    endif()
+endif()
 if(TARGET cardonnx)
     target_link_libraries(binder PRIVATE cardonnx)
     target_compile_definitions(binder PRIVATE BINDER_HAVE_ONNX=1)

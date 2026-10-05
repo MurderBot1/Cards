@@ -165,8 +165,27 @@ int main() {
     std::thread ta([&] { a.listen_after_bind(); });
     for (int i = 0; i < 200 && !a.is_running(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
     CHECK(!b.listen("127.0.0.1", p));
+    CHECK(!b.bind("127.0.0.1", p));  // the two-step form reports it too
     a.stop();
     ta.join();
+
+    // bind() to a specific port, then serve on it
+    int free_port;
+    {
+        cardhttp::Server probe;
+        free_port = probe.bind_any_port("127.0.0.1");
+    }  // released again
+    cardhttp::Server c;
+    c.route("GET", "/x", [](const Request&) { return Response::json(200, "{\"x\":1}"); });
+    CHECK(free_port > 0);
+    CHECK(c.bind("127.0.0.1", free_port));
+    std::thread tc([&] { c.listen_after_bind(); });
+    for (int i = 0; i < 200 && !c.is_running(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    httplib::Client cc("127.0.0.1", free_port);
+    auto rc = cc.Get("/x");
+    CHECK(rc && rc->status == 200 && rc->body == "{\"x\":1}");
+    c.stop();
+    tc.join();
 
     return cardtest::finish("cardhttp");
 }
