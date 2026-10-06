@@ -40,6 +40,9 @@ build/native/bin/binder --headless                        # no window: serve the
 (Executables land in `<build>/bin/`, or `<build>/bin/Release/` with the Visual Studio generator. `RunApp.bat` does all of
 this on Windows.)
 
+`RunApp.bat` uses Visual Studio when it finds it and falls back to GCC (MinGW-w64 with Ninja or `mingw32-make` on PATH)
+otherwise; with GCC the executables land in `build\native\bin\`. The GCC path is untested in CI.
+
 `binder` options: `--headless`, `--port N` (default: any free port in window mode, 5000 with `--headless`),
 `--data-dir DIR`, `--frontend-dir DIR`. `--headless` exposes the API to your whole network — only use it on networks you
 trust.
