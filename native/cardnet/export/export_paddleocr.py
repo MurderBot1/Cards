@@ -39,6 +39,7 @@ copies this repo's own assets/en_dict.txt to <output-dir>/ocr_dict.txt
 (cardnet's OcrPipeline needs all three — see native/cardnet/README.md).
 """
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -56,8 +57,10 @@ def convert(model_dir: Path, output_file: Path):
             f"(expected {model_filename} + {params_filename} in it)"
         )
     output_file.parent.mkdir(parents=True, exist_ok=True)
-    cmd = [
-        sys.executable, "-m", "paddle2onnx",
+    # paddle2onnx 2.x is only runnable through its console script; 1.x also works as `python -m paddle2onnx`
+    script = shutil.which("paddle2onnx", path=str(Path(sys.executable).parent) + os.pathsep + os.environ.get("PATH", ""))
+    cmd = [script] if script else [sys.executable, "-m", "paddle2onnx"]
+    cmd += [
         "--model_dir", str(model_dir),
         "--model_filename", model_filename,
         "--params_filename", params_filename,
