@@ -36,6 +36,18 @@ def main():
     model = torch.hub.load("facebookresearch/dinov2", "dinov2_vits14")
     model.eval()
 
+    # DINOv2's forward takes an optional `masks` argument (None at inference). Tracing the bare model exports it as a
+    # second, required graph input, which cardnet::DinoEmbedder doesn't provide. Wrapping it gives a single-input graph.
+    class ImageOnly(torch.nn.Module):
+        def __init__(self, inner):
+            super().__init__()
+            self.inner = inner
+
+        def forward(self, x):
+            return self.inner(x)
+
+    model = ImageOnly(model).eval()
+
     # cardnet::DinoEmbedder always feeds exactly one 224x224 crop — fixed
     # shapes throughout, no dynamic axes needed.
     dummy = torch.zeros(1, 3, 224, 224, dtype=torch.float32)
