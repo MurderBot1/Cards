@@ -15,7 +15,7 @@ android/    the Android app (Kotlin + the NDK build of native/)
 
 | | Linux | macOS | Windows |
 |---|---|---|---|
-| Compiler | GCC ≥ 9 or Clang | Xcode command-line tools | Visual Studio 2022 (MSVC) |
+| Compiler | GCC ≥ 9 or Clang | Xcode command-line tools | Visual Studio 2019/2022 or Build Tools, with the "Desktop development with C++" workload |
 | CMake | ≥ 3.18 | ≥ 3.18 | ≥ 3.18 |
 | Window | `libgtk-3-dev libwebkit2gtk-4.1-dev` | built in | WebView2 runtime (ships with Windows 10/11) |
 | Catalog tool | `libcurl4-openssl-dev zlib1g-dev` | built in | downloaded and built for you |
