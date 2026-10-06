@@ -77,7 +77,9 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
           pip install torch==2.4.1 --index-url https://download.pytorch.org/whl/cpu
-          pip install onnx "paddle2onnx<2"
+          pip install onnx paddle2onnx
+          # paddle2onnx 1.x imports PaddlePaddle itself (2.x doesn't); install it only if this version needs it
+          python -c "import paddle2onnx" 2>/dev/null || { pip install "numpy<2" paddlepaddle==2.6.2 "paddle2onnx<2"; }
           mkdir -p models work
           python native/cardnet/export/export_dino.py --output models/dinov2_vits14.onnx
 
