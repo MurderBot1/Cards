@@ -21,3 +21,6 @@ directory).
 here (except this README) into the app as `data/` (`Binder/data` on Windows and Linux, `Binder.app/Contents/Resources/data`
 on macOS). On first launch the app copies it into the per-user data directory — once, and never over an existing catalog —
 because the install folder can be read-only (Program Files, a signed `.app`).
+
+CI fills this folder with `dinov2_vits14.onnx`, `ocr_det.onnx`, `ocr_rec.onnx` and `ocr_dict.txt` before it builds the desktop
+apps (the `Models` job), so the release zips include them. Don't commit those files here.

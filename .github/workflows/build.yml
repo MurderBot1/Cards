@@ -51,6 +51,67 @@ jobs:
           # the window test needs a display
           xvfb-run -a ctest --test-dir build/native --output-on-failure
 
+  # The ONNX models the scanner loads (native/cardnet/export has the converters): the DINOv2 art embedder and
+  # the PaddleOCR text detector/recognizer. Converting them needs PyTorch / paddle2onnx, so this is the one job that
+  # uses Python; the desktop jobs below download its result and ship it inside the zips. (The card detector isn't
+  # here: it needs a trained YOLO checkpoint, which doesn't exist yet. Without it the app finds cards by contours.)
+  models:
+    name: Models
+    runs-on: ubuntu-22.04
+    if: github.event_name != 'create' || github.event.ref_type == 'branch'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        id: cache
+        with:
+          path: models
+          key: models-${{ hashFiles('native/cardnet/export/*.py', 'native/cardnet/assets/en_dict.txt') }}-v1
+
+      - uses: actions/setup-python@v5
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          python-version: "3.11"
+
+      - name: Convert the models
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          pip install torch==2.4.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install onnx "paddle2onnx<2"
+          mkdir -p models work
+          python native/cardnet/export/export_dino.py --output models/dinov2_vits14.onnx
+
+          # PaddleOCR's English detection + recognition inference models (the .pdmodel/.pdiparams pairs)
+          curl -fsSL -o work/det.tar https://paddleocr.bj.bcebos.com/PP-OCRv3/english/en_PP-OCRv3_det_infer.tar
+          curl -fsSL -o work/rec.tar https://paddleocr.bj.bcebos.com/PP-OCRv4/english/en_PP-OCRv4_rec_infer.tar
+          mkdir work/det work/rec
+          tar -xf work/det.tar -C work/det --strip-components=1
+          tar -xf work/rec.tar -C work/rec --strip-components=1
+          python native/cardnet/export/export_paddleocr.py --det-model-dir work/det --rec-model-dir work/rec --output-dir models
+
+      # The recognizer's class count has to match ocr_dict.txt (95 characters + the CTC blank).
+      - name: Check the models
+        run: |
+          pip install onnx
+          python - <<'PY'
+          import onnx
+          for name in ("dinov2_vits14", "ocr_det", "ocr_rec"):
+              m = onnx.load(f"models/{name}.onnx")
+              dims = [[d.dim_value or d.dim_param for d in o.type.tensor_type.shape.dim] for o in m.graph.output]
+              print(name, "outputs", dims)
+              if name == "ocr_rec":
+                  assert dims[0][-1] == 96, f"ocr_rec has {dims[0][-1]} classes, ocr_dict.txt needs 96"
+              if name == "dinov2_vits14":
+                  assert dims[0][-1] == 384, dims
+          PY
+          ls -l models
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: models
+          path: models
+          if-no-files-found: error
+
   # The desktop apps. Each one builds in Release with OpenCV and SQLite linked statically (so the
   # app doesn't depend on system copies), runs the same tests on its own platform, installs into the
   # shipped layout and zips it. Dependencies that CMake downloads and compiles (OpenCV, ONNX Runtime,
@@ -58,11 +119,18 @@ jobs:
 
   windows:
     name: Windows
-    needs: test
+    needs: [test, models]
     runs-on: windows-latest
     if: github.event_name != 'create' || github.event.ref_type == 'branch'
     steps:
       - uses: actions/checkout@v4
+
+      # Shipped as the app's data/ (the app copies it into the user's data directory on first launch). Must be in
+      # place before CMake configures, which is when the install rules look at that folder.
+      - uses: actions/download-artifact@v4
+        with:
+          name: models
+          path: native/binder/packaging/bundled_data
 
       - uses: actions/cache@v4
         with:
@@ -92,11 +160,18 @@ jobs:
 
   macos:
     name: macOS
-    needs: test
+    needs: [test, models]
     runs-on: macos-latest
     if: github.event_name != 'create' || github.event.ref_type == 'branch'
     steps:
       - uses: actions/checkout@v4
+
+      # Shipped as the app's data/ (the app copies it into the user's data directory on first launch). Must be in
+      # place before CMake configures, which is when the install rules look at that folder.
+      - uses: actions/download-artifact@v4
+        with:
+          name: models
+          path: native/binder/packaging/bundled_data
 
       - uses: actions/cache@v4
         with:
@@ -131,12 +206,19 @@ jobs:
 
   linux:
     name: Linux
-    needs: test
+    needs: [test, models]
     # Built on the oldest runner that has WebKitGTK 4.1, so the binary's glibc requirement stays low.
     runs-on: ubuntu-22.04
     if: github.event_name != 'create' || github.event.ref_type == 'branch'
     steps:
       - uses: actions/checkout@v4
+
+      # Shipped as the app's data/ (the app copies it into the user's data directory on first launch). Must be in
+      # place before CMake configures, which is when the install rules look at that folder.
+      - uses: actions/download-artifact@v4
+        with:
+          name: models
+          path: native/binder/packaging/bundled_data
 
       - name: Install the window's GTK/WebKit libraries
         run: |
