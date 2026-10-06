@@ -91,7 +91,7 @@ jobs:
           tar -xf work/rec.tar -C work/rec --strip-components=1
           python native/cardnet/export/export_paddleocr.py --det-model-dir work/det --rec-model-dir work/rec --output-dir models
 
-      # The recognizer's class count has to match ocr_dict.txt (95 characters + the CTC blank).
+      # The recognizer's class count has to match ocr_dict.txt (its entries + the CTC blank).
       - name: Check the models
         run: |
           pip install onnx
@@ -102,7 +102,8 @@ jobs:
               dims = [[d.dim_value or d.dim_param for d in o.type.tensor_type.shape.dim] for o in m.graph.output]
               print(name, "outputs", dims)
               if name == "ocr_rec":
-                  assert dims[0][-1] == 96, f"ocr_rec has {dims[0][-1]} classes, ocr_dict.txt needs 96"
+                  entries = len(open("models/ocr_dict.txt", encoding="utf-8").read().split("\n")) - 1
+                  assert dims[0][-1] == entries + 1, f"ocr_rec has {dims[0][-1]} classes, ocr_dict.txt has {entries} entries"
               if name == "dinov2_vits14":
                   assert dims[0][-1] == 384, dims
           PY

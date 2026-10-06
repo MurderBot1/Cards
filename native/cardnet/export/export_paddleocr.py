@@ -85,12 +85,24 @@ def main():
     dict_dst = args.output_dir / "ocr_dict.txt"
     shutil.copyfile(dict_src, dict_dst)
 
+    # The recognizer's outputs are [CTC blank] + dictionary lines (+ a space, for PP-OCR models trained with
+    # use_space_char, which the dictionary file doesn't list). Make the dictionary match the model.
+    import onnx
+
+    rec = onnx.load(str(args.output_dir / "ocr_rec.onnx"))
+    classes = rec.graph.output[0].type.tensor_type.shape.dim[-1].dim_value
+    entries = len(dict_dst.read_text(encoding="utf-8").splitlines())
+    if classes == entries + 2:
+        with open(dict_dst, "a", encoding="utf-8", newline="\n") as f:
+            f.write(" \n")  # cardnet::load_dictionary keeps a literal space line
+        print("ocr_rec predicts a space character: appended it to ocr_dict.txt")
+    elif classes != entries + 1:
+        raise SystemExit(f"ocr_rec has {classes} classes but the dictionary has {entries} entries (+1 for the CTC blank)")
+
     print(f"Wrote {args.output_dir / 'ocr_det.onnx'}, {args.output_dir / 'ocr_rec.onnx'}, and {dict_dst}")
     print(
-        "Verify the exported rec model's output is (1, T, num_classes) with "
-        "num_classes == 96 (95 dictionary entries + 1 CTC blank) — cardnet's "
-        "ctc_greedy_decode raises a clear error if the dictionary size doesn't "
-        "match, rather than silently misreading characters."
+        "ocr_dict.txt has been made to match the recognizer's class count; cardnet's "
+        "ctc_greedy_decode raises a clear error if they ever disagree, rather than silently misreading characters."
     )
 
 
