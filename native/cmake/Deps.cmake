@@ -63,6 +63,12 @@ macro(binder_use_opencv)
     if(NOT TARGET binder_opencv)
         if(NOT BINDER_FORCE_FETCH_OPENCV AND NOT BINDER_STATIC_DEPS)
             find_package(OpenCV QUIET COMPONENTS core imgproc imgcodecs)
+            # The code is written against OpenCV 4: 5.x moved functions we use (arcLength, approxPolyDP, contourArea,
+            # getPerspectiveTransform) out of imgproc. A system OpenCV 5 is therefore not usable; build the pinned 4.x.
+            if(OpenCV_FOUND AND NOT OpenCV_VERSION VERSION_LESS 5)
+                message(STATUS "System OpenCV ${OpenCV_VERSION} is not supported (needs 4.x); building OpenCV 4.10 from source")
+                set(OpenCV_FOUND FALSE)
+            endif()
         endif()
         if(OpenCV_FOUND AND NOT BINDER_FORCE_FETCH_OPENCV AND NOT BINDER_STATIC_DEPS)
             add_library(binder_opencv INTERFACE)
