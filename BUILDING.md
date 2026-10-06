@@ -18,7 +18,7 @@ android/    the Android app (Kotlin + the NDK build of native/)
 | Compiler | GCC ≥ 9 or Clang | Xcode command-line tools | Visual Studio 2022 (MSVC) |
 | CMake | ≥ 3.18 | ≥ 3.18 | ≥ 3.18 |
 | Window | `libgtk-3-dev libwebkit2gtk-4.1-dev` | built in | WebView2 runtime (ships with Windows 10/11) |
-| Catalog tool | `libcurl4-openssl-dev zlib1g-dev` | built in | not built (see below) |
+| Catalog tool | `libcurl4-openssl-dev zlib1g-dev` | built in | downloaded and built for you |
 | Tests | `xvfb` for the window test | | |
 
 Everything else is downloaded and, where needed, built at configure time, pinned in `native/cmake/Deps.cmake`:
@@ -82,11 +82,14 @@ build/native/bin/binder-catalog --skip-vectors   # data and images only
 build/native/bin/binder-catalog --help
 ```
 
+On Windows the executable is `build\native\bin\Release\binder-catalog.exe` (Visual Studio puts the build type in the path).
+
 It is safe to re-run: bulk downloads are cached under `data/cache/`, images and vectors already done are skipped, and an
 interrupted run resumes (the index is written before the catalog records rows that point into it, so a crash never leaves
 dangling references). The images are a scratch copy, deleted once the vectors exist (`--keep-images` to keep them).
 
-The tool needs libcurl and zlib, so it isn't built on Windows. The files it writes are portable — build the catalog on
+On Windows the build downloads and compiles its own zlib and libcurl (libcurl using the Windows TLS stack), so nothing extra
+is needed there. The files it writes are portable, so you can also build the catalog on
 Linux or macOS and copy `cards.sqlite3` and `card-vectors.cvi` into the data directory of any install, or into
 `native/binder/packaging/bundled_data/` to ship them with the app.
 

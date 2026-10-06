@@ -64,9 +64,12 @@ if(BINDER_WITH_ONNX)
     add_subdirectory(cardonnx)
 endif()
 # The catalog builder (binder-catalog): a developer tool that downloads card data and builds the catalog and
-# vector index the app reads. It needs libcurl and zlib, which Linux and macOS have; where they're missing
-# (Windows, Android) it's skipped — the catalog files it makes are portable, so build them on a machine that has them.
+# vector index the app reads. It needs libcurl and zlib: Linux and macOS have them, Windows downloads and builds its
+# own, and on Android it's skipped (the catalog files it makes are portable, so build them on a desktop).
 if(BINDER_WITH_CATALOG_TOOL AND NOT ANDROID)
+    if(WIN32 AND NOT (ZLIB_FOUND AND CURL_FOUND))
+        binder_fetch_zlib_and_curl()  # Windows has neither; see cmake/Deps.cmake
+    endif()
     if(ZLIB_FOUND AND CURL_FOUND)
         add_subdirectory(cardfetch)
         add_subdirectory(cardingest)
