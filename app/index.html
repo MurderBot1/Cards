@@ -348,6 +348,18 @@
   </div>
 </div>
 
+<!-- first-run setup screen: shown while the backend reports background setup work (GET /api/setup) -->
+<div class="setup-screen hidden" id="setup-screen" role="status" aria-live="polite">
+  <div class="setup-card">
+    <h1 class="setup-title">Setting up the app for you</h1>
+    <div class="setup-spinner" id="setup-spinner" aria-hidden="true"></div>
+    <p class="setup-task" id="setup-task"></p>
+    <p class="setup-detail" id="setup-detail"></p>
+    <p class="setup-error hidden" id="setup-error"></p>
+    <button class="btn btn-primary hidden" id="setup-continue">Continue</button>
+  </div>
+</div>
+
 <!-- toast -->
 <div class="toast hidden" id="toast"></div>
 

@@ -47,7 +47,8 @@ int main() {
     cardstore::Store store(tmp.path() / "db.json");
     store.ensure_exists();
     FakeEngine engine;
-    binder::ApiContext ctx{store, engine, {}, fs::path(BINDER_REPO_APP_DIR)};
+    binder::SetupStatus setup;
+    binder::ApiContext ctx{store, engine, {}, fs::path(BINDER_REPO_APP_DIR), &setup};
     ctx.auth.port = 1;  // nothing listens here -> "login server unavailable"
     ctx.auth.timeout_ms = 500;
 
@@ -67,6 +68,26 @@ int main() {
     CHECK(cli.Get("/css/styles.css") && cli.Get("/css/styles.css")->status == 200);
     CHECK(cli.Get("/js/app.js") && cli.Get("/js/app.js")->status == 200);
     CHECK(cli.Get("/js/nope.js")->status == 404);
+
+    // ---- first-run setup status: idle, a task with progress, a failure, done
+    auto idle = parse(cli.Get("/api/setup"));
+    CHECK_EQ(idle["active"], json(false));
+    fs::path partial = tmp.path() / "big.part";
+    std::ofstream(partial, std::ios::binary) << "12345";
+    setup.set_task("Downloading assets", "cards.sqlite3 (1 of 2)", partial);
+    auto busy = parse(cli.Get("/api/setup"));
+    CHECK_EQ(busy["active"], json(true));
+    CHECK_EQ(busy["task"], json("Downloading assets"));
+    CHECK_EQ(busy["detail"], json("cards.sqlite3 (1 of 2)"));
+    CHECK_EQ(busy["bytes"], json(5));
+    setup.fail("could not download cards.sqlite3");
+    auto failed = parse(cli.Get("/api/setup"));
+    CHECK_EQ(failed["active"], json(false));
+    CHECK_EQ(failed["error"], json("could not download cards.sqlite3"));
+    setup.set_task("Downloading assets");
+    setup.clear();
+    CHECK_EQ(parse(cli.Get("/api/setup"))["active"], json(false));
+    CHECK_EQ(parse(cli.Get("/api/setup"))["error"], json(""));
 
     // ---- collections lifecycle
     CHECK_EQ(parse(cli.Get("/api/collections")), json::array());

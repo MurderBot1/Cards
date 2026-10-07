@@ -6,6 +6,7 @@
  */
 import { initCollections, closeCollectionDetail, isInCollectionDetail } from './collections.js';
 import { initSettings } from './settings.js';
+import { initSetupScreen } from './setup.js';
 
 const TAB_TITLES = { shop: 'Shop', collection: 'Collection', settings: 'Account' };
 
@@ -61,6 +62,7 @@ function onCollectionNavigate({ inDetail, title, subtitle }) {
 }
 
 async function boot() {
+  initSetupScreen();  // not awaited: it polls in the background and covers the app while setup work runs
   await initSettings();
   await initCollections(onCollectionNavigate);
   showTab('shop');

@@ -19,6 +19,8 @@ struct Options {
     std::string base_url = kDefaultBaseUrl;  // must end in '/'
     std::vector<std::string> files = {"cards.sqlite3", "card-vectors.cvi"};
     int timeout_seconds = 60;  // connecting / stalled transfer, not the total time
+    // Called just before each file starts: its name, which download this is (1-based) and how many there are.
+    std::function<void(const std::string& name, size_t number, size_t total)> on_file;
 };
 
 struct Result {

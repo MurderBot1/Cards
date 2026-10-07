@@ -8,6 +8,7 @@
 #include "cardhttp/server.hpp"
 #include "cardscan/engine.hpp"
 #include "cardstore/store.hpp"
+#include "setup_status.hpp"
 
 namespace binder {
 
@@ -16,6 +17,7 @@ struct ApiContext {
     cardscan::Engine& engine;
     cardauth::Config auth;
     std::filesystem::path frontend_dir;  // index.html, css/, js/
+    SetupStatus* setup = nullptr;        // background first-run work, for GET /api/setup; none = nothing to report
 };
 
 // Minimum Laplacian-variance blur score an uploaded scan must clear, per the

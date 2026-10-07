@@ -19,7 +19,11 @@ Result download_missing(cardfetch::Transport& transport, const fs::path& data_di
         if (log) log(m);
     };
     Result result;
-    for (const auto& name : missing_files(data_dir, options)) {
+    const auto todo = missing_files(data_dir, options);
+    size_t number = 0;
+    for (const auto& name : todo) {
+        ++number;
+        if (options.on_file) options.on_file(name, number, todo.size());
         const std::string url = options.base_url + name;
         const fs::path dest = data_dir / fs::u8path(name);
         fs::path part = dest;

@@ -1,6 +1,7 @@
 #include "app.hpp"
 
 #include <cstdio>
+#include <filesystem>
 #include <thread>
 
 #include "api.hpp"
@@ -17,12 +18,15 @@
 #include "cardonnx/onnx_models.hpp"
 #endif
 
+namespace fs = std::filesystem;
+
 namespace binder {
 
 struct App::Impl {
     AppOptions options;
     cardstore::Store store;
     std::shared_ptr<cardscan::PipelineEngine> engine;  // shared: the background warm-up thread outlives a quick App
+    std::shared_ptr<SetupStatus> setup = std::make_shared<SetupStatus>();  // shared with the download thread
     cardlog::RotatingLog api_log;
     cardhttp::Server server;
     ApiContext ctx;
@@ -32,7 +36,7 @@ struct App::Impl {
           store(options.paths.db_path),
           engine(make_engine(options)),
           api_log(options.paths.log_dir / "api.log"),
-          ctx{store, *engine, options.auth, options.paths.frontend_dir} {}
+          ctx{store, *engine, options.auth, options.paths.frontend_dir, setup.get()} {}
 
     static void say(const AppOptions& o, const std::string& message) {
         if (o.log) o.log(message);
@@ -84,13 +88,25 @@ void App::warm_up_in_background() {
         // Detached like the warm-up: the window and API come up straight away, and scans answer "no catalog" until
         // the files land. Everything it uses is captured by value, so it may outlive the App.
         auto options = impl_->options;
-        std::thread([engine, options] {
-            const auto data_dir = options.paths.data_dir;
-            if (!carddownload::missing_files(data_dir).empty()) {
+        auto setup = impl_->setup;
+        const auto data_dir = options.paths.data_dir;
+        carddownload::Options download;
+        const bool needed = !carddownload::missing_files(data_dir, download).empty();
+        // Marked before the thread starts, so the very first /api/setup poll already sees it.
+        if (needed) setup->set_task("Downloading assets");
+        download.on_file = [setup, data_dir](const std::string& name, size_t number, size_t total) {
+            fs::path part = data_dir / fs::u8path(name);
+            part += ".part";
+            setup->set_task("Downloading assets", name + " (" + std::to_string(number) + " of " + std::to_string(total) + ")", part);
+        };
+        std::thread([engine, options, setup, data_dir, download, needed] {
+            if (needed) {
                 cardfetch::CurlTransport transport;
                 auto result = carddownload::download_missing(
-                    transport, data_dir, {}, [&](const std::string& m) { Impl::say(options, "[catalog] " + m); });
+                    transport, data_dir, download, [&](const std::string& m) { Impl::say(options, "[catalog] " + m); });
                 if (!result.downloaded.empty()) engine->reload_data();
+                if (result.ok) setup->clear();
+                else setup->fail(result.error);
             }
             engine->warm_up();
         }).detach();

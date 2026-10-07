@@ -52,6 +52,21 @@ int main() {
     CHECK_EQ(slurp(data / "b.bin"), std::string("BBB"));
     CHECK(!fs::exists(data / "a.bin.part"));
 
+    // the per-file callback reports each download, in order
+    {
+        FakeTransport t2;
+        t2.pages = t.pages;
+        std::vector<std::string> seen;
+        auto o2 = opt;
+        o2.on_file = [&](const std::string& n, size_t i, size_t total) {
+            seen.push_back(n + " " + std::to_string(i) + "/" + std::to_string(total));
+        };
+        CHECK(carddownload::download_missing(t2, tmp.path() / "other", o2).ok);
+        CHECK_EQ(seen.size(), size_t(2));
+        CHECK_EQ(seen[0], std::string("a.bin 1/2"));
+        CHECK_EQ(seen[1], std::string("b.bin 2/2"));
+    }
+
     // a second run (and an existing user-built file) is left alone
     t.requested.clear();
     std::ofstream(data / "a.bin", std::ios::binary) << "mine";

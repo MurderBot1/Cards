@@ -1116,3 +1116,46 @@ svg {
   .collection-grid { grid-template-columns: repeat(5, 1fr); }
   .subview, .settings-scroll { max-width: 1100px; }
 }
+/* ===================================================================
+   First-run setup screen (js/setup.js)
+=================================================================== */
+.setup-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--bg, #121319);
+}
+.setup-card {
+  width: 100%;
+  max-width: 420px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+.setup-title {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--text, #F0EFF6);
+}
+.setup-spinner {
+  width: 56px;
+  height: 56px;
+  margin: 10px 0 4px;
+  border-radius: 50%;
+  border: 4px solid var(--surface-3, #2E313E);
+  border-top-color: var(--foil-1);
+  border-right-color: var(--foil-2);
+  animation: setup-spin 0.9s linear infinite;
+}
+.setup-task { font-weight: 600; color: var(--text, #F0EFF6); }
+.setup-detail { color: var(--text-dim); font-family: var(--font-mono); font-size: 0.85rem; min-height: 1.2em; }
+.setup-error { color: var(--danger); }
+@keyframes setup-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .setup-spinner { animation-duration: 3s; } }
