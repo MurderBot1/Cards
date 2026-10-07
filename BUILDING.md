@@ -135,7 +135,8 @@ The card detector and the card catalog (`cards.sqlite3`, `card-vectors.cvi`) are
 downloads the catalog on first launch: whichever of the two files is missing from the data directory is fetched in the
 background from the [`Assets` release](https://github.com/MurderBot1/Cards/releases/tag/Assets) (about 1.2 GB; files
 already there are never replaced, and a `.part` file is only renamed once complete, so an interrupted download retries on
-the next launch). Pass `--no-download` to skip that. It needs the build to have libcurl (the same requirement as
+the next launch). While it runs the app shows a "Setting up the app for you" screen with the current task (`GET /api/setup`; other
+first-run work can report itself through `binder::SetupStatus`). Pass `--no-download` to skip the download. It needs the build to have libcurl (the same requirement as
 `binder-catalog`); to publish a newer catalog, replace the two assets on that release. The Android APK doesn't
 bundle any models.
 
