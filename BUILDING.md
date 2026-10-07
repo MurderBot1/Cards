@@ -131,7 +131,13 @@ The Windows, macOS and Linux zips also ship the DINOv2 and OCR models. A `Models
 `native/cardnet/export/` (the one job that uses Python) and the desktop jobs drop them into
 `native/binder/packaging/bundled_data/` before configuring, so `cmake --install` puts them in the app's `data/`; the app
 copies that into the user data directory on first launch (only if it's empty, so an existing install keeps what it has).
-The card detector and the card catalog (`cards.sqlite3`, `card-vectors.cvi`) are not bundled. The Android APK doesn't
+The card detector and the card catalog (`cards.sqlite3`, `card-vectors.cvi`) are not bundled, but the desktop app
+downloads the catalog on first launch: whichever of the two files is missing from the data directory is fetched in the
+background from the [`Assets` release](https://github.com/MurderBot1/Cards/releases/tag/Assets) (about 1.2 GB; files
+already there are never replaced, and a `.part` file is only renamed once complete, so an interrupted download retries on
+the next launch). While it runs the app shows a "Setting up the app for you" screen with the current task (`GET /api/setup`; other
+first-run work can report itself through `binder::SetupStatus`). Pass `--no-download` to skip the download. It needs the build to have libcurl (the same requirement as
+`binder-catalog`); to publish a newer catalog, replace the two assets on that release. The Android APK doesn't
 bundle any models.
 
 The CI (`.github/workflows/build.yml`) runs the whole test suite first, then builds, tests, packages and uploads each
@@ -147,9 +153,10 @@ cd android && gradle assembleDebug        # or open android/ in Android Studio
 ```
 
 Needs the Android SDK (AGP downloads the NDK and CMake 3.22 it asks for), JDK 17, and builds `arm64-v8a` and `x86_64`. The
-first build compiles OpenCV for each ABI, which is slow. The catalog and models are not bundled in the APK: put
+first build compiles OpenCV for each ABI, which is slow. The catalog and models are not bundled in the APK; the app
+downloads the catalog on first launch (like the desktop one), or you can put
 `cards.sqlite3`, `card-vectors.cvi` (and any `.onnx` files) in the app's private `files/data/` directory, e.g. for
-development `adb push` them and copy with `run-as com.bindercardtracker.binder`. An in-app downloader doesn't exist.
+development `adb push` them and copy with `run-as com.bindercardtracker.binder`. (Models are still not downloaded.)
 
 ## Login server
 

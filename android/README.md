@@ -19,7 +19,7 @@ android/
 └── app/
     ├── build.gradle.kts          ABIs, the NDK/CMake build of ../../native, the frontend Copy task, the ONNX Runtime AAR
     └── src/main/
-        ├── AndroidManifest.xml   camera permission, network security config (localhost cleartext)
+        ├── AndroidManifest.xml   camera + internet permissions, network security config (localhost cleartext)
         ├── java/.../MainActivity.kt    WebView + camera-permission bridge + retry-on-cold-start
         ├── java/.../NativeBackend.kt   the JNI entry points: start(filesDir, frontendDir, port) / stop()
         └── res/                  minimal layout/theme/placeholder launcher icon
@@ -42,16 +42,21 @@ That gives an app that launches, shows the collection UI and lets you browse/add
 
 ## The card catalog and models
 
-They are not in the APK. Build the catalog on a desktop with `binder-catalog` (see [BUILDING.md](../BUILDING.md)) and put
-`cards.sqlite3` and `card-vectors.cvi` — plus any exported `.onnx` models — in the app's private `files/data/` directory,
-e.g. during development:
+They are not in the APK. On first launch the app downloads `cards.sqlite3` and `card-vectors.cvi` (about 1.2 GB, so
+Wi-Fi is wise) from the `Assets` GitHub release into its private `files/data/` directory, showing a "Setting up the app
+for you" screen meanwhile. The download goes through `Downloader.kt` (`HttpURLConnection`, since the NDK has no libcurl),
+which the C++ side calls from `jni_bridge.cpp`; it needs the `INTERNET` permission, and it keeps going only while the app's
+process is alive, so an interrupted download starts that file again on the next launch.
+
+To use a catalog you built yourself instead (`binder-catalog`, see [BUILDING.md](../BUILDING.md)), put `cards.sqlite3` and
+`card-vectors.cvi` — plus any exported `.onnx` models — in `files/data/` before first launch, e.g. during development:
 
 ```
 adb push cards.sqlite3 card-vectors.cvi /data/local/tmp/
 adb shell run-as com.bindercardtracker.binder sh -c 'mkdir -p files/data && cp /data/local/tmp/cards.sqlite3 /data/local/tmp/card-vectors.cvi files/data/'
 ```
 
-An in-app downloader doesn't exist. Without a catalog the scanner answers "the card catalog hasn't been built yet"; without
+Files already there are never downloaded over. Without a catalog the scanner answers "the card catalog hasn't been built yet"; without
 the models it skips the OCR / detector / art-matching stages it can't run.
 
 ## Camera permission

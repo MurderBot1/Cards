@@ -64,6 +64,13 @@ void register_routes(cardhttp::Server& server, ApiContext& ctx) {
     server.route("POST", "/api/auth/register", auth_route("REGISTER", 201, 409));
     server.route("POST", "/api/auth/login", auth_route("LOGIN", 200, 401));
 
+    // ---- first-run setup progress (the frontend polls this to show its "setting up" screen) ----------
+    server.route("GET", "/api/setup", [&ctx](const Request&) {
+        SetupStatus::Snapshot s = ctx.setup ? ctx.setup->snapshot() : SetupStatus::Snapshot{};
+        return Response::json(200, json{{"active", s.active}, {"task", s.task}, {"detail", s.detail},
+                                        {"bytes", s.bytes}, {"error", s.error}}.dump());
+    });
+
     // ---- collections -------------------------------------------------------
     server.route("GET", "/api/collections", [&](const Request&) { return respond(store.list_collections()); });
     server.route("POST", "/api/collections", [&](const Request& req) {

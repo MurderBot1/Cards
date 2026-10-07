@@ -13,7 +13,8 @@ ocr_det.onnx  ocr_rec.onnx  ocr_dict.txt
 Building that is slow and network-heavy, and the model files need the original ML frameworks to export
 (`native/cardnet/export/`) — not something an end user should do. Two options for a packaged app:
 
-**Ship without it (default).** Leave this folder as it is. The app starts fine; scanning answers "the card catalog
+**Ship without it (default).** Leave this folder as it is. Desktop builds with libcurl download `cards.sqlite3` and
+`card-vectors.cvi` from the `Assets` GitHub release on first launch (see BUILDING.md); `--no-download` turns that off. The app starts fine; scanning answers "the card catalog
 hasn't been built yet" until someone points it at a catalog built separately (copy the files into the app's data
 directory).
 

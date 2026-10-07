@@ -60,6 +60,13 @@ PipelineEngine::PipelineEngine(std::filesystem::path catalog_path, std::unique_p
     if (!log_) log_ = [](const std::string&) {};
 }
 
+void PipelineEngine::reload_data() {
+    std::lock_guard<std::mutex> lock(mu_);
+    index_tried_ = false;
+    index_.reset();
+    name_cache_.clear();
+}
+
 bool PipelineEngine::is_ready() const { return cardcatalog::exists(catalog_path_); }
 
 // ---------------------------------------------------------------------------
