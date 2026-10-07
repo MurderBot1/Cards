@@ -39,6 +39,10 @@ public:
     Result scan(const std::string& image_bytes, const std::string& game_hint, double min_blur_score) override;
     void warm_up() override;
 
+    // Forgets what was loaded (or failed to load) so the next request re-reads the catalog and vector index; call
+    // after they were downloaded or rebuilt while the app was running.
+    void reload_data();
+
     // Whether the catalog exists (the catalog builder has run).
     bool is_ready() const;
 

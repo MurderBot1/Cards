@@ -19,6 +19,7 @@ namespace {
 struct Args {
     bool headless = false;
     bool help = false;
+    bool download = true;  // fetch the card catalog on first run
     int port = 5000;
     bool port_given = false;  // in window mode, no --port means "any free port"
     cardpaths::Options paths;
@@ -37,6 +38,7 @@ bool parse_args(int argc, char** argv, Args& a, std::string& error) {
         };
         std::string v;
         if (arg == "--headless") a.headless = true;
+        else if (arg == "--no-download") a.download = false;
         else if (arg == "--help" || arg == "-h") a.help = true;
         else if (arg == "--port") {
             if (!value(v)) return false;
@@ -63,6 +65,7 @@ bool parse_args(int argc, char** argv, Args& a, std::string& error) {
 const char* kUsage =
     "Binder — Card Tracker\n"
     "  --headless          serve on 0.0.0.0 (reachable from your LAN) instead of localhost only\n"
+    "  --no-download       don't fetch the card catalog from the GitHub release when it's missing\n"
     "  --port N            port to listen on (default: 5000 with --headless, otherwise any free port)\n"
     "  --frontend-dir DIR  frontend files (default: found next to the executable or in the repo)\n"
     "  --data-dir DIR      db.json / logs / catalog location (default: per-user app-data directory)\n";
@@ -99,7 +102,9 @@ int main(int argc, char** argv) {
     }
     cardpaths::ensure_bundled_catalog(paths);
 
-    binder::App app({paths, print, {}});  // the app writes its own messages to startup.log
+    binder::AppOptions app_options{paths, print, {}};  // the app writes its own messages to startup.log
+    app_options.download_missing_data = args.download;
+    binder::App app(std::move(app_options));
     app.warm_up_in_background();
 
     // Window mode (the default) serves on localhost only, on a free port unless one was asked for; --headless

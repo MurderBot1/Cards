@@ -131,7 +131,12 @@ The Windows, macOS and Linux zips also ship the DINOv2 and OCR models. A `Models
 `native/cardnet/export/` (the one job that uses Python) and the desktop jobs drop them into
 `native/binder/packaging/bundled_data/` before configuring, so `cmake --install` puts them in the app's `data/`; the app
 copies that into the user data directory on first launch (only if it's empty, so an existing install keeps what it has).
-The card detector and the card catalog (`cards.sqlite3`, `card-vectors.cvi`) are not bundled. The Android APK doesn't
+The card detector and the card catalog (`cards.sqlite3`, `card-vectors.cvi`) are not bundled, but the desktop app
+downloads the catalog on first launch: whichever of the two files is missing from the data directory is fetched in the
+background from the [`Assets` release](https://github.com/MurderBot1/Cards/releases/tag/Assets) (about 1.2 GB; files
+already there are never replaced, and a `.part` file is only renamed once complete, so an interrupted download retries on
+the next launch). Pass `--no-download` to skip that. It needs the build to have libcurl (the same requirement as
+`binder-catalog`); to publish a newer catalog, replace the two assets on that release. The Android APK doesn't
 bundle any models.
 
 The CI (`.github/workflows/build.yml`) runs the whole test suite first, then builds, tests, packages and uploads each

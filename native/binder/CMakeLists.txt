@@ -11,6 +11,11 @@ target_link_libraries(binder_api PUBLIC cardhttp cardstore cardauth cardscan car
 add_library(binder_app STATIC src/app.cpp)
 target_include_directories(binder_app PUBLIC src)
 target_link_libraries(binder_app PUBLIC binder_api cardpaths cardscan)
+# First-run download of the catalog (needs libcurl, so not on Android; see the root CMakeLists).
+if(TARGET carddownload AND TARGET cardfetch_curl)
+    target_link_libraries(binder_app PUBLIC carddownload cardfetch_curl)
+    target_compile_definitions(binder_app PUBLIC BINDER_HAVE_DOWNLOAD=1)
+endif()
 if(TARGET cardonnx)
     target_link_libraries(binder_app PUBLIC cardonnx)
     target_compile_definitions(binder_app PRIVATE BINDER_HAVE_ONNX=1)

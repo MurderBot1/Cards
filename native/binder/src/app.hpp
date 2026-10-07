@@ -17,6 +17,9 @@ struct AppOptions {
     cardpaths::Paths paths;
     std::function<void(const std::string&)> log;  // status messages (also appended to startup.log); optional
     cardauth::Config auth;                         // where the LoginServer is
+    // Fetch the catalog and vector index from the release when they're missing, in the background (needs a build
+    // with libcurl; otherwise ignored). Off by default so tests never touch the network.
+    bool download_missing_data = false;
 };
 
 class App {
@@ -38,7 +41,8 @@ public:
     bool is_running() const;
 
     // Loads the detector / OCR / embedder / vector index in the background, rather than on whichever scan
-    // request happens to need them first.
+    // request happens to need them first. With AppOptions::download_missing_data it first downloads whatever
+    // catalog files are missing (the first launch of a build that doesn't bundle them), then loads.
     void warm_up_in_background();
 
     cardscan::Engine& engine();

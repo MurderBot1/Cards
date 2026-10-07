@@ -9,6 +9,10 @@
 #include "cardscan/model_source.hpp"
 #include "cardscan/pipeline_engine.hpp"
 #include "cardstore/store.hpp"
+#ifdef BINDER_HAVE_DOWNLOAD
+#include "carddownload/download.hpp"
+#include "cardfetch/curl_transport.hpp"
+#endif
 #ifdef BINDER_HAVE_ONNX
 #include "cardonnx/onnx_models.hpp"
 #endif
@@ -75,6 +79,24 @@ bool App::is_running() const { return impl_->server.is_running(); }
 
 void App::warm_up_in_background() {
     auto engine = impl_->engine;
+#ifdef BINDER_HAVE_DOWNLOAD
+    if (impl_->options.download_missing_data) {
+        // Detached like the warm-up: the window and API come up straight away, and scans answer "no catalog" until
+        // the files land. Everything it uses is captured by value, so it may outlive the App.
+        auto options = impl_->options;
+        std::thread([engine, options] {
+            const auto data_dir = options.paths.data_dir;
+            if (!carddownload::missing_files(data_dir).empty()) {
+                cardfetch::CurlTransport transport;
+                auto result = carddownload::download_missing(
+                    transport, data_dir, {}, [&](const std::string& m) { Impl::say(options, "[catalog] " + m); });
+                if (!result.downloaded.empty()) engine->reload_data();
+            }
+            engine->warm_up();
+        }).detach();
+        return;
+    }
+#endif
     std::thread([engine] { engine->warm_up(); }).detach();
 }
 
