@@ -8,6 +8,8 @@
          and the scan UI degrades if it's denied, same as the browser
          getUserMedia() prompt would on desktop. -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- First launch downloads the card catalog (see Downloader.kt). -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-feature
         android:name="android.hardware.camera"
         android:required="false" />

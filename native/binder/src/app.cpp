@@ -10,8 +10,8 @@
 #include "cardscan/model_source.hpp"
 #include "cardscan/pipeline_engine.hpp"
 #include "cardstore/store.hpp"
-#ifdef BINDER_HAVE_DOWNLOAD
 #include "carddownload/download.hpp"
+#ifdef BINDER_HAVE_CURL_TRANSPORT
 #include "cardfetch/curl_transport.hpp"
 #endif
 #ifdef BINDER_HAVE_ONNX
@@ -83,8 +83,11 @@ bool App::is_running() const { return impl_->server.is_running(); }
 
 void App::warm_up_in_background() {
     auto engine = impl_->engine;
-#ifdef BINDER_HAVE_DOWNLOAD
-    if (impl_->options.download_missing_data) {
+    auto make_transport = impl_->options.make_transport;
+#ifdef BINDER_HAVE_CURL_TRANSPORT
+    if (!make_transport) make_transport = [] { return std::make_unique<cardfetch::CurlTransport>(); };
+#endif
+    if (impl_->options.download_missing_data && make_transport) {
         // Detached like the warm-up: the window and API come up straight away, and scans answer "no catalog" until
         // the files land. Everything it uses is captured by value, so it may outlive the App.
         auto options = impl_->options;
@@ -99,11 +102,17 @@ void App::warm_up_in_background() {
             part += ".part";
             setup->set_task("Downloading assets", name + " (" + std::to_string(number) + " of " + std::to_string(total) + ")", part);
         };
-        std::thread([engine, options, setup, data_dir, download, needed] {
+        std::thread([engine, options, setup, data_dir, download, needed, make_transport] {
             if (needed) {
-                cardfetch::CurlTransport transport;
-                auto result = carddownload::download_missing(
-                    transport, data_dir, download, [&](const std::string& m) { Impl::say(options, "[catalog] " + m); });
+                carddownload::Result result;
+                try {
+                    auto transport = make_transport();
+                    result = carddownload::download_missing(
+                        *transport, data_dir, download, [&](const std::string& m) { Impl::say(options, "[catalog] " + m); });
+                } catch (const std::exception& e) {  // no transport to download with
+                    result.ok = false;
+                    result.error = std::string("could not start the download (") + e.what() + ")";
+                }
                 if (!result.downloaded.empty()) engine->reload_data();
                 if (result.ok) setup->clear();
                 else setup->fail(result.error);
@@ -112,7 +121,6 @@ void App::warm_up_in_background() {
         }).detach();
         return;
     }
-#endif
     std::thread([engine] { engine->warm_up(); }).detach();
 }
 

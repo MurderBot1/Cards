@@ -153,9 +153,10 @@ cd android && gradle assembleDebug        # or open android/ in Android Studio
 ```
 
 Needs the Android SDK (AGP downloads the NDK and CMake 3.22 it asks for), JDK 17, and builds `arm64-v8a` and `x86_64`. The
-first build compiles OpenCV for each ABI, which is slow. The catalog and models are not bundled in the APK: put
+first build compiles OpenCV for each ABI, which is slow. The catalog and models are not bundled in the APK; the app
+downloads the catalog on first launch (like the desktop one), or you can put
 `cards.sqlite3`, `card-vectors.cvi` (and any `.onnx` files) in the app's private `files/data/` directory, e.g. for
-development `adb push` them and copy with `run-as com.bindercardtracker.binder`. An in-app downloader doesn't exist.
+development `adb push` them and copy with `run-as com.bindercardtracker.binder`. (Models are still not downloaded.)
 
 ## Login server
 

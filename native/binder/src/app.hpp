@@ -8,6 +8,7 @@
 #include <string>
 
 #include "cardauth/auth.hpp"
+#include "cardfetch/fetch.hpp"
 #include "cardpaths/cardpaths.hpp"
 #include "cardscan/engine.hpp"
 
@@ -17,9 +18,11 @@ struct AppOptions {
     cardpaths::Paths paths;
     std::function<void(const std::string&)> log;  // status messages (also appended to startup.log); optional
     cardauth::Config auth;                         // where the LoginServer is
-    // Fetch the catalog and vector index from the release when they're missing, in the background (needs a build
-    // with libcurl; otherwise ignored). Off by default so tests never touch the network.
+    // Fetch the catalog and vector index from the release when they're missing, in the background. Off by default so
+    // tests never touch the network. Needs a transport: `make_transport` if set (Android passes one backed by the
+    // JVM), else libcurl when the build has it; with neither this does nothing.
     bool download_missing_data = false;
+    std::function<std::unique_ptr<cardfetch::Transport>()> make_transport;
 };
 
 class App {
