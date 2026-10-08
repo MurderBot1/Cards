@@ -1,7 +1,7 @@
-# Binder accounts (Cloudflare Pages)
+# Binder accounts (Cloudflare Worker)
 
-The account service the app signs in against: a few [Pages Functions](https://developers.cloudflare.com/pages/functions/)
-backed by a [D1](https://developers.cloudflare.com/d1/) database. Both are on Cloudflare's free tier.
+The account service the app signs in against: one [Cloudflare Worker](https://developers.cloudflare.com/workers/) backed
+by a [D1](https://developers.cloudflare.com/d1/) database. Both are on Cloudflare's free tier.
 
 | Endpoint | Body / header | Result |
 |---|---|---|
@@ -20,6 +20,9 @@ backed by a [D1](https://developers.cloudflare.com/d1/) database. Both are on Cl
 - Requests authenticate with a header, never a cookie, so the API allows any origin (the app calls it from
   `http://127.0.0.1:<port>`).
 
+Layout: `src/worker.js` (routing, CORS), `src/auth/*.js` (the four endpoints), `src/lib.js` (validation, hashing, sessions,
+rate limiting), `schema.sql`, `wrangler.jsonc`, `public/` (a placeholder page).
+
 ## One-time setup (Cloudflare dashboard)
 
 1. **Create the database.** Workers & Pages → D1 → *Create database*, name it `binder-accounts`. Open it, go to *Console*,
@@ -27,18 +30,16 @@ backed by a [D1](https://developers.cloudflare.com/d1/) database. Both are on Cl
    the rest of the line if the console flattens a paste, and D1 then reports "Requests without any query are not
    supported". Notes on the columns: `email` is stored lowercased and unused for now; `password_hash` is
    `pbkdf2$<iterations>$<salt b64>$<hash b64>`; `sessions` keeps only a SHA-256 of each token.)
-2. **Create the Pages project.** Workers & Pages → *Create* → *Pages* → *Connect to Git* → pick this repository, then:
-   - Production branch: `main`
-   - Framework preset: *None*
-   - Build command: *(leave empty)*
-   - Build output directory: `public`
-   - **Root directory (advanced): `cloudflare`**
-3. **Bind the database.** Project → Settings → *Bindings* (Functions) → *Add* → *D1 database*: variable name **`DB`**,
-   database `binder-accounts`. Add it for Production (and Preview if you use it), then redeploy.
-4. **Point the app at it.** Put the project's URL (e.g. `https://binder-accounts.pages.dev`, no trailing slash) in
+2. **Put the database ID in [`wrangler.jsonc`](wrangler.jsonc)** (`database_id`; it's on the database's page, and it is
+   not a secret). This is what binds the database to the Worker as `DB`.
+3. **Deploy from this folder.** In the Worker's *Settings → Build* (Workers Builds), set **Root directory** to
+   `cloudflare`. The deploy command stays `npx wrangler deploy`. Without the root directory, wrangler looks in the repo
+   root, finds no config and fails with "Missing entry-point to Worker script or to assets directory".
+4. **Point the app at it.** Put the Worker's URL (e.g. `https://binder.<account>.workers.dev`, no trailing slash) in
    [`app/js/config.js`](../app/js/config.js) as `AUTH_URL`, and rebuild the app.
 
-Check it works: `curl -X POST https://<project>.pages.dev/api/auth/register -H 'Content-Type: application/json'
+Check it works: opening `https://<worker>/api/auth/me` should show `{"error":"Not signed in"}`, and
+`curl -X POST https://<worker>/api/auth/register -H 'Content-Type: application/json'
 -d '{"username":"test","email":"t@example.com","password":"password123"}'` should answer `201` with a token.
 
 ## Local development
@@ -46,8 +47,8 @@ Check it works: `curl -X POST https://<project>.pages.dev/api/auth/register -H '
 ```
 cd cloudflare
 npm install
-npm run dev      # applies schema.sql to a local D1, then serves the API on http://localhost:8788
-npm test         # unit tests for lib/auth.js
+npm run dev      # applies schema.sql to a local D1, then serves the API on http://localhost:8787
+npm test         # unit tests for src/lib.js
 ```
 
-To try the app against it, set `AUTH_URL` in `app/js/config.js` to `http://localhost:8788` temporarily.
+To try the app against it, set `AUTH_URL` in `app/js/config.js` to `http://localhost:8787` temporarily.

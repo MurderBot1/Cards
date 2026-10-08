@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "db:local": "wrangler d1 execute binder-accounts --local -c wrangler.dev.toml --file=schema.sql",
-    "dev": "npm run db:local && wrangler pages dev public --d1=DB=local --compatibility-date=2024-09-23",
+    "db:local": "wrangler d1 execute binder-accounts --local --file=schema.sql",
+    "dev": "npm run db:local && wrangler dev",
     "test": "node --test \"test/*.test.mjs\""
   },
   "devDependencies": {

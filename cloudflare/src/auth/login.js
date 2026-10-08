@@ -1,7 +1,7 @@
 import {
   checkUsername, clearFailures, clientIp, createSession, fail, json, readJson, recordFailure, spendPasswordTime,
   tooManyFailures, verifyPassword,
-} from '../../../lib/auth.js';
+} from '../lib.js';
 
 // POST { username, password } -> 200 { username, token, expires_at }
 export async function onRequestPost({ request, env }) {

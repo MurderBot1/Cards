@@ -160,7 +160,7 @@ development `adb push` them and copy with `run-as com.bindercardtracker.binder`.
 
 ## Login server
 
-Accounts are handled by a small service on Cloudflare Pages (free tier) in [`cloudflare/`](cloudflare/README.md): sign-up
+Accounts are handled by a small Cloudflare Worker with a D1 database (free tier) in [`cloudflare/`](cloudflare/README.md): sign-up
 takes a username, email and password, and sign-in returns a session token the app keeps. The app calls it directly over
 HTTPS; set its address as `AUTH_URL` in `app/js/config.js` (setup steps are in `cloudflare/README.md`). Until that is set,
 the Sign in screen says accounts aren't set up yet and the rest of the app works as before.

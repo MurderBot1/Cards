@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   checkEmail, checkPassword, checkUsername, hashPassword, spendPasswordTime, verifyPassword,
-} from '../lib/auth.js';
+} from '../src/lib.js';
 
 test('usernames', () => {
   assert.equal(checkUsername('julie_m-1.x'), null);

@@ -1,6 +1,6 @@
 import {
   checkEmail, checkPassword, checkUsername, createSession, fail, hashPassword, json, now, readJson,
-} from '../../../lib/auth.js';
+} from '../lib.js';
 
 // POST { username, email, password } -> 201 { username, token, expires_at }
 export async function onRequestPost({ request, env }) {
