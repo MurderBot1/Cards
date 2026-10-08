@@ -23,7 +23,10 @@ backed by a [D1](https://developers.cloudflare.com/d1/) database. Both are on Cl
 ## One-time setup (Cloudflare dashboard)
 
 1. **Create the database.** Workers & Pages → D1 → *Create database*, name it `binder-accounts`. Open it, go to *Console*,
-   paste the contents of [`schema.sql`](schema.sql) and run it.
+   paste the contents of [`schema.sql`](schema.sql) and run it. (It has no comments on purpose: a `--` comment swallows
+   the rest of the line if the console flattens a paste, and D1 then reports "Requests without any query are not
+   supported". Notes on the columns: `email` is stored lowercased and unused for now; `password_hash` is
+   `pbkdf2$<iterations>$<salt b64>$<hash b64>`; `sessions` keeps only a SHA-256 of each token.)
 2. **Create the Pages project.** Workers & Pages → *Create* → *Pages* → *Connect to Git* → pick this repository, then:
    - Production branch: `main`
    - Framework preset: *None*
