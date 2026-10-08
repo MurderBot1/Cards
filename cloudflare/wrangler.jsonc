@@ -10,7 +10,7 @@
       "binding": "DB",
       "database_name": "binder-accounts",
       // The ID shown on the database's page in the Cloudflare dashboard (Workers & Pages > D1 > binder-accounts).
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID"
+      "database_id": "01386511-6c9f-4458-975b-ff4edb2f1096"
     }
   ]
 }
