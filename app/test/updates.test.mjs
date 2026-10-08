@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { detectPlatform, isNewer, parseVersion, pickDownload, pickLatest } from '../js/updates.js';
+import { assetSha256, detectPlatform, formatBytes, isNewer, parseVersion, pickAsset, pickDownload, pickLatest, progressText } from '../js/updates.js';
 
 test('versions', () => {
   assert.deepEqual(parseVersion('v1.0.4'), [1, 0, 4]);
@@ -48,18 +48,38 @@ test('platforms and downloads', () => {
   const r = release('v1.0.5', {
     assets: [
       { name: 'SHA256SUMS.txt', browser_download_url: 'https://x/sums' },
-      { name: 'Binder-windows.zip', browser_download_url: 'https://x/win.zip' },
+      { name: 'Binder-windows-setup.exe', browser_download_url: 'https://x/win.exe', digest: `sha256:${'ab'.repeat(32)}` },
       { name: 'Binder-android-debug.apk', browser_download_url: 'https://x/app.apk' },
-      { name: 'Binder-linux.zip', browser_download_url: 'https://x/linux.zip' },
-      { name: 'Binder-macos-arm64.zip', browser_download_url: 'https://x/mac.zip' },
+      { name: 'Binder-linux-amd64.deb', browser_download_url: 'https://x/linux.deb' },
+      { name: 'Binder-macos-arm64.dmg', browser_download_url: 'https://x/mac.dmg' },
       { name: 'Binder-ios-unsigned.ipa', browser_download_url: 'https://x/app.ipa' },
     ],
   });
   assert.equal(pickDownload(r, 'android'), 'https://x/app.apk');
-  assert.equal(pickDownload(r, 'windows'), 'https://x/win.zip');
-  assert.equal(pickDownload(r, 'macos'), 'https://x/mac.zip');
-  assert.equal(pickDownload(r, 'linux'), 'https://x/linux.zip');
+  assert.equal(pickDownload(r, 'windows'), 'https://x/win.exe');
+  assert.equal(pickDownload(r, 'macos'), 'https://x/mac.dmg');
+  assert.equal(pickDownload(r, 'linux'), 'https://x/linux.deb');
   assert.equal(pickDownload(r, 'ios'), 'https://x/app.ipa');
   assert.equal(pickDownload(r, null), r.html_url, 'unknown platform: the release page');
   assert.equal(pickDownload(release('v1.0.5'), 'linux'), 'https://github.com/MurderBot1/Cards/releases/tag/v1.0.5', 'no assets: the release page');
+});
+
+test('installer assets, their checksums and the progress text', () => {
+  const asset = { name: 'Binder-windows-setup.exe', browser_download_url: 'https://x/win.exe', digest: `sha256:${'AB'.repeat(32)}` };
+  const r = release('v1.0.8', { assets: [asset] });
+  assert.equal(pickAsset(r, 'windows'), asset);
+  assert.equal(pickAsset(r, 'linux'), null);
+  assert.equal(pickAsset(r, null), null);
+  assert.equal(pickAsset(null, 'windows'), null);
+  assert.equal(assetSha256(asset), 'ab'.repeat(32), 'lower-cased');
+  for (const bad of [{}, { digest: 'sha1:abc' }, { digest: `sha256:${'a'.repeat(63)}` }, { digest: null }, null]) assert.equal(assetSha256(bad), null);
+
+  assert.equal(formatBytes(0), '0 B');
+  assert.equal(formatBytes(2048), '2 KB');
+  assert.equal(formatBytes(98_400_000), '98 MB');
+  assert.equal(formatBytes(1_200_000_000), '1.2 GB');
+  assert.equal(progressText({ version: 'v1.0.8' }), 'Downloading v1.0.8…');
+  assert.equal(progressText({ version: 'v1.0.8', bytes: 12_000_000 }), 'Downloading v1.0.8 — 12 MB');
+  assert.equal(progressText({ version: 'v1.0.8', bytes: 12_000_000, total: 98_000_000 }), 'Downloading v1.0.8 — 12 MB of 98 MB');
+  assert.equal(progressText(null), 'Downloading the update…');
 });

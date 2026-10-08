@@ -7,6 +7,8 @@
 
 #include "api.hpp"
 #include "open_url.hpp"
+#include "sha256.hpp"
+#include "updater.hpp"
 #include "cardtest.hpp"
 
 namespace fs = std::filesystem;
@@ -37,6 +39,22 @@ public:
         if (image == "blurry") return {400, {{"error", "Image is too blurry"}}};
         return {200, {{"name", "Lightning Bolt"}, {"set", "M10"}}};
     }
+};
+
+// Serves one fixed body for any URL, as a file.
+class FakeTransport : public cardfetch::Transport {
+public:
+    explicit FakeTransport(std::string body, long status = 200) : body_(std::move(body)), status_(status) {}
+    cardfetch::Response get(const std::string&, int) override { return {status_, body_}; }
+    long get_to_file(const std::string&, int, const fs::path& dest) override {
+        if (on_download_size) on_download_size(body_.size());
+        std::ofstream(dest, std::ios::binary) << body_;
+        return status_;
+    }
+
+private:
+    std::string body_;
+    long status_;
 };
 
 json parse(const httplib::Result& r) { return r ? json::parse(r->body, nullptr, false) : json(); }
@@ -157,6 +175,81 @@ int main() {
     CHECK_EQ(cli.Post("/api/open-url", "{}", kJson)->status, 400);
     CHECK_EQ(cli.Post("/api/open-url", json{{"url", 5}}.dump(), kJson)->status, 400);
     CHECK_EQ(opened.size(), static_cast<size_t>(1));  // none of the bad ones got through
+
+    // ---- SHA-256 and in-app updates
+    CHECK_EQ(binder::sha256_hex(""), std::string("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"));
+    CHECK_EQ(binder::sha256_hex("abc"), std::string("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"));
+    CHECK_EQ(binder::sha256_hex(std::string(1000, 'a')),
+             std::string("41edece42d63e8d9bf515a9ba6932e1c20cbc9f5a5d134645adb5db1b9737ea3"));
+    {
+        std::ofstream(tmp.path() / "hashme.bin", std::ios::binary) << "abc";
+        CHECK_EQ(binder::sha256_file_hex(tmp.path() / "hashme.bin"), binder::sha256_hex("abc"));
+        CHECK_EQ(binder::sha256_file_hex(tmp.path() / "missing.bin"), std::string());
+    }
+    const std::string release = "https://github.com/MurderBot1/Cards/releases/download/v1.0.8/";
+    for (const char* name : {"Binder-windows-setup.exe", "Binder-macos-arm64.dmg", "Binder-linux-amd64.deb"})
+        CHECK(binder::is_update_url(release + name));
+    for (const char* bad : {"Binder-windows.zip", "Binder-android-debug.apk", "../x", "Binder-linux-amd64.deb?x=1"})
+        CHECK(!binder::is_update_url(release + bad));
+    CHECK(!binder::is_update_url("https://github.com/MurderBot1/Cards/releases/download/latest/Binder-linux-amd64.deb"));
+    CHECK(!binder::is_update_url("https://github.com/MurderBot1/Cards/releases/download/v1.0/Binder-linux-amd64.deb"));
+    CHECK(!binder::is_update_url("https://github.com/MurderBot1/Cards/releases/tag/v1.0.8"));
+    CHECK(!binder::is_update_url("https://evil.example/releases/download/v1.0.8/Binder-linux-amd64.deb"));
+    CHECK(binder::is_sha256_hex(binder::sha256_hex("x")));
+    CHECK(!binder::is_sha256_hex("abc"));
+
+    const std::string installer = "pretend installer bytes";
+    const std::string installer_url = release + "Binder-linux-amd64.deb";
+    CHECK_EQ(cli.Get("/api/update/status")->status, 501);  // no updater in this context yet
+    CHECK_EQ(cli.Post("/api/update/install", "{}", kJson)->status, 501);
+    int launched = 0, quit_calls = 0;
+    fs::path launched_file;
+    binder::Updater::Hooks update_hooks;
+    update_hooks.make_transport = [&] { return std::make_unique<FakeTransport>(installer); };
+    update_hooks.launch = [&](const fs::path& file, std::string&) {
+        ++launched;
+        launched_file = file;
+        return true;
+    };
+    update_hooks.quit = [&] { ++quit_calls; };
+    binder::Updater updater(tmp.path() / "update", update_hooks);
+    ctx.updater = &updater;
+    auto wait_for_update = [&](const char* state) {
+        json st;
+        for (int i = 0; i < 200; ++i) {
+            st = parse(cli.Get("/api/update/status"));
+            if (st["state"] == json(state)) break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(25));
+        }
+        return st;
+    };
+    CHECK_EQ(parse(cli.Get("/api/update/status"))["state"], json("idle"));
+    CHECK_EQ(cli.Post("/api/update/install", "{}", kJson)->status, 409);  // nothing downloaded yet
+    CHECK_EQ(cli.Post("/api/update/download", json{{"url", "https://evil.example/x.exe"}, {"sha256", binder::sha256_hex(installer)}}.dump(), kJson)->status, 400);
+    CHECK_EQ(cli.Post("/api/update/download", json{{"url", installer_url}}.dump(), kJson)->status, 400);  // no checksum
+    CHECK_EQ(cli.Post("/api/update/download", json{{"url", installer_url}, {"sha256", "nothex"}}.dump(), kJson)->status, 400);
+    // a download that doesn't match its checksum is thrown away, never installed
+    CHECK_EQ(cli.Post("/api/update/download", json{{"url", installer_url}, {"sha256", binder::sha256_hex("other")}}.dump(), kJson)->status, 202);
+    auto bad_update = wait_for_update("error");
+    CHECK_EQ(bad_update["state"], json("error"));
+    CHECK(bad_update["error"].get<std::string>().find("checksum") != std::string::npos);
+    CHECK_EQ(cli.Post("/api/update/install", "{}", kJson)->status, 409);
+    CHECK(!fs::exists(tmp.path() / "update" / "Binder-linux-amd64.deb"));
+    // a good one downloads, then installs once: the installer is started and the app asked to quit
+    CHECK_EQ(cli.Post("/api/update/download", json{{"url", installer_url}, {"sha256", binder::sha256_hex(installer)}}.dump(), kJson)->status, 202);
+    auto good_update = wait_for_update("ready");
+    CHECK_EQ(good_update["state"], json("ready"));
+    CHECK_EQ(good_update["version"], json("v1.0.8"));
+    CHECK_EQ(good_update["bytes"], json(installer.size()));
+    CHECK_EQ(good_update["total"], json(installer.size()));
+    CHECK_EQ(launched, 0);
+    CHECK_EQ(cli.Post("/api/update/install", "{}", kJson)->status, 200);
+    CHECK_EQ(launched, 1);
+    CHECK_EQ(quit_calls, 1);
+    CHECK_EQ(launched_file.filename().string(), std::string("Binder-linux-amd64.deb"));
+    CHECK_EQ(cli.Post("/api/update/install", "{}", kJson)->status, 409);  // already handed over
+    CHECK_EQ(launched, 1);
+    ctx.updater = nullptr;
 
     // ---- settings
     CHECK_EQ(parse(cli.Get("/api/settings"))["theme"], json("dark"));

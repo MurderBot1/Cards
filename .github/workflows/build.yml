@@ -189,12 +189,38 @@ jobs:
         shell: pwsh
         run: |
           cmake --install build --config Release --component binder --prefix dist
-          Compress-Archive -Path dist/Binder -DestinationPath Binder-windows.zip
+          # The release is an installer (NSIS; see native/binder/packaging/windows/installer.nsi), which the app also
+          # runs silently to update itself.
+          $version = "$env:BINDER_VERSION" -replace '^v', ''
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { $version = '0.0.0' }
+          $makensis = (Get-Command makensis -ErrorAction SilentlyContinue).Source
+          if (-not $makensis) {
+            choco install nsis -y --no-progress
+            $makensis = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+          }
+          & $makensis /V2 "/DVERSION=$version" "/DSOURCE=$PWD\dist\Binder" "/DICON=$PWD\native\binder\packaging\icons\icon.ico" `
+            "/DOUTFILE=$PWD\Binder-windows-setup.exe" native\binder\packaging\windows\installer.nsi
+          if ($LASTEXITCODE -ne 0) { throw "makensis failed" }
+          Get-Item Binder-windows-setup.exe | Format-List Name, Length
+
+      # Run it the way the updater does and check the app landed where the installer says it does.
+      - name: Test the installer
+        shell: pwsh
+        run: |
+          # (not Start-Process -Wait: that also waits for the app the silent installer starts)
+          $setup = Start-Process -FilePath "$PWD\Binder-windows-setup.exe" -ArgumentList '/S' -PassThru
+          if (-not $setup.WaitForExit(180000)) { $setup.Kill(); throw "the installer didn't finish" }
+          $exe = "$env:LOCALAPPDATA\Programs\Binder\binder.exe"
+          if (-not (Test-Path $exe)) { throw "the installer didn't install $exe" }
+          if (-not (Test-Path "$env:LOCALAPPDATA\Programs\Binder\frontend\index.html")) { throw "no frontend installed" }
+          Get-ChildItem "$env:LOCALAPPDATA\Programs\Binder" | Select-Object -First 20 | Format-Table Name, Length
+          Start-Sleep -Seconds 3
+          Stop-Process -Name binder -Force -ErrorAction SilentlyContinue   # a silent install starts the app
 
       - uses: actions/upload-artifact@v4
         with:
           name: Binder-windows
-          path: Binder-windows.zip
+          path: Binder-windows-setup.exe
           if-no-files-found: error
 
   macos:
@@ -250,13 +276,26 @@ jobs:
       - name: Package
         run: |
           cmake --install build --component binder --prefix dist
-          cd dist
-          ditto -c -k --sequesterRsrc --keepParent Binder.app ../Binder-macos-arm64.zip
+          # The release is a disk image with the app and an Applications shortcut to drag it onto; the app also
+          # mounts it itself to update (src/updater.cpp).
+          mkdir dmgroot
+          cp -R dist/Binder.app dmgroot/
+          ln -s /Applications dmgroot/Applications
+          hdiutil create -volname Binder -srcfolder dmgroot -ov -format UDZO Binder-macos-arm64.dmg
+          ls -l Binder-macos-arm64.dmg
+
+      - name: Test the disk image
+        run: |
+          mkdir -p /tmp/binder-dmg
+          hdiutil attach -nobrowse -readonly -mountpoint /tmp/binder-dmg Binder-macos-arm64.dmg
+          test -x /tmp/binder-dmg/Binder.app/Contents/MacOS/binder
+          test -f /tmp/binder-dmg/Binder.app/Contents/Resources/frontend/index.html
+          hdiutil detach /tmp/binder-dmg
 
       - uses: actions/upload-artifact@v4
         with:
           name: Binder-macos-arm64
-          path: Binder-macos-arm64.zip
+          path: Binder-macos-arm64.dmg
           if-no-files-found: error
 
   linux:
@@ -315,13 +354,24 @@ jobs:
       - name: Package
         run: |
           cmake --install build --component binder --prefix dist
-          cd dist
-          zip -ry ../Binder-linux.zip Binder
+          # The release is a .deb (installs into /opt/binder with a menu entry); the app also installs a newer one itself.
+          version="${BINDER_VERSION#v}"
+          [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || version=0.0.0
+          native/binder/packaging/linux/make-deb.sh dist/Binder "${version}" Binder-linux-amd64.deb \
+            "native/binder_ios/resources/AppIcon83.5x83.5@2x~ipad.png"
+
+      - name: Test the package
+        run: |
+          sudo apt-get install -y ./Binder-linux-amd64.deb
+          test -x /usr/bin/binder
+          test -f /opt/binder/frontend/index.html
+          test -f /usr/share/applications/binder.desktop
+          /usr/bin/binder --help
 
       - uses: actions/upload-artifact@v4
         with:
           name: Binder-linux
-          path: Binder-linux.zip
+          path: Binder-linux-amd64.deb
           if-no-files-found: error
 
   android:
@@ -494,9 +544,9 @@ jobs:
       - name: Collect the release files
         run: |
           mkdir release
-          cp artifacts/Binder-windows/Binder-windows.zip release/
-          cp artifacts/Binder-macos-arm64/Binder-macos-arm64.zip release/
-          cp artifacts/Binder-linux/Binder-linux.zip release/
+          cp artifacts/Binder-windows/Binder-windows-setup.exe release/
+          cp artifacts/Binder-macos-arm64/Binder-macos-arm64.dmg release/
+          cp artifacts/Binder-linux/Binder-linux-amd64.deb release/
           cp artifacts/Binder-android-debug/app-debug.apk release/Binder-android-debug.apk
           cp artifacts/Binder-ios-unsigned/Binder-ios-unsigned.ipa release/
           cd release
@@ -521,5 +571,5 @@ jobs:
             gh release delete latest --cleanup-tag --yes || true
             gh release create latest release/* --prerelease --target "${GITHUB_SHA}" \
               --title "Latest build (main)" \
-              --notes "Automated build of ${GITHUB_SHA} from \`main\`: Windows, macOS (Apple Silicon, unsigned), Linux and an unsigned Android debug APK. See BUILDING.md for what each needs to run."
+              --notes "Automated build of ${GITHUB_SHA} from \`main\`: installers for Windows, macOS (Apple Silicon, unsigned) and Linux (.deb), an Android debug APK and an unsigned iOS IPA. See BUILDING.md for what each needs to run."
           fi

@@ -113,9 +113,20 @@ the downloaded dependencies' own install rules out of it), and CI zips it:
 
 | | Layout |
 |---|---|
-| Windows `Binder-windows.zip` | `Binder/binder.exe`, `frontend/`, `onnxruntime.dll`, the MSVC runtime |
-| macOS `Binder-macos-arm64.zip` | `Binder.app` (`Info.plist` with the camera usage string, icon, `Frameworks/libonnxruntime.dylib`) |
-| Linux `Binder-linux.zip` | `Binder/binder`, `frontend/`, `libonnxruntime.so*` (found through `$ORIGIN`) |
+| Windows `Binder-windows-setup.exe` | an NSIS installer (`native/binder/packaging/windows/installer.nsi`) for: `binder.exe`, `frontend/`, `onnxruntime.dll`, the MSVC runtime |
+| macOS `Binder-macos-arm64.dmg` | a disk image with `Binder.app` (`Info.plist` with the camera usage string, icon, `Frameworks/libonnxruntime.dylib`) and an Applications shortcut |
+| Linux `Binder-linux-amd64.deb` | a package (`native/binder/packaging/linux/make-deb.sh`) with `/opt/binder/{binder, frontend/, libonnxruntime.so*}`, `/usr/bin/binder` and a menu entry |
+
+What `cmake --install` lays out (`Binder/…` on Windows and Linux, `Binder.app` on macOS) is what those installers wrap, and CI
+installs each one (silently on Windows, with `apt` on Linux, by mounting the image on macOS) as a smoke test before it
+uploads it.
+
+- **Windows installer:** per user, no administrator prompt, into `%LOCALAPPDATA%\Programs\Binder` (Start menu shortcut,
+  an entry in Settings → Apps). Run over an existing install it upgrades it; the collections, settings and card catalog
+  live in the user's app-data folder, so installing and uninstalling never touch them. It is unsigned, so SmartScreen
+  shows "Windows protected your PC" the first time: More info → Run anyway.
+- **Linux package:** `sudo apt install ./Binder-linux-amd64.deb` (pulls in GTK and WebKitGTK). Debian/Ubuntu only; there
+  is no RPM.
 
 - **macOS:** the runners are arm64, so the app only runs on Apple Silicon, and it is **unsigned and un-notarized**.
   Gatekeeper refuses it on first launch: right-click → Open, or `xattr -dr com.apple.quarantine Binder.app`. Shipping to
@@ -191,10 +202,25 @@ app.
 ## Updates
 
 The app checks the project's GitHub releases on startup (and from "Check for updates" on the Account tab) and offers the
-newest `vX.Y.Z` release with a banner. **Update** opens the right download for the platform: the APK on Android, the zip
-for Windows, macOS or Linux on a computer (you unzip it over the old copy). It can only do that in a *released* build: the
+newest `vX.Y.Z` release with a banner. **Update** downloads this platform's installer inside the app and installs it:
+
+| | What happens |
+|---|---|
+| Windows | `Binder-windows-setup.exe` runs silently over the old copy (no prompt: it is a per-user install), then starts the new version |
+| macOS | the app mounts `Binder-macos-arm64.dmg`, swaps `Binder.app` for the new one (where the old one was) and reopens it |
+| Linux | `pkexec apt-get install` the new `.deb` (a password prompt from the desktop), then starts it again; without polkit/apt it opens the package in the software installer |
+| Android | downloads the APK and opens the system installer on it, which always asks for confirmation (the first time it also sends you to the "install unknown apps" switch for Binder) |
+| iOS | can't install anything itself: opens the IPA download in Safari, to be sideloaded again |
+
+The backend (`native/binder/src/updater.cpp`, `/api/update/*`; Android: `ApkUpdater.kt`) only downloads this project's
+installer files from a `…/releases/download/vX.Y.Z/` URL and refuses to run one whose SHA-256 differs from the digest GitHub
+publishes for that asset (so a tampered download is never started). "Install updates automatically" on the Account tab
+(on by default) does all of that without a tap: at startup on a computer, while later checks only download and leave a
+"Restart to update" button, so nothing closes in the middle of a scan; on Android it downloads and leaves an Install
+button. A release that failed to install is not retried automatically. It can only do that in a *released* build: the
 release workflow stamps the version into `app/js/version.js` (and Android's version name and code), while a local build or
-the rolling `latest` build says `dev` and never asks to update.
+the rolling `latest` build says `dev` and never asks to update. Versions before 1.0.8 shipped zips and don't know the
+installers' names, so they send you to the release page: install v1.0.8 by hand once and it updates itself from then on.
 
 **Android updates need a fixed signing key.** Android installs a new APK over an old one only if both were signed with the
 same key, and a CI runner invents a new debug key every time, so without one the banner's download fails with "App not

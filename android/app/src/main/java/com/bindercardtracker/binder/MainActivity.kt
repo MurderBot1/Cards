@@ -212,10 +212,22 @@ class MainActivity : AppCompatActivity() {
         mainHandler.postDelayed({ webView.loadUrl(serverUrl) }, RETRY_DELAY_MS)
     }
 
-    /** What the page's "update available" banner calls to open a download (js/updates.js): this project's GitHub
-     * release pages and files only, handed to the browser, which downloads them (an APK then installs over this
-     * app if it is signed with the same key). */
+    /** What the page's "update available" banner calls (js/updates.js): the in-app update (below), or, as a fallback,
+     * opening this project's GitHub release pages and files in the browser. */
     private inner class UpdateBridge {
+        private val updater = ApkUpdater(this@MainActivity)
+
+        /** In-app update: download this release's APK (checked against its SHA-256), then open the installer. Each
+         * returns JSON like the desktop backend's update routes (see ApkUpdater and js/updates.js). */
+        @JavascriptInterface
+        fun updateStart(url: String, sha256: String): String = updater.start(url, sha256)
+
+        @JavascriptInterface
+        fun updateStatus(): String = updater.status()
+
+        @JavascriptInterface
+        fun updateInstall(): String = updater.install()
+
         @JavascriptInterface
         fun openExternal(url: String): Boolean {
             if (!url.startsWith(RELEASES_PREFIX) || url.length > 400) return false
