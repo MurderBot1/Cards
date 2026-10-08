@@ -194,7 +194,9 @@ HTTPS; set its address as `AUTH_URL` in `app/js/config.js` (setup steps are in `
 the Sign in screen says accounts aren't set up yet and the rest of the app works as before.
 
 Signed-in devices keep their collections in sync through the same service (the account page shows when it last synced), and
-the collection screens show card prices from it; see `cloudflare/README.md`.
+the collection screens show card prices. Prices are asked of Scryfall, pokemontcg.io and YGOPRODeck directly from the page
+(`app/js/priceSources.js`), so they need no account or setup; if one of those sites can't be reached from the page (blocked,
+rate limited), the Worker's `/api/prices` (a shared D1 cache, see `cloudflare/README.md`) fills in when it's configured.
 
 The older `/api/auth/*` routes in the local backend, which spoke to a separate TCP LoginServer, are no longer used by the
 app.

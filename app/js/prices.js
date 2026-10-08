@@ -1,7 +1,8 @@
 /**
  * prices.js
- * Card prices in US dollars, from the account service's /api/prices (which asks Scryfall, pokemontcg.io and
- * YGOPRODeck and caches the answers). No account is needed, but the service has to be configured (config.js).
+ * Card prices in US dollars, asked of Scryfall, pokemontcg.io and YGOPRODeck directly (priceSources.js): no account
+ * and no setup needed. If a site can't be reached from here (blocked, rate limited), the account service's
+ * /api/prices, which asks them for us and caches the answers, fills in when it is configured (config.js).
  *
  * Prices are looked up by the catalog id a card was added with (`uid`); cards saved before that was kept get theirs
  * filled in from the local catalog first (backfillUids). Answers are remembered on this device for a few hours so
@@ -9,6 +10,7 @@
  */
 import { AUTH_URL } from './config.js';
 import { accountRequest, api } from './api.js';
+import { lookUpPrices } from './priceSources.js';
 
 const CACHE_KEY = 'binder_prices_v1';
 const STALE_MS = 6 * 60 * 60 * 1000;
@@ -24,7 +26,7 @@ function save() {
   try { localStorage.setItem(CACHE_KEY, JSON.stringify(cache)); } catch (e) { /* storage full or unavailable */ }
 }
 
-export const pricesEnabled = () => !!AUTH_URL;
+export const pricesEnabled = () => true;  // the card sites need no setup; the account service is only a fallback
 
 export function priceKey(card) {
   return card.uid || `${card.game}|${String(card.name).toLowerCase()}|${card.set || ''}`;
@@ -69,24 +71,34 @@ export async function loadPrices(cards) {
   }
   const list = [...wanted.entries()];
   let changed = false;
-  for (let i = 0; i < list.length; i += CHUNK) {
-    const part = list.slice(i, i + CHUNK);
-    let response;
-    try {
-      response = await accountRequest('/prices', {
-        body: { cards: part.map(([key, c]) => ({ key, game: c.game, name: c.name, set: c.set || '', uid: c.uid || '' })) },
-      });
-    } catch (err) {
-      break; // offline, rate limited or the service is down: try again next time
-    }
-    const unavailable = new Set(response.unavailable || []);
-    for (const [key] of part) {
-      if (unavailable.has(key)) continue;
-      const price = response.prices[key];
-      cache[key] = price
-        ? { usd: price.usd ?? null, usdFoil: price.usd_foil ?? null, at: Date.now() }
-        : { usd: null, usdFoil: null, at: Date.now() };
-      changed = true;
+  const remember = (key, price) => {
+    cache[key] = price
+      ? { usd: price.usd ?? null, usdFoil: price.usd_foil ?? null, at: Date.now() }
+      : { usd: null, usdFoil: null, at: Date.now() };
+    changed = true;
+  };
+  const request = ([key, c]) => ({ key, game: c.game, name: c.name, set: c.set || '', uid: c.uid || '' });
+
+  // straight from the card sites first
+  const direct = await lookUpPrices(list.map(request));
+  for (const [key, price] of direct.prices) remember(key, price);
+
+  // whatever they couldn't answer, the account service's shared cache may have
+  const missed = new Set(direct.failed.map((c) => c.key));
+  const fallback = list.filter(([key]) => missed.has(key));
+  if (AUTH_URL) {
+    for (let i = 0; i < fallback.length; i += CHUNK) {
+      const part = fallback.slice(i, i + CHUNK);
+      let response;
+      try {
+        response = await accountRequest('/prices', { body: { cards: part.map(request) } });
+      } catch (err) {
+        break; // offline, rate limited or the service is down: try again next time
+      }
+      const unavailable = new Set(response.unavailable || []);
+      for (const [key] of part) {
+        if (!unavailable.has(key)) remember(key, response.prices[key]);
+      }
     }
   }
   if (changed) save();
