@@ -1149,9 +1149,13 @@ svg {
   height: 56px;
   margin: 10px 0 4px;
   border-radius: 50%;
-  border: 4px solid var(--surface-3, #2E313E);
-  border-top-color: var(--foil-1);
-  border-right-color: var(--foil-2);
+  /* A ring cut out of a conic gradient, so the tail fades out and the head blends smoothly from one foil colour
+     into the other, over a faint track — instead of two hard-edged coloured quarter borders. */
+  background:
+    conic-gradient(from 0deg, transparent 0%, var(--foil-1) 55%, var(--foil-2) 100%),
+    var(--surface-3, #2E313E);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px));
   animation: setup-spin 0.9s linear infinite;
 }
 .setup-task { font-weight: 600; color: var(--text, #F0EFF6); }
