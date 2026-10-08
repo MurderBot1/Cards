@@ -207,7 +207,9 @@ jobs:
       - name: Test the installer
         shell: pwsh
         run: |
-          Start-Process -FilePath "$PWD\Binder-windows-setup.exe" -ArgumentList '/S' -Wait
+          # (not Start-Process -Wait: that also waits for the app the silent installer starts)
+          $setup = Start-Process -FilePath "$PWD\Binder-windows-setup.exe" -ArgumentList '/S' -PassThru
+          if (-not $setup.WaitForExit(180000)) { $setup.Kill(); throw "the installer didn't finish" }
           $exe = "$env:LOCALAPPDATA\Programs\Binder\binder.exe"
           if (-not (Test-Path $exe)) { throw "the installer didn't install $exe" }
           if (-not (Test-Path "$env:LOCALAPPDATA\Programs\Binder\frontend\index.html")) { throw "no frontend installed" }

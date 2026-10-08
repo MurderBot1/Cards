@@ -14,7 +14,7 @@ import java.security.MessageDigest
 
 /**
  * In-app updates on Android (the page's js/updates.js talks to this through the `BinderAndroid` bridge, the same
- * shape the desktop backend's /api/update/* routes have): downloads the release's APK into the app's cache, checks it
+ * shape the desktop backend's update routes have): downloads the release's APK into the app's cache, checks it
  * against the SHA-256 GitHub publishes for it, then opens the system installer on it. Android always asks the user to
  * confirm an install, and it only replaces this app if the APK is signed with the same key (see BUILDING.md).
  */

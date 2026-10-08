@@ -218,7 +218,7 @@ class MainActivity : AppCompatActivity() {
         private val updater = ApkUpdater(this@MainActivity)
 
         /** In-app update: download this release's APK (checked against its SHA-256), then open the installer. Each
-         * returns JSON like the desktop backend's /api/update/* routes (see ApkUpdater and js/updates.js). */
+         * returns JSON like the desktop backend's update routes (see ApkUpdater and js/updates.js). */
         @JavascriptInterface
         fun updateStart(url: String, sha256: String): String = updater.start(url, sha256)
 
