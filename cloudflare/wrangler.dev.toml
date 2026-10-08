@@ -1,9 +1,0 @@
-# Local development only (`npm run dev`); not named wrangler.toml, so Cloudflare Pages ignores it and the
-# production D1 binding stays configured in the dashboard.
-name = "binder-accounts-dev"
-compatibility_date = "2024-09-23"
-
-[[d1_databases]]
-binding = "DB"
-database_name = "binder-accounts"
-database_id = "local"

@@ -1,0 +1,16 @@
+{
+  // The Worker behind https://binder.<account>.workers.dev. Deploy it from this folder (Workers Builds: set the root
+  // directory to "cloudflare"; the deploy command is `npx wrangler deploy`).
+  "name": "binder",
+  "main": "src/worker.js",
+  "compatibility_date": "2024-09-23",
+  "assets": { "directory": "./public" },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "binder-accounts",
+      // The ID shown on the database's page in the Cloudflare dashboard (Workers & Pages > D1 > binder-accounts).
+      "database_id": "01386511-6c9f-4458-975b-ff4edb2f1096"
+    }
+  ]
+}
