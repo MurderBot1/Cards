@@ -138,5 +138,89 @@ int main() {
     CHECK_EQ(id.size(), static_cast<size_t>(8));
     CHECK(id.find_first_not_of("0123456789abcdef") == std::string::npos);
 
+    // ---- sync: stamps, tombstones, state export and apply
+    {
+        cardtest::TempDir t3;
+        long long clock = 1000;
+        int n = 0;
+        cardstore::Store st(t3.path() / "db.json", [&] { return "s" + std::to_string(++n); }, [&] { return clock += 10; });
+
+        auto col = st.create_collection({{"name", "Sync me"}});  // s1, updated 1010
+        CHECK_EQ(col.body["updated"], json(1010));
+        json bolt = {{"id", "mtg-abc"}, {"name", "Bolt"}, {"game", "mtg"}, {"set", "M10"}};
+        auto added = st.add_card("s1", bolt);  // card s2, stamped 1020
+        CHECK_EQ(added.body["cards"][0]["uid"], json("mtg-abc"));  // the catalog id is kept as uid
+        CHECK_EQ(added.body["cards"][0]["updated"], json(1020));
+        CHECK_EQ(added.body["updated"], json(1020));
+        st.add_card("s1", bolt);  // stacks: same card, newer stamp
+        CHECK_EQ(st.get_collection("s1").body["cards"][0]["updated"], json(1030));
+        CHECK_EQ(st.update_card("s1", "s2", json::object()).status, 400);
+        CHECK_EQ(st.update_card("s1", "s2", {{"uid", 5}}).status, 400);
+        CHECK_EQ(st.update_card("s1", "s2", {{"uid", "mtg-def"}}).status, 200);  // uid alone is a valid update (backfill)
+        CHECK_EQ(st.get_collection("s1").body["cards"][0]["uid"], json("mtg-def"));
+
+        auto state = st.sync_state().body;
+        CHECK_EQ(state["collections"].size(), static_cast<size_t>(1));
+        CHECK_EQ(state["collections"][0]["updated"], json(1040));
+        CHECK_EQ(state["collections"][0]["tomb"], json::object());
+        CHECK_EQ(state["deleted"], json::array());
+
+        // removing a card leaves a tombstone and bumps the collection
+        st.update_card("s1", "s2", {{"quantity", 0}});
+        auto after_remove = st.sync_state().body["collections"][0];
+        CHECK_EQ(after_remove["cards"].size(), static_cast<size_t>(0));
+        CHECK_EQ(after_remove["tomb"]["s2"], json(1050));
+        CHECK_EQ(after_remove["updated"], json(1050));
+
+        // apply: a merged doc replaces the collection when nothing changed since the request...
+        json merged = {{"id", "s1"}, {"name", "Sync me"}, {"updated", 2000},
+                       {"cards", json::array({{{"id", "s9"}, {"name", "Other"}, {"game", "mtg"}, {"quantity", 2}, {"updated", 2000}}})},
+                       {"tomb", {{"s2", 1050}}}};
+        auto ok = st.sync_apply({{"collections", json::array({merged})}, {"expect", {{"s1", 1050}}}});
+        CHECK_EQ(ok.status, 200);
+        CHECK_EQ(ok.body["applied"], json::array({"s1"}));
+        CHECK_EQ(st.get_collection("s1").body["cards"][0]["id"], json("s9"));
+        CHECK_EQ(st.get_collection("s1").body["updated"], json(2000));
+
+        // ...but is skipped if the collection was edited after the sync started
+        st.update_card("s1", "s9", {{"quantity", 5}});  // 1060
+        auto stale = st.sync_apply({{"collections", json::array({merged})}, {"expect", {{"s1", 2000}}}});
+        CHECK_EQ(stale.body["skipped"], json::array({"s1"}));
+        CHECK_EQ(st.get_collection("s1").body["cards"][0]["quantity"], json(5));
+
+        // a new collection from another device is added; one we didn't expect to exist is skipped
+        json other = {{"id", "x1"}, {"name", "From phone"}, {"updated", 3000}, {"cards", json::array()}};
+        auto added_remote = st.sync_apply({{"collections", json::array({other})}, {"expect", json::object()}});
+        CHECK_EQ(added_remote.body["applied"], json::array({"x1"}));
+        CHECK_EQ(st.list_collections().body.size(), static_cast<size_t>(2));
+        auto unexpected = st.sync_apply({{"collections", json::array({other})}, {"expect", {{"x1", 3000}, {"zz", 1}}}});
+        CHECK_EQ(unexpected.body["applied"], json::array({"x1"}));
+        CHECK_EQ(st.sync_apply({{"collections", json::array({{{"id", "zz"}, {"name", "n"}, {"cards", json::array()}}})},
+                                {"expect", {{"zz", 1}}}}).body["skipped"], json::array({"zz"}));  // it vanished meanwhile
+
+        // deleting records a tombstone; a remote deletion removes the collection and records it too
+        st.delete_collection("s1");
+        auto after_delete = st.sync_state().body;
+        CHECK_EQ(after_delete["deleted"].size(), static_cast<size_t>(1));
+        CHECK_EQ(after_delete["deleted"][0]["id"], json("s1"));
+        auto gone = st.sync_apply({{"collections", json::array({{{"id", "x1"}, {"deleted", 4000}}})}, {"expect", {{"x1", 3000}}}});
+        CHECK_EQ(gone.body["applied"], json::array({"x1"}));
+        CHECK_EQ(st.list_collections().body.size(), static_cast<size_t>(0));
+        CHECK_EQ(st.sync_state().body["deleted"].size(), static_cast<size_t>(2));
+        // a collection that comes back (edited after it was deleted elsewhere) clears its tombstone
+        auto back = st.sync_apply({{"collections", json::array({{{"id", "x1"}, {"name", "Back"}, {"updated", 5000}, {"cards", json::array()}}})},
+                                   {"expect", json::object()}});
+        CHECK_EQ(back.body["applied"], json::array({"x1"}));
+        CHECK_EQ(st.sync_state().body["deleted"].size(), static_cast<size_t>(1));
+        CHECK_EQ(st.sync_apply(json::array()).status, 400);
+
+        // data written before stamps existed reads as updated = 1
+        std::ofstream(t3.path() / "old.json") << R"({"collections":[{"id":"o1","name":"Old","cards":[{"id":"c1","name":"X","game":"mtg","quantity":1}]}],"settings":{}})";
+        cardstore::Store old(t3.path() / "old.json");
+        auto old_state = old.sync_state().body["collections"][0];
+        CHECK_EQ(old_state["updated"], json(1));
+        CHECK_EQ(old_state["cards"][0]["updated"], json(1));
+    }
+
     return cardtest::finish("cardstore");
 }

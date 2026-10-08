@@ -1,5 +1,7 @@
 #include "cardstore/store.hpp"
 
+#include <algorithm>
+#include <chrono>
 #include <fstream>
 #include <random>
 #include <sstream>
@@ -54,6 +56,17 @@ json* find_collection(json& db, const std::string& id) {
     return nullptr;
 }
 
+long long system_now_ms() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+        .count();
+}
+
+// `updated` of a stored collection/card; 1 for data written before stamps existed (older than any real edit).
+long long stamp_of(const json& v) {
+    auto it = v.find("updated");
+    return it != v.end() && it->is_number() ? it->get<long long>() : 1;
+}
+
 std::string random_id() {
     static std::mutex m;
     static std::mt19937_64 gen{std::random_device{}()};
@@ -66,8 +79,10 @@ std::string random_id() {
 
 }  // namespace
 
-Store::Store(fs::path db_path, std::function<std::string()> make_id)
-    : db_path_(std::move(db_path)), make_id_(make_id ? std::move(make_id) : random_id) {}
+Store::Store(fs::path db_path, std::function<std::string()> make_id, std::function<long long()> now_ms)
+    : db_path_(std::move(db_path)),
+      make_id_(make_id ? std::move(make_id) : random_id),
+      now_ms_(now_ms ? std::move(now_ms) : system_now_ms) {}
 
 json Store::load_locked() {
     if (!fs::exists(db_path_)) return empty_db();
@@ -112,7 +127,7 @@ Result Store::create_collection(const json& body) {
 
     std::lock_guard<std::mutex> lock(mu_);
     json db = load_locked();
-    json collection = {{"id", make_id_()}, {"name", name}, {"cards", json::array()}};
+    json collection = {{"id", make_id_()}, {"name", name}, {"cards", json::array()}, {"updated", now_ms_()}};
     db["collections"].push_back(collection);
     save_locked(db);
     return {201, collection};
@@ -134,6 +149,8 @@ Result Store::delete_collection(const std::string& id) {
         if (c.value("id", "") != id) kept.push_back(c);
     if (kept.size() == db["collections"].size()) return error(404, "not found");
     db["collections"] = kept;
+    if (!db.contains("deleted") || !db["deleted"].is_object()) db["deleted"] = json::object();
+    db["deleted"][id] = now_ms_();
     save_locked(db);
     return {200, json{{"deleted", true}}};
 }
@@ -167,20 +184,28 @@ Result Store::add_card(const std::string& collection_id, const json& body) {
             break;
         }
     }
+    const long long now = now_ms_();
     if (existing) {
         json& q = (*existing)["quantity"];
         q = q.is_number_integer() ? json(q.get<long long>() + 1) : json(q.get<double>() + 1);
+        (*existing)["updated"] = now;
     } else {
         auto str_or_empty = [&](const char* key) { return body.contains(key) ? body[key] : json(""); };
-        (*collection)["cards"].push_back({{"id", make_id_()},
-                                          {"name", name},
-                                          {"game", game},
-                                          {"set", str_or_empty("set")},
-                                          {"rarity", str_or_empty("rarity")},
-                                          {"image", str_or_empty("image")},
-                                          {"condition", condition},
-                                          {"quantity", 1}});
+        json fresh = {{"id", make_id_()},
+                      {"name", name},
+                      {"game", game},
+                      {"set", str_or_empty("set")},
+                      {"rarity", str_or_empty("rarity")},
+                      {"image", str_or_empty("image")},
+                      {"condition", condition},
+                      {"quantity", 1},
+                      {"updated", now}};
+        // The catalog id the card was picked from (a search or scan result's "id"): lets prices be looked up exactly.
+        json catalog_id = body.contains("uid") ? body["uid"] : field(body, "id");
+        if (catalog_id.is_string() && !catalog_id.get<std::string>().empty()) fresh["uid"] = catalog_id;
+        (*collection)["cards"].push_back(fresh);
     }
+    (*collection)["updated"] = now;
     save_locked(db);
     return {201, *collection};
 }
@@ -188,7 +213,9 @@ Result Store::add_card(const std::string& collection_id, const json& body) {
 Result Store::update_card(const std::string& collection_id, const std::string& card_id, const json& body) {
     json quantity = field(body, "quantity");
     json condition = field(body, "condition");
-    if (quantity.is_null() && condition.is_null()) return error(400, "quantity and/or condition is required");
+    json uid = field(body, "uid");
+    if (quantity.is_null() && condition.is_null() && uid.is_null()) return error(400, "quantity and/or condition is required");
+    if (!uid.is_null() && !uid.is_string()) return error(400, "uid must be a string");
     if (!quantity.is_null() && !quantity.is_number()) return error(400, "quantity must be a number");
     if (!condition.is_null() && !(condition.is_string() && valid_condition(condition.get<std::string>())))
         return error(400, std::string("condition must be one of ") + kValidConditionsRepr);
@@ -198,20 +225,118 @@ Result Store::update_card(const std::string& collection_id, const std::string& c
     json* collection = find_collection(db, collection_id);
     if (!collection) return error(404, "not found");
 
+    const long long now = now_ms_();
     if (!quantity.is_null() && quantity.get<double>() <= 0) {
         json kept = json::array();
-        for (auto& c : (*collection)["cards"])
-            if (c.value("id", "") != card_id) kept.push_back(c);
+        bool removed = false;
+        for (auto& c : (*collection)["cards"]) {
+            if (c.value("id", "") != card_id)
+                kept.push_back(c);
+            else
+                removed = true;
+        }
         (*collection)["cards"] = kept;
+        if (removed) {
+            if (!collection->contains("tomb") || !(*collection)["tomb"].is_object()) (*collection)["tomb"] = json::object();
+            (*collection)["tomb"][card_id] = now;
+            (*collection)["updated"] = now;
+        }
     } else {
         for (auto& c : (*collection)["cards"]) {
             if (c.value("id", "") != card_id) continue;
             if (!quantity.is_null()) c["quantity"] = quantity;
             if (!condition.is_null()) c["condition"] = condition;
+            if (!uid.is_null()) c["uid"] = uid;
+            c["updated"] = now;
+            (*collection)["updated"] = now;
         }
     }
     save_locked(db);
     return {200, *collection};
+}
+
+Result Store::sync_state() {
+    std::lock_guard<std::mutex> lock(mu_);
+    json db = load_locked();
+    json docs = json::array();
+    for (auto& c : db["collections"]) {
+        json doc = {{"id", c.value("id", "")},
+                    {"name", c.value("name", "")},
+                    {"updated", stamp_of(c)},
+                    {"cards", json::array()},
+                    {"tomb", c.contains("tomb") && c["tomb"].is_object() ? c["tomb"] : json::object()}};
+        long long newest = stamp_of(c);
+        for (auto card : c["cards"]) {
+            card["updated"] = stamp_of(card);
+            newest = std::max(newest, stamp_of(card));
+            doc["cards"].push_back(card);
+        }
+        doc["updated"] = newest;  // never older than its newest card
+        docs.push_back(doc);
+    }
+    json deleted = json::array();
+    if (db.contains("deleted") && db["deleted"].is_object())
+        for (auto it = db["deleted"].begin(); it != db["deleted"].end(); ++it)
+            if (it.value().is_number()) deleted.push_back({{"id", it.key()}, {"at", it.value()}});
+    return {200, json{{"collections", docs}, {"deleted", deleted}}};
+}
+
+Result Store::sync_apply(const json& body) {
+    if (!body.is_object()) return error(400, "sync body must be a JSON object");
+    json incoming = body.contains("collections") ? body["collections"] : json::array();
+    json expect = body.contains("expect") && body["expect"].is_object() ? body["expect"] : json::object();
+    if (!incoming.is_array()) return error(400, "collections must be an array");
+
+    std::lock_guard<std::mutex> lock(mu_);
+    json db = load_locked();
+    json applied = json::array(), skipped = json::array();
+    if (!db.contains("deleted") || !db["deleted"].is_object()) db["deleted"] = json::object();
+
+    for (auto& doc : incoming) {
+        if (!doc.is_object() || !doc.contains("id") || !doc["id"].is_string()) continue;
+        const std::string id = doc["id"];
+
+        // What this device had for it when the sync started, versus now.
+        json* local = find_collection(db, id);
+        long long local_stamp = 0;
+        if (local) {
+            local_stamp = stamp_of(*local);
+            for (auto& card : (*local)["cards"]) local_stamp = std::max(local_stamp, stamp_of(card));
+        }
+        auto e = expect.find(id);
+        const bool expected_present = e != expect.end() && e->is_number();
+        if (local ? !(expected_present && e->get<long long>() == local_stamp) : expected_present) {
+            skipped.push_back(id);
+            continue;
+        }
+
+        if (doc.contains("deleted")) {
+            if (!doc["deleted"].is_number()) continue;
+            if (local) {
+                json kept = json::array();
+                for (auto& c : db["collections"])
+                    if (c.value("id", "") != id) kept.push_back(c);
+                db["collections"] = kept;
+            }
+            db["deleted"][id] = doc["deleted"];
+            applied.push_back(id);
+            continue;
+        }
+        if (!doc.contains("cards") || !doc["cards"].is_array() || !doc.contains("name") || !doc["name"].is_string())
+            continue;
+
+        json merged = {{"id", id}, {"name", doc["name"]}, {"cards", doc["cards"]}, {"updated", stamp_of(doc)}};
+        if (doc.contains("tomb") && doc["tomb"].is_object()) merged["tomb"] = doc["tomb"];
+        if (local) {
+            *local = merged;
+        } else {
+            db["collections"].push_back(merged);
+        }
+        db["deleted"].erase(id);
+        applied.push_back(id);
+    }
+    save_locked(db);
+    return {200, json{{"applied", applied}, {"skipped", skipped}}};
 }
 
 Result Store::get_settings() {

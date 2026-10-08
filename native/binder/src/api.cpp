@@ -96,6 +96,16 @@ void register_routes(cardhttp::Server& server, ApiContext& ctx) {
         return respond(store.update_card(req.params.at("id"), req.params.at("card_id"), body));
     });
 
+    // ---- sync: the frontend's sync.js exports this device's collections, sends them to the account service, and
+    // writes back what that returned (see cardstore::Store::sync_state / sync_apply) -------------------------------
+    server.route("GET", "/api/sync/state", [&](const Request&) { return respond(store.sync_state()); });
+    server.route("POST", "/api/sync/apply", [&](const Request& req) {
+        json body;
+        Response failure;
+        if (!parse_object(req, body, failure)) return failure;
+        return respond(store.sync_apply(body));
+    });
+
     // ---- settings ----------------------------------------------------------
     server.route("GET", "/api/settings", [&](const Request&) { return respond(store.get_settings()); });
     server.route("PUT", "/api/settings", [&](const Request& req) {

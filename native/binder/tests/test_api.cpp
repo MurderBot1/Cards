@@ -123,6 +123,17 @@ int main() {
     auto removed = parse(cli.Patch("/api/collections/" + cid + "/cards/" + card_id, "{\"quantity\":0}", kJson));
     CHECK_EQ(removed["cards"].size(), static_cast<size_t>(0));
 
+    // ---- sync routes: export this device's state, and apply a merged result back
+    auto sync_before = parse(cli.Get("/api/sync/state"));
+    CHECK_EQ(sync_before["collections"].size(), static_cast<size_t>(1));
+    CHECK_EQ(sync_before["collections"][0]["id"], json(cid));
+    CHECK(sync_before["collections"][0]["updated"].is_number());
+    CHECK_EQ(cli.Post("/api/sync/apply", "[1]", kJson)->status, 400);
+    json remote = {{"id", "remote1"}, {"name", "From another device"}, {"updated", 99}, {"cards", json::array()}};
+    auto applied = parse(cli.Post("/api/sync/apply", json{{"collections", json::array({remote})}, {"expect", json::object()}}.dump(), kJson));
+    CHECK_EQ(applied["applied"], json::array({"remote1"}));
+    CHECK_EQ(cli.Get("/api/collections/remote1")->status, 200);
+
     // ---- settings
     CHECK_EQ(parse(cli.Get("/api/settings"))["theme"], json("dark"));
     auto settings = parse(cli.Put("/api/settings", "{\"theme\":\"light\",\"minImageQuality\":\"high\"}", kJson));
