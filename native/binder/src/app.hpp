@@ -48,6 +48,12 @@ public:
     // catalog files are missing (the first launch of a build that doesn't bundle them), then loads.
     void warm_up_in_background();
 
+    // For a caller that started with download_missing_data off because it wants the user's say first (Android asks
+    // before using mobile data): shows `message` on the setup screen when there are files to download, and
+    // download_when_ready() later turns downloading on and runs the warm-up again, which now fetches them.
+    void announce_pending_download(const std::string& message);
+    void download_when_ready();
+
     cardscan::Engine& engine();
 
 private:

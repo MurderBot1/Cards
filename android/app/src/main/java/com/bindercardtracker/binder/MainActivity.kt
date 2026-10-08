@@ -1,7 +1,12 @@
 package com.bindercardtracker.binder
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -14,6 +19,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.ProgressBar
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import java.io.File
@@ -27,9 +33,11 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val MAX_LOAD_RETRIES = 40 // ~10s at 250ms apart
         private const val RETRY_DELAY_MS = 250L
+        private val DATA_FILES = listOf("cards.sqlite3", "card-vectors.cvi") // carddownload::Options::files
     }
 
     private var serverUrl = ""
+    private var unmeteredCallback: ConnectivityManager.NetworkCallback? = null
 
     private lateinit var webView: WebView
     private lateinit var loadingOverlay: View
@@ -53,7 +61,9 @@ class MainActivity : AppCompatActivity() {
         }
 
         val frontendDir = extractFrontendAssets()
-        val port = NativeBackend.start(filesDir.absolutePath, frontendDir.absolutePath, 0)
+        val needsDownload = DATA_FILES.any { !File(filesDir, "data/$it").exists() }
+        val askFirst = needsDownload && isOnMeteredNetwork()
+        val port = NativeBackend.start(filesDir.absolutePath, frontendDir.absolutePath, 0, !askFirst)
         if (port <= 0) {
             // Nothing to load; the reason is in logcat (tag "Binder").
             loadingOverlay.visibility = View.GONE
@@ -62,6 +72,50 @@ class MainActivity : AppCompatActivity() {
         serverUrl = "http://127.0.0.1:$port/"
         configureWebView()
         loadWhenReady()
+        if (askFirst) askAboutMeteredDownload()
+    }
+
+    /** True on mobile data or any connection the system flags as metered (or when there's no connection to judge). */
+    private fun isOnMeteredNetwork(): Boolean {
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        return cm.isActiveNetworkMetered
+    }
+
+    /** The catalog is large, so on a metered connection let the user choose between downloading now and waiting
+     * for an unmetered one (Wi-Fi). Waiting registers a callback that starts the download once one is available. */
+    private fun askAboutMeteredDownload() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.download_title)
+            .setMessage(R.string.download_message)
+            .setCancelable(false)
+            .setPositiveButton(R.string.download_now) { _, _ -> NativeBackend.startDownload() }
+            .setNegativeButton(R.string.download_wait_wifi) { _, _ -> startDownloadOnUnmeteredNetwork() }
+            .show()
+    }
+
+    private fun startDownloadOnUnmeteredNetwork() {
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val request = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+            .build()
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                cm.unregisterNetworkCallback(this)
+                unmeteredCallback = null
+                NativeBackend.startDownload()
+            }
+        }
+        unmeteredCallback = callback
+        cm.registerNetworkCallback(request, callback)
+    }
+
+    override fun onDestroy() {
+        unmeteredCallback?.let {
+            (getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager).unregisterNetworkCallback(it)
+            unmeteredCallback = null
+        }
+        super.onDestroy()
     }
 
     /** Copies assets/frontend/ (bundled by app/build.gradle.kts's

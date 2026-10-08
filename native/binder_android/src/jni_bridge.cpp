@@ -86,8 +86,11 @@ extern "C" {
 
 // Starts the backend (once; later calls return the port it's already on). `port` <= 0 picks a free one.
 // Returns the port it's serving on, or -1 on failure (the reason is in logcat under the tag "Binder").
+// `download_now` false holds the catalog download back (the setup screen says it's waiting for Wi-Fi) until
+// NativeBackend.startDownload() is called.
 JNIEXPORT jint JNICALL Java_com_bindercardtracker_binder_NativeBackend_start(JNIEnv* env, jclass, jstring files_dir,
-                                                                          jstring frontend_dir, jint port) {
+                                                                          jstring frontend_dir, jint port,
+                                                                          jboolean download_now) {
     std::lock_guard<std::mutex> lock(g_mu);
     if (g_app) return g_port;
     try {
@@ -103,7 +106,7 @@ JNIEXPORT jint JNICALL Java_com_bindercardtracker_binder_NativeBackend_start(JNI
         app_options.paths = cardpaths::resolve(environment, options);
         app_options.log = log_info;
         // The catalog isn't in the APK: fetch it on first launch through the JVM (see Downloader.kt).
-        app_options.download_missing_data = true;
+        app_options.download_missing_data = download_now == JNI_TRUE;
         app_options.make_transport = [] { return std::make_unique<JvmTransport>(); };
         if (!g_downloader && env->GetJavaVM(&g_vm) == JNI_OK) {
             jclass local = env->FindClass("com/bindercardtracker/binder/Downloader");
@@ -125,6 +128,7 @@ JNIEXPORT jint JNICALL Java_com_bindercardtracker_binder_NativeBackend_start(JNI
         g_app = std::move(app);
         g_port = bound;
         g_server = std::thread([] { g_app->serve(); });
+        if (download_now != JNI_TRUE) g_app->announce_pending_download("Waiting for Wi-Fi to download assets");
         g_app->warm_up_in_background();
         log_info("backend serving on 127.0.0.1:" + std::to_string(g_port));
         return g_port;
@@ -133,6 +137,12 @@ JNIEXPORT jint JNICALL Java_com_bindercardtracker_binder_NativeBackend_start(JNI
         g_app.reset();
         return -1;
     }
+}
+
+// Starts the catalog download that start(..., download_now = false) held back.
+JNIEXPORT void JNICALL Java_com_bindercardtracker_binder_NativeBackend_startDownload(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lock(g_mu);
+    if (g_app) g_app->download_when_ready();
 }
 
 JNIEXPORT void JNICALL Java_com_bindercardtracker_binder_NativeBackend_stop(JNIEnv*, jclass) {

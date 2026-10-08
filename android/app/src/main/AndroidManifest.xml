@@ -10,6 +10,8 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <!-- First launch downloads the card catalog (see Downloader.kt). -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Lets MainActivity ask before the download uses mobile data, and notice when Wi-Fi arrives. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-feature
         android:name="android.hardware.camera"
         android:required="false" />
