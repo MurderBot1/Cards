@@ -376,10 +376,18 @@ jobs:
         shell: bash
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           if [ -n "${KEYSTORE_B64}" ]; then
+            if [ -z "${KEYSTORE_PASSWORD}" ] || [ -z "${KEY_ALIAS}" ] || [ -z "${KEY_PASSWORD}" ]; then
+              echo "::error::ANDROID_KEYSTORE_B64 is set but ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD must be set too (see BUILDING.md, 'Updates')."
+              exit 1
+            fi
             echo "${KEYSTORE_B64}" | base64 -d > "${RUNNER_TEMP}/binder.keystore"
             echo "BINDER_KEYSTORE_PATH=${RUNNER_TEMP}/binder.keystore" >> "$GITHUB_ENV"
+            echo "Signing the APK with the fixed key from the ANDROID_KEYSTORE_* secrets"
           else
             echo "No ANDROID_KEYSTORE_B64 secret: using the default debug key"
           fi

@@ -18,3 +18,8 @@ android/app/src/main/assets/frontend
 # Local card catalog / models while developing (the app's data directory is per-user,
 # but it's easy to point binder-catalog at a folder inside the checkout)
 /data/
+
+# Signing keys and their notes: never commit (see scripts/setup-android-signing.sh)
+*.keystore
+*.keystore.secrets.txt
+*.jks
