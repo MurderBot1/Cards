@@ -235,8 +235,11 @@ jobs:
           cmake -S native -B build -DCMAKE_BUILD_TYPE=Release -DBINDER_STATIC_DEPS=ON \
             -DFETCHCONTENT_BASE_DIR="${{ github.workspace }}/.deps"
 
+      # One job per core (3 on the free runner). A bare --parallel starts as many compiles as it likes: the OpenCV
+      # source build then thrashes the runner's memory and takes ~30 minutes instead of ~5 (Linux hit the same
+      # problem and is capped for the same reason).
       - name: Build
-        run: cmake --build build --parallel
+        run: cmake --build build --parallel "$(sysctl -n hw.ncpu)"
 
       - name: Test
         run: ctest --test-dir build --output-on-failure

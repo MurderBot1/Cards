@@ -69,13 +69,9 @@ const els = {
   scanBboxOverlay: document.getElementById('scan-bbox-overlay'),
   scanHint: document.getElementById('scan-hint'),
   scanMeta: document.getElementById('scan-meta'),
-  scanConfirmPopup: document.getElementById('scan-confirm-popup'),
-  scanConfirmThumb: document.getElementById('scan-confirm-thumb'),
-  scanConfirmName: document.getElementById('scan-confirm-name'),
-  scanConfirmSet: document.getElementById('scan-confirm-set'),
-  scanConfirmCondition: document.getElementById('scan-confirm-condition'),
-  scanConfirmAccept: document.getElementById('scan-confirm-accept'),
-  scanConfirmReject: document.getElementById('scan-confirm-reject'),
+  scanNextBtn: document.getElementById('scan-next-btn'),
+  scanSessionTitle: document.getElementById('scan-session-title'),
+  scanSessionList: document.getElementById('scan-session-list'),
 
   confirmDeleteModal: document.getElementById('modal-confirm-delete'),
   confirmDeleteText: document.getElementById('confirm-delete-text'),
@@ -566,10 +562,14 @@ function renderSearchResults(results) {
 }
 
 // -----------------------------------------------------------------
-// scan modal — pick a game, then scan against that game's catalog.
-// The whole camera frame (not a cropped guide box) is continuously
-// analyzed for sharpness/brightness; once a good-enough shot is held
-// steady, it's captured automatically.
+// scan modal — bulk scanning, always: pick a game, then show cards one
+// after another. The whole camera frame (not a cropped guide box) is
+// continuously analyzed for sharpness/brightness; once a good-enough shot
+// is held steady it's captured, identified and added to the collection
+// automatically (as Near Mint), and the camera stays on for the next one.
+// Each card lands in a "scanned this session" list where its condition can
+// be corrected or the scan undone. A card that has just been added isn't
+// scanned again until it leaves the frame (or a different card replaces it).
 // -----------------------------------------------------------------
 setGamePicker(els.scanGamePicker, selectedScanGame);
 wireGamePicker(els.scanGamePicker, (value) => {
@@ -590,7 +590,16 @@ let autoDetectTimer = null;
 let autoGoodStreak = 0;
 let capturingFrame = false;
 let analysisCanvas = null;
-let pendingScanCard = null; // card awaiting confirm/reject in the popup, if any
+
+// ---- bulk scanning state
+const NO_CARD_FRAMES_TO_REARM = 3;   // consecutive live-detect results with no card in view
+const SWAP_DIFF_THRESHOLD = 14;      // mean grayscale difference (0-255) that means "a different card is in view"
+let scanSession = [];                // newest first: { n, cardId, card, condition, busy }
+let scanSeq = 0;
+let awaitingNewCard = false;         // a card was just added; wait for it to be replaced or removed
+let noCardStreak = 0;                // updated by the live detect loop
+let capturedGray = null;             // the downscaled frame the last card was captured from
+let latestGray = null;               // the most recent analyzed frame
 
 async function openScanModal() {
   els.scanModal.classList.remove('hidden');
@@ -598,7 +607,7 @@ async function openScanModal() {
   els.scanMeta.textContent = '';
   clearBboxOverlay();
   unfreezeFrame();
-  hideScanConfirmPopup();
+  resetBulkScan();
   capturingFrame = false;
   autoGoodStreak = 0;
   try {
@@ -627,8 +636,9 @@ function closeScanModal() {
   stopCamera();
   clearBboxOverlay();
   unfreezeFrame();
-  hideScanConfirmPopup();
   capturingFrame = false;
+  awaitingNewCard = false;
+  els.scanNextBtn.classList.add('hidden');
   els.scanModal.classList.add('hidden');
 }
 els.scanBack.addEventListener('click', closeScanModal);
@@ -687,13 +697,37 @@ function analyzeFrame() {
   const mean = lapSum / count;
   const sharpness = lapSumSq / count - mean * mean;
 
-  return { sharpness, brightness };
+  latestGray = gray;
+  return { sharpness, brightness, gray };
+}
+
+// mean absolute difference between two analyzed frames (0 = identical); Infinity if they aren't comparable
+function frameDifference(a, b) {
+  if (!a || !b || a.length !== b.length) return Infinity;
+  let sum = 0;
+  for (let i = 0; i < a.length; i++) sum += Math.abs(a[i] - b[i]);
+  return sum / a.length;
 }
 
 function checkFrameForAutoCapture() {
   if (capturingFrame || !els.scanVideo.srcObject || els.scanVideo.readyState < 2) return;
   const score = analyzeFrame();
   if (!score) return;
+
+  // Just added a card: don't capture it again. Scanning resumes once it has left the frame, or a different
+  // card is in view (the picture changed a lot while the detector still sees a card).
+  if (awaitingNewCard) {
+    const gone = noCardStreak >= NO_CARD_FRAMES_TO_REARM;
+    const swapped = noCardStreak === 0 && frameDifference(score.gray, capturedGray) > SWAP_DIFF_THRESHOLD;
+    if (!gone && !swapped) {
+      autoGoodStreak = 0;
+      els.scanHint.textContent = 'Added — show the next card';
+      els.scanNextBtn.classList.remove('hidden');
+      return;
+    }
+    awaitingNewCard = false;
+    els.scanNextBtn.classList.add('hidden');
+  }
 
   const settings = getSettings() || {};
   const threshold = AUTO_SHARPNESS_THRESHOLD[settings.minImageQuality] ?? AUTO_SHARPNESS_THRESHOLD.medium;
@@ -851,8 +885,10 @@ async function liveDetectLoop() {
       if (!liveDetectRunning) continue; // stopLiveDetectLoop() cancelled us while this was in flight
 
       if (result.bbox || result.quad) {
+        noCardStreak = 0;
         drawLiveShape(result, result.image_width, result.image_height);
       } else {
+        noCardStreak += 1;
         clearBboxOverlay();
       }
     } catch (err) {
@@ -890,6 +926,7 @@ async function performCapture() {
   // over it) keep running the whole time /api/scan is in flight, so the
   // screen never appears to freeze during processing.
   const blob = await captureFrameBlob(els.scanVideo);
+  const capturedFrameGray = latestGray;
   if (!blob) {
     capturingFrame = false;
     if (els.scanVideo.srcObject) startAutoDetect();
@@ -899,10 +936,12 @@ async function performCapture() {
   try {
     const { bbox, image_width, image_height, ...result } = await api.scanCard(blob, selectedScanGame);
 
-    // defaults to Near Mint — the popup's condition dropdown lets the
-    // person correct it before the card is actually added.
+    // added as Near Mint straight away; the session list below the camera is where it can be corrected
     const card = { ...result, game: selectedScanGame, condition: DEFAULT_CONDITION };
-    showScanConfirmPopup(card);
+    await addScannedCard(card, capturedFrameGray);
+    capturingFrame = false;
+    autoGoodStreak = 0;
+    if (els.scanVideo.srcObject) startAutoDetect();
   } catch (err) {
     els.scanMeta.textContent = err.message || 'Could not identify that card — try again';
     els.scanHint.textContent = err.bbox ? 'Card detected — no match found' : 'Hold the card steady in view';
@@ -913,69 +952,128 @@ async function performCapture() {
 }
 
 // -----------------------------------------------------------------
-// scan confirmation popup — shown over the still-live camera feed once
-// a card has been identified. capturingFrame stays true the whole time
-// it's up (set by performCapture before this runs), which blocks a new
-// auto-capture from firing without pausing the live video or its bbox
-// loop. Accepting or rejecting resumes normal scanning the same way a
-// failed attempt does. The condition dropdown lets the person correct
-// the default (Near Mint) before the card is actually added.
+// bulk scanning: the "scanned this session" list under the camera
 // -----------------------------------------------------------------
-function showScanConfirmPopup(card) {
-  pendingScanCard = card;
-  els.scanConfirmThumb.innerHTML = cardThumb(card);
-  els.scanConfirmName.textContent = card.name || 'Unknown card';
-  els.scanConfirmSet.textContent = card.set || '';
-  els.scanConfirmCondition.innerHTML = CONDITIONS
-    .map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`)
-    .join('');
-  els.scanConfirmCondition.value = card.condition || DEFAULT_CONDITION;
-  els.scanFrame.classList.add('is-confirming');
-  els.scanConfirmPopup.classList.remove('hidden');
+function resetBulkScan() {
+  scanSession = [];
+  awaitingNewCard = false;
+  noCardStreak = 0;
+  capturedGray = null;
+  els.scanNextBtn.classList.add('hidden');
+  renderScanSession();
 }
 
-function hideScanConfirmPopup() {
-  pendingScanCard = null;
-  els.scanFrame.classList.remove('is-confirming');
-  els.scanConfirmPopup.classList.add('hidden');
+// the stored row for a card (stacks by game, name, set and condition, like the backend does)
+function findCardRow(collection, card) {
+  return collection.cards.find(
+    (c) => c.name === card.name && (c.set || '') === (card.set || '') && c.game === card.game &&
+      (c.condition || DEFAULT_CONDITION) === card.condition && (!card.id || !c.uid || c.uid === card.id)
+  ) || null;
 }
 
-// shared by both buttons — clears the popup and hands control back to
-// the normal auto-capture loop.
-function resumeScanningAfterConfirm() {
-  hideScanConfirmPopup();
+async function addScannedCard(card, grayAtCapture) {
+  const collectionId = activeCollection && activeCollection.id;
+  if (!collectionId) return;
+  const updated = await api.addCardToCollection(collectionId, card);
+  if (!activeCollection || activeCollection.id !== collectionId) return; // the collection was closed meanwhile
+  activeCollection = updated;
+  const row = findCardRow(updated, card);
+  scanSession.unshift({ n: ++scanSeq, cardId: row ? row.id : null, card, condition: card.condition, busy: false });
+  awaitingNewCard = true;
+  noCardStreak = 0;
+  capturedGray = grayAtCapture ? Float32Array.from(grayAtCapture) : null;
+  els.scanMeta.textContent = `Added ${card.name}`;
+  els.scanHint.textContent = 'Added — show the next card';
+  els.scanNextBtn.classList.remove('hidden');
   clearBboxOverlay();
-  capturingFrame = false;
-  autoGoodStreak = 0;
-  if (els.scanVideo.srcObject) startAutoDetect();
+  els.scanFrame.classList.add('is-added');
+  setTimeout(() => els.scanFrame.classList.remove('is-added'), 350);
+  if (navigator.vibrate) navigator.vibrate(25);
+  afterCollectionChange();
 }
 
-els.scanConfirmCondition.addEventListener('change', () => {
-  if (pendingScanCard) pendingScanCard.condition = els.scanConfirmCondition.value;
-});
+function afterCollectionChange() {
+  renderScanSession();
+  renderCardList(els.detailSearch.value);
+  syncActiveCollectionIntoList();
+  refreshPrices(activeCollection);
+}
 
-els.scanConfirmAccept.addEventListener('click', async () => {
-  if (!pendingScanCard || !activeCollection) return;
-  const card = pendingScanCard;
-  els.scanConfirmAccept.disabled = true;
-  els.scanConfirmReject.disabled = true;
+function sessionRow(entry) {
+  return activeCollection && entry.cardId ? activeCollection.cards.find((c) => c.id === entry.cardId) || null : null;
+}
+
+function renderScanSession() {
+  const n = scanSession.length;
+  els.scanSessionTitle.textContent = n === 0 ? 'Scanned cards appear here' : `Scanned this session: ${n} card${n === 1 ? '' : 's'}`;
+  els.scanSessionList.innerHTML = '';
+  scanSession.forEach((entry) => {
+    const row = document.createElement('div');
+    row.className = 'scan-session-row';
+    row.innerHTML = `
+      <div class="card-thumb">${cardThumb(entry.card)}</div>
+      <div class="card-info">
+        <p class="card-name">${escapeHtml(entry.card.name || 'Unknown card')}</p>
+        <p class="card-meta">${escapeHtml(entry.card.set || '')}</p>
+      </div>
+      <select class="scan-session-condition" aria-label="Condition of ${escapeHtml(entry.card.name || 'this card')}">
+        ${CONDITIONS.map((c) => `<option value="${escapeHtml(c)}"${c === entry.condition ? ' selected' : ''}>${escapeHtml(CONDITION_ABBR[c] || c)}</option>`).join('')}
+      </select>
+      <button class="icon-btn" data-action="undo" aria-label="Remove this scan">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    `;
+    row.querySelector('select').addEventListener('change', (e) => changeScanCondition(entry, e.target.value));
+    row.querySelector('[data-action="undo"]').addEventListener('click', () => undoScan(entry));
+    els.scanSessionList.appendChild(row);
+  });
+}
+
+// take this scan back out of the collection (one copy)
+async function undoScan(entry) {
+  if (entry.busy) return;
+  entry.busy = true;
   try {
-    activeCollection = await api.addCardToCollection(activeCollection.id, card);
-    renderCardList(els.detailSearch.value);
-    syncActiveCollectionIntoList();
-    showToast(`Identified & added ${card.name} (${card.condition})`);
-    refreshPrices(activeCollection);
+    const row = sessionRow(entry);
+    if (row) {
+      activeCollection = await api.updateCardQuantity(activeCollection.id, row.id, Math.max(0, row.quantity - 1));
+    }
+    scanSession = scanSession.filter((e) => e !== entry);
+    afterCollectionChange();
   } catch (err) {
-    showToast(err.message || 'Could not add that card — try again');
-  } finally {
-    els.scanConfirmAccept.disabled = false;
-    els.scanConfirmReject.disabled = false;
-    resumeScanningAfterConfirm();
+    entry.busy = false;
+    showToast(err.message || 'Could not remove that card — try again');
   }
-});
+}
 
-els.scanConfirmReject.addEventListener('click', () => {
-  resumeScanningAfterConfirm();
+// move this one copy from its current stack to the stack for the new condition
+async function changeScanCondition(entry, condition) {
+  if (entry.busy || condition === entry.condition) return;
+  entry.busy = true;
+  try {
+    const row = sessionRow(entry);
+    if (row) {
+      activeCollection = await api.updateCardQuantity(activeCollection.id, row.id, Math.max(0, row.quantity - 1));
+    }
+    const card = { ...entry.card, condition };
+    activeCollection = await api.addCardToCollection(activeCollection.id, card);
+    const moved = findCardRow(activeCollection, card);
+    entry.cardId = moved ? moved.id : null;
+    entry.condition = condition;
+    entry.card = card;
+  } catch (err) {
+    showToast(err.message || 'Could not change the condition — try again');
+  } finally {
+    entry.busy = false;
+    afterCollectionChange();
+  }
+}
+
+els.scanNextBtn.addEventListener('click', () => {
+  awaitingNewCard = false;
+  autoGoodStreak = 0;
+  els.scanNextBtn.classList.add('hidden');
+  els.scanHint.textContent = 'Hold the card steady in view';
 });
 
 // -----------------------------------------------------------------

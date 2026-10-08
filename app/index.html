@@ -256,7 +256,7 @@
       <button class="icon-btn" id="scan-modal-back" aria-label="Close">
         <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
-      <h2 class="sheet-title sheet-title--inline">Scan a card</h2>
+      <h2 class="sheet-title sheet-title--inline">Scan cards</h2>
     </div>
     <div class="segmented segmented--game" id="scan-game-picker" role="tablist" aria-label="Game">
       <button data-value="mtg" role="tab"><span class="game-dot game-dot--mtg"></span>Magic</button>
@@ -268,25 +268,14 @@
       <img id="scan-frozen-frame" class="scan-frozen-frame hidden" alt="">
       <canvas id="scan-bbox-overlay"></canvas>
       <p class="scan-hint" id="scan-hint">Hold the card steady in view</p>
-      <div class="scan-confirm-popup hidden" id="scan-confirm-popup">
-        <div class="scan-confirm-thumb" id="scan-confirm-thumb"></div>
-        <div class="scan-confirm-info">
-          <p class="scan-confirm-name" id="scan-confirm-name"></p>
-          <p class="scan-confirm-set" id="scan-confirm-set"></p>
-        </div>
-        <select class="scan-confirm-condition" id="scan-confirm-condition" aria-label="Card condition"></select>
-        <div class="scan-confirm-actions">
-          <button class="scan-confirm-btn scan-confirm-btn--accept" id="scan-confirm-accept" aria-label="Confirm card">
-            <svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
-          </button>
-          <button class="scan-confirm-btn scan-confirm-btn--reject" id="scan-confirm-reject" aria-label="Not this card">
-            <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
-          </button>
-        </div>
-      </div>
     </div>
-    <p class="scan-auto-note">Auto-capture is on &mdash; hold the card steady and it'll be sent automatically.</p>
+    <p class="scan-auto-note">Bulk scan &mdash; hold a card steady and it's added automatically. Then show the next one.</p>
+    <button class="link-btn hidden" id="scan-next-btn" type="button">Scan next card now</button>
     <p class="scan-meta" id="scan-meta"></p>
+    <div class="scan-session">
+      <p class="scan-session-title" id="scan-session-title">Scanned cards appear here</p>
+      <div class="scan-session-list" id="scan-session-list"><!-- scanned cards injected --></div>
+    </div>
   </div>
 </div>
 

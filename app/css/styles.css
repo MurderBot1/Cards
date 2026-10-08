@@ -743,7 +743,7 @@ svg {
 .scan-frame {
   position: relative;
   flex: 1;
-  min-height: 300px;
+  min-height: 200px;
   border-radius: var(--radius-md);
   background: #05060A;
   overflow: hidden;
@@ -783,7 +783,6 @@ svg {
   color: #E8E7F2;
   text-shadow: 0 1px 3px rgba(0,0,0,0.6);
 }
-.scan-frame.is-confirming .scan-hint { opacity: 0; }
 .scan-meta {
   text-align: center;
   font-family: var(--font-mono);
@@ -792,63 +791,8 @@ svg {
   margin-top: 10px;
 }
 
-/* scan — capture confirmation popup (shown over the still-live camera
-   feed after a card is identified; auto-capture stays paused until the
-   person confirms or rejects the match, then normal scanning resumes) */
-.scan-confirm-popup {
-  position: absolute;
-  left: 10px;
-  right: 10px;
-  bottom: 10px;
-  z-index: 6;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: 8px 10px;
-  box-shadow: var(--shadow-sheet);
-  animation: scan-confirm-in 0.18s ease-out;
-}
-@keyframes scan-confirm-in {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.scan-confirm-thumb {
-  width: 40px; height: 56px;
-  border-radius: 5px;
-  background: var(--surface-3);
-  border: 1px solid var(--border);
-  flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center;
-  color: var(--text-faint);
-  overflow: hidden;
-}
-.scan-confirm-thumb svg { width: 16px; height: 16px; }
-.scan-confirm-thumb img {
-  width: 100%; height: 100%;
-  object-fit: cover;
-  border-radius: 4px;
-}
-.scan-confirm-info { flex: 1; min-width: 0; }
-.scan-confirm-name {
-  font-size: 0.86rem;
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.scan-confirm-set {
-  font-size: 0.71rem;
-  color: var(--text-dim);
-  font-family: var(--font-mono);
-  margin-top: 2px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.scan-confirm-condition {
+/* scan — the list of cards added this session, under the camera */
+.scan-session-condition {
   width: 92px;
   flex-shrink: 0;
   height: 34px;
@@ -860,29 +804,22 @@ svg {
   font-size: 0.72rem;
   font-family: inherit;
 }
-.scan-confirm-condition:focus { outline: 1px solid var(--text-faint); }
-.scan-confirm-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
-.scan-confirm-btn {
-  width: 34px; height: 34px;
-  border-radius: 50%;
+.scan-session-condition:focus { outline: 1px solid var(--text-faint); }
+
+.scan-session { flex: 0 0 auto; margin-top: 10px; }
+.scan-session-title { font-size: 0.78rem; font-weight: 600; color: var(--text-dim); margin-bottom: 6px; }
+.scan-session-list { max-height: 30vh; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.scan-session-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 8px;
+  background: var(--surface);
   border: 1px solid var(--border);
-  background: var(--surface-2);
-  display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0;
+  border-radius: var(--radius-sm, 10px);
 }
-.scan-confirm-btn svg {
-  width: 18px; height: 18px;
-  stroke-width: 2.5;
-}
-.scan-confirm-btn--reject { color: var(--danger); }
-.scan-confirm-btn--reject:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
-.scan-confirm-btn--accept { color: #4ADE80; }
-.scan-confirm-btn--accept:hover { background: #4ADE80; color: #10111A; border-color: #4ADE80; }
+.scan-session-row .card-thumb { width: 28px; height: 38px; flex-shrink: 0; }
+.scan-session-row .card-info { flex: 1; min-width: 0; }
+.scan-session-row .card-name { font-size: 0.82rem; }
+.scan-frame.is-added { box-shadow: inset 0 0 0 3px #4ADE80; }
 
 /* ===================================================================
    Settings
