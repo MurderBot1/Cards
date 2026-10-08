@@ -3,4 +3,8 @@
     <string name="app_name">Binder</string>
     <string name="camera_permission_rationale">Binder needs the camera to scan cards. You can still browse your collection without it.</string>
     <string name="server_starting">Starting Binder…</string>
+    <string name="download_title">Download card data?</string>
+    <string name="download_message">Binder needs to download its card catalog before it can recognise cards. You\'re on mobile data (or a metered connection), so this may use a lot of data.</string>
+    <string name="download_now">Download now</string>
+    <string name="download_wait_wifi">Wait for Wi-Fi</string>
 </resources>

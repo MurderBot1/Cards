@@ -124,6 +124,15 @@ void App::warm_up_in_background() {
     std::thread([engine] { engine->warm_up(); }).detach();
 }
 
+void App::announce_pending_download(const std::string& message) {
+    if (!carddownload::missing_files(impl_->options.paths.data_dir).empty()) impl_->setup->set_task(message);
+}
+
+void App::download_when_ready() {
+    impl_->options.download_missing_data = true;
+    warm_up_in_background();
+}
+
 cardscan::Engine& App::engine() { return *impl_->engine; }
 
 }  // namespace binder

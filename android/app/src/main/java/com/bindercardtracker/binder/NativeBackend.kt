@@ -12,10 +12,15 @@ object NativeBackend {
     /**
      * Starts the backend (once; later calls return the port it's already serving on). [filesDir] holds db.json,
      * the logs and the card catalog (under data/); [frontendDir] is the extracted frontend assets. [port] <= 0
-     * picks a free one. Returns the port, or -1 if it couldn't start (the reason is in logcat, tag "Binder").
+     * picks a free one. [downloadNow] false holds the first-launch catalog download back until [startDownload].
+     * Returns the port, or -1 if it couldn't start (the reason is in logcat, tag "Binder").
      */
     @JvmStatic
-    external fun start(filesDir: String, frontendDir: String, port: Int): Int
+    external fun start(filesDir: String, frontendDir: String, port: Int, downloadNow: Boolean): Int
+
+    /** Starts the catalog download that [start] held back (no-op if nothing is missing or it's already running). */
+    @JvmStatic
+    external fun startDownload()
 
     @JvmStatic
     external fun stop()
