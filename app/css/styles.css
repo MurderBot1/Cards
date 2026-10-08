@@ -622,6 +622,9 @@ svg {
 .field-hint--error {
   color: var(--danger);
 }
+.card-price { margin-left: 6px; color: var(--foil-2); font-weight: 600; font-variant-numeric: tabular-nums; }
+.card-detail-price { margin-top: 2px; font-size: 0.9rem; font-weight: 600; color: var(--foil-2); min-height: 1.2em; }
+
 .link-btn {
   display: block;
   margin: 12px auto 0;
@@ -949,6 +952,9 @@ svg {
   color: var(--text-dim);
   margin-top: 2px;
 }
+.account-sync { color: var(--foil-2); }
+.account-sync-now { display: inline-block; margin: 2px 0 0; padding: 2px 0; font-size: 0.75rem; text-align: left; }
+.account-sync-now:disabled { opacity: 0.5; cursor: default; text-decoration: none; }
 .account-action {
   flex-shrink: 0;
   padding: 9px 16px;

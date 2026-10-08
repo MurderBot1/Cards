@@ -7,6 +7,8 @@
  */
 import { api } from './api.js';
 import { showToast } from './ui.js';
+import { clearSession, getSession, setSession } from './session.js';
+import { onSyncStatus, syncNow } from './sync.js';
 
 let currentSettings = null;
 const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -17,11 +19,7 @@ const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
 // The account service hands back a session token on sign-in / account creation. The username and token are
 // remembered locally so they survive a reload; on startup the token is checked with the service, and a session
 // that has expired (or was signed out elsewhere) quietly returns the app to guest mode.
-const SIGNED_IN_KEY = 'binder_signed_in_user';
-const TOKEN_KEY = 'binder_session_token';
-let signedInUsername = localStorage.getItem(SIGNED_IN_KEY);
-let sessionToken = localStorage.getItem(TOKEN_KEY);
-if (!sessionToken) signedInUsername = null; // signed in under the old, tokenless flow: ask again
+// (kept by session.js)
 let signInMode = 'login'; // 'login' | 'register'
 
 const accountEls = {
@@ -39,15 +37,20 @@ const accountEls = {
   cancel: document.getElementById('signin-cancel'),
   submit: document.getElementById('signin-submit'),
   modeToggle: document.getElementById('signin-mode-toggle'),
+  sync: document.getElementById('account-sync'),
+  syncNow: document.getElementById('sync-now-btn'),
 };
 
 function updateAccountUI() {
-  const isSignedIn = !!signedInUsername;
+  const session = getSession();
+  const isSignedIn = !!session;
   accountEls.card.classList.toggle('is-signed-in', isSignedIn);
-  accountEls.name.textContent = isSignedIn ? signedInUsername : "You're browsing as a guest";
+  accountEls.name.textContent = isSignedIn ? session.username : "You're browsing as a guest";
   accountEls.hint.textContent = isSignedIn
     ? 'Signed in on this device'
     : 'Sign in to sync your collections across devices';
+  accountEls.sync.classList.toggle('hidden', !isSignedIn);
+  accountEls.syncNow.classList.toggle('hidden', !isSignedIn);
   accountEls.signinBtn.textContent = isSignedIn ? 'Sign out' : 'Sign in';
 }
 
@@ -72,13 +75,6 @@ function hideSignInError() {
   accountEls.error.classList.add('hidden');
 }
 
-function clearSession() {
-  signedInUsername = null;
-  sessionToken = null;
-  localStorage.removeItem(SIGNED_IN_KEY);
-  localStorage.removeItem(TOKEN_KEY);
-}
-
 function openSignInModal() {
   accountEls.username.value = '';
   accountEls.email.value = '';
@@ -99,10 +95,10 @@ function updateSignInSubmitState() {
 }
 
 accountEls.signinBtn.addEventListener('click', () => {
-  if (signedInUsername) {
-    const token = sessionToken;
+  const session = getSession();
+  if (session) {
     clearSession();
-    api.logout(token).catch(() => { /* already signed out locally; the session expires on its own */ });
+    api.logout(session.token).catch(() => { /* already signed out locally; the session expires on its own */ });
     updateAccountUI();
     showToast('Signed out');
   } else {
@@ -141,13 +137,10 @@ accountEls.submit.addEventListener('click', async () => {
       ? await api.register(username, email, password)
       : await api.login(username, password);
 
-    signedInUsername = result.username;
-    sessionToken = result.token;
-    localStorage.setItem(SIGNED_IN_KEY, signedInUsername);
-    localStorage.setItem(TOKEN_KEY, sessionToken);
+    setSession(result.username, result.token);
     updateAccountUI();
     closeSignInModal();
-    showToast(signInMode === 'register' ? `Account created — welcome, ${signedInUsername}` : `Signed in as ${signedInUsername}`);
+    showToast(signInMode === 'register' ? `Account created — welcome, ${result.username}` : `Signed in as ${result.username}`);
   } catch (err) {
     showSignInError(err.message || 'Something went wrong — try again');
   } finally {
@@ -194,16 +187,38 @@ async function persist(partial) {
 // Checks the remembered session with the account service in the background. Only a definite "not signed in" (401)
 // signs the user out; being offline or the service being down leaves them signed in.
 async function validateSession() {
-  if (!sessionToken) return;
+  const session = getSession();
+  if (!session) return;
   try {
-    await api.me(sessionToken);
+    await api.me(session.token);
   } catch (err) {
-    if (err.status === 401) {
-      clearSession();
-      updateAccountUI();
-    }
+    if (err.status === 401) clearSession();
   }
 }
+
+// signing in or out (here, or sync.js noticing an expired session) refreshes the Account card
+window.addEventListener('binder:session', updateAccountUI);
+
+// the line under the account name: how the last sync went
+function timeAgo(ms) {
+  const secs = Math.max(0, Math.round((Date.now() - ms) / 1000));
+  if (secs < 45) return 'just now';
+  if (secs < 3600) return `${Math.round(secs / 60)} min ago`;
+  if (secs < 86400) return `${Math.round(secs / 3600)} h ago`;
+  return `${Math.round(secs / 86400)} d ago`;
+}
+function renderSyncStatus(status) {
+  if (status.state === 'syncing') accountEls.sync.textContent = 'Syncing…';
+  else if (status.state === 'error') accountEls.sync.textContent = `Couldn't sync — ${status.error || 'will retry'}`;
+  else if (status.at) accountEls.sync.textContent = `Synced ${timeAgo(status.at)}`;
+  else accountEls.sync.textContent = 'Not synced yet';
+  accountEls.syncNow.disabled = status.state === 'syncing';
+}
+accountEls.syncNow.addEventListener('click', () => syncNow());
+onSyncStatus(renderSyncStatus);
+setInterval(() => { if (getSession()) renderSyncStatus(lastSyncStatus); }, 30000);
+let lastSyncStatus = { state: 'idle', at: 0, error: '' };
+onSyncStatus((status) => { lastSyncStatus = status; });
 
 export async function initSettings() {
   updateAccountUI();

@@ -9,6 +9,7 @@
 import { api, CONDITIONS, DEFAULT_CONDITION } from './api.js';
 import { showToast } from './ui.js';
 import { getSettings } from './settings.js';
+import { backfillUids, collectionValue, formatUsd, loadPrices, pricesEnabled, unitPrice } from './prices.js';
 
 const GAME_LABELS = { mtg: 'Magic: The Gathering', pokemon: 'Pokémon', yugioh: 'Yu-Gi-Oh!' };
 const GAMES = ['mtg', 'pokemon', 'yugioh'];
@@ -86,6 +87,7 @@ const els = {
   cardDetailImage: document.getElementById('card-detail-image'),
   cardDetailName: document.getElementById('card-detail-name'),
   cardDetailMeta: document.getElementById('card-detail-meta'),
+  cardDetailPrice: document.getElementById('card-detail-price'),
   cardDetailCondition: document.getElementById('card-detail-condition'),
   cardDetailQty: document.getElementById('card-detail-qty'),
 };
@@ -148,7 +150,7 @@ function renderCollectionGrid() {
       </button>
       ${dots}
       <h3>${escapeHtml(c.name)}</h3>
-      <p class="card-count">${c.cards.length} card${c.cards.length === 1 ? '' : 's'}</p>
+      <p class="card-count">${c.cards.length} card${c.cards.length === 1 ? '' : 's'}${valueSuffix(c.cards)}</p>
     `;
     btn.addEventListener('click', () => openCollection(c.id));
     btn.querySelector('[data-action="delete-collection"]').addEventListener('click', (e) => {
@@ -168,7 +170,90 @@ function renderCollectionGrid() {
 async function refreshCollections() {
   collections = await api.getCollections();
   renderCollectionGrid();
+  loadGridPrices();
 }
+
+// ---- prices (prices.js) --------------------------------------------------------------------------
+// " · $123.45" for a list of cards, with a "+" when some have no known price; "" when there is nothing to show.
+function valueSuffix(cards) {
+  if (!pricesEnabled()) return '';
+  const value = collectionValue(cards);
+  if (value.priced === 0) return '';
+  return ` · ${formatUsd(value.total)}${value.unpriced ? '+' : ''}`;
+}
+
+function priceBadge(card) {
+  const price = unitPrice(card);
+  return price === null ? '' : `<span class="card-price" title="Market price, each">${formatUsd(price)}</span>`;
+}
+
+// Looks up prices for the open collection (filling in catalog ids for older cards first) and redraws it.
+let priceRunToken = 0;
+async function refreshPrices(collection) {
+  if (!pricesEnabled() || !collection) return;
+  const token = ++priceRunToken;
+  const stillOpen = () => token === priceRunToken && activeCollection && activeCollection.id === collection.id;
+  try {
+    const updated = await backfillUids(collection);
+    if (!stillOpen()) return;
+    if (updated) {
+      activeCollection = updated;
+      syncActiveCollectionIntoList();
+    }
+    const changed = await loadPrices(activeCollection.cards);
+    if (!stillOpen()) return;
+    if (changed || updated) {
+      renderCardList(els.detailSearch.value);
+      updateCardDetailPrice();
+    }
+  } catch (err) { /* prices are a nicety: never get in the way */ }
+}
+
+// Prices for the collections grid: whatever isn't known yet, a batch at a time.
+async function loadGridPrices() {
+  if (!pricesEnabled()) return;
+  const cards = collections.flatMap((c) => c.cards).filter((c) => unitPrice(c) === null).slice(0, 150);
+  if (cards.length === 0) return;
+  if (await loadPrices(cards)) renderCollectionGrid();
+}
+
+function updateCardDetailPrice() {
+  if (!detailCard || !pricesEnabled()) {
+    els.cardDetailPrice.textContent = '';
+    return;
+  }
+  const price = unitPrice(detailCard);
+  els.cardDetailPrice.textContent =
+    price === null ? '' : `${formatUsd(price)} each · ${formatUsd(price * detailCard.quantity)} total`;
+}
+
+// sync.js changed what's stored on this device (another device's edits arrived): show it
+export async function reloadCollections() {
+  collections = await api.getCollections();
+  if (activeCollection) {
+    const fresh = collections.find((c) => c.id === activeCollection.id);
+    if (!fresh) {
+      closeCardDetail();
+      closeCollectionDetail();
+    } else {
+      activeCollection = fresh;
+      renderCardList(els.detailSearch.value);
+      syncActiveCollectionIntoList();
+      if (detailCard) {
+        detailCard = fresh.cards.find((c) => c.id === detailCard.id) || null;
+        if (detailCard) {
+          els.cardDetailQty.textContent = detailCard.quantity;
+          updateCardDetailPrice();
+        } else {
+          closeCardDetail();
+        }
+      }
+    }
+  }
+  renderCollectionGrid();
+  loadGridPrices();
+}
+window.addEventListener('binder:collections-changed', () => { reloadCollections().catch(() => {}); });
 
 // -----------------------------------------------------------------
 // new collection modal (name only — games are chosen per card)
@@ -250,6 +335,7 @@ async function openCollection(id) {
   if (onNavigate) {
     onNavigate({ inDetail: true, title: activeCollection.name, subtitle: `${count} card${count === 1 ? '' : 's'}` });
   }
+  refreshPrices(activeCollection);
 }
 
 export function closeCollectionDetail() {
@@ -271,7 +357,7 @@ function renderCardList(filter) {
   const cards = activeCollection.cards.filter((c) => c.name.toLowerCase().includes(q));
   if (token !== cardListRenderToken) return; // a newer render already queued
   const total = activeCollection.cards.length;
-  els.detailCount.textContent = `${total} card${total === 1 ? '' : 's'}${q ? ` · ${cards.length} match${cards.length === 1 ? '' : 'es'}` : ''}`;
+  els.detailCount.textContent = `${total} card${total === 1 ? '' : 's'}${q ? ` · ${cards.length} match${cards.length === 1 ? '' : 'es'}` : ''}${valueSuffix(activeCollection.cards)}`;
   els.cardList.innerHTML = '';
   els.detailEmpty.classList.toggle('hidden', total > 0);
 
@@ -287,6 +373,7 @@ function renderCardList(filter) {
           <span class="game-dot game-dot--${card.game}" title="${GAME_LABELS[card.game] || ''}"></span>
           ${escapeHtml(card.set || '')} &middot; ${escapeHtml(card.rarity || '')}
           <span class="condition-badge" title="${escapeHtml(condition)}">${CONDITION_ABBR[condition] || condition}</span>
+          ${priceBadge(card)}
         </p>
       </div>
       <div class="card-qty">
@@ -339,6 +426,7 @@ function openCardDetail(card) {
   els.cardDetailName.textContent = card.name;
   const metaParts = [GAME_LABELS[card.game] || card.game, card.set, card.rarity].filter(Boolean);
   els.cardDetailMeta.textContent = metaParts.join(' · ');
+  updateCardDetailPrice();
   setSegmentedValue(els.cardDetailCondition, card.condition || DEFAULT_CONDITION);
   els.cardDetailQty.textContent = card.quantity;
   els.cardDetailModal.classList.remove('hidden');
@@ -382,7 +470,10 @@ els.cardDetailModal.querySelectorAll('.card-qty [data-action]').forEach((btn) =>
       return;
     }
     detailCard = activeCollection.cards.find((c) => c.id === detailCard.id) || null;
-    if (detailCard) els.cardDetailQty.textContent = detailCard.quantity;
+    if (detailCard) {
+      els.cardDetailQty.textContent = detailCard.quantity;
+      updateCardDetailPrice();
+    }
   });
 });
 
@@ -468,6 +559,7 @@ function renderSearchResults(results) {
       renderCardList(els.detailSearch.value);
       syncActiveCollectionIntoList();
       showToast(`Added ${card.name}`);
+      refreshPrices(activeCollection);
     });
     els.searchResults.appendChild(row);
   });
@@ -872,6 +964,7 @@ els.scanConfirmAccept.addEventListener('click', async () => {
     renderCardList(els.detailSearch.value);
     syncActiveCollectionIntoList();
     showToast(`Identified & added ${card.name} (${card.condition})`);
+    refreshPrices(activeCollection);
   } catch (err) {
     showToast(err.message || 'Could not add that card — try again');
   } finally {
