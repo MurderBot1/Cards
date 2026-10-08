@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <filesystem>
+#include <mutex>
 #include <thread>
 
 #include "api.hpp"
@@ -11,11 +12,16 @@
 #include "cardscan/pipeline_engine.hpp"
 #include "cardstore/store.hpp"
 #include "carddownload/download.hpp"
+#include "updater.hpp"
 #ifdef BINDER_HAVE_CURL_TRANSPORT
 #include "cardfetch/curl_transport.hpp"
 #endif
 #ifdef BINDER_HAVE_ONNX
 #include "cardonnx/onnx_models.hpp"
+#endif
+
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -30,6 +36,9 @@ struct App::Impl {
     cardlog::RotatingLog api_log;
     cardhttp::Server server;
     ApiContext ctx;
+    std::unique_ptr<Updater> updater;  // desktop builds only
+    std::mutex quit_mu;
+    std::function<void()> quit;
 
     explicit Impl(AppOptions o)
         : options(std::move(o)),
@@ -62,6 +71,26 @@ App::App(AppOptions options) {
     cardpaths::ensure_bundled_catalog(options.paths);
     impl_ = std::make_unique<Impl>(std::move(options));
     impl_->store.ensure_exists();
+
+    // Updates: the desktop builds download and run installers themselves, the Android app does it in Kotlin and iOS
+    // can't. Needs libcurl to download with.
+#if defined(BINDER_HAVE_CURL_TRANSPORT) && !defined(__ANDROID__) && !(defined(__APPLE__) && TARGET_OS_IPHONE)
+    {
+        Updater::Hooks hooks;
+        hooks.make_transport = [] { return std::make_unique<cardfetch::CurlTransport>(); };
+        Impl* impl = impl_.get();
+        hooks.quit = [impl] {
+            std::function<void()> quit;
+            {
+                std::lock_guard<std::mutex> l(impl->quit_mu);
+                quit = impl->quit;
+            }
+            if (quit) quit();
+        };
+        impl_->updater = std::make_unique<Updater>(impl_->options.paths.user_data_dir / "update", std::move(hooks));
+        impl_->ctx.updater = impl_->updater.get();
+    }
+#endif
 
     impl_->server.on_access([this](const cardhttp::AccessLogEntry& e) {
         if (e.path.rfind("/api/", 0) != 0) return;  // only API traffic, not the static frontend
@@ -132,6 +161,11 @@ void App::announce_pending_download(const std::string& message) {
 void App::download_when_ready() {
     impl_->options.download_missing_data = true;
     warm_up_in_background();
+}
+
+void App::set_quit_handler(std::function<void()> quit) {
+    std::lock_guard<std::mutex> l(impl_->quit_mu);
+    impl_->quit = std::move(quit);
 }
 
 cardscan::Engine& App::engine() { return *impl_->engine; }

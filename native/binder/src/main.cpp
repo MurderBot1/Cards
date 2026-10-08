@@ -137,9 +137,11 @@ int main(int argc, char** argv) {
     while (!app.is_running()) std::this_thread::sleep_for(std::chrono::milliseconds(5));
     try {
         cardview::View view({"Card Master", 1200, 800, false});
+        app.set_quit_handler([&view] { view.terminate(); });  // an installed update closes the app for the installer
         view.navigate(url);
         status("Binder running on " + url);
         view.run();  // until the window is closed
+        app.set_quit_handler({});
         app.stop();
         serving.join();
         return 0;

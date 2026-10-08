@@ -10,6 +10,7 @@
 #include "cardscan/engine.hpp"
 #include "cardstore/store.hpp"
 #include "setup_status.hpp"
+#include "updater.hpp"
 
 namespace binder {
 
@@ -22,6 +23,9 @@ struct ApiContext {
     // How POST /api/open-url opens a release URL (already checked to be one); default: the system browser. Tests
     // replace it so nothing is launched.
     std::function<bool(const std::string&)> open_url;
+    // Downloads and installs newer releases (POST /api/update/*); none = this build can't (Android and iOS install
+    // updates through their own bridges), and those routes answer 501.
+    Updater* updater = nullptr;
 };
 
 // Minimum Laplacian-variance blur score an uploaded scan must clear, per the

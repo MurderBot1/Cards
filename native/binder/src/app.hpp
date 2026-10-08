@@ -54,6 +54,10 @@ public:
     void announce_pending_download(const std::string& message);
     void download_when_ready();
 
+    // Called (from a request thread) after an update's installer has been started, when the app should close so it
+    // can replace the running copy. Without one the update is installed but the app keeps running.
+    void set_quit_handler(std::function<void()> quit);
+
     cardscan::Engine& engine();
 
 private:

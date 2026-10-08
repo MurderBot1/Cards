@@ -119,6 +119,33 @@ void register_routes(cardhttp::Server& server, ApiContext& ctx) {
         return opened ? Response::json(200, json{{"opened", true}}.dump()) : error(501, "couldn't open the browser");
     });
 
+    // ---- in-app updates (desktop): download the installer (checked against the release's SHA-256), then run it.
+    // GET /api/update/status -> { state, bytes, total, error, version }; POST /api/update/download { url, sha256 };
+    // POST /api/update/install (the app then quits and the installer starts the new version). ---------------------
+    server.route("GET", "/api/update/status", [&ctx](const Request&) {
+        if (!ctx.updater) return error(501, "this build can't install updates itself");
+        auto s = ctx.updater->status();
+        return Response::json(200, json{{"state", s.state}, {"bytes", s.bytes}, {"total", s.total}, {"error", s.error},
+                                        {"version", s.version}}.dump());
+    });
+    server.route("POST", "/api/update/download", [&ctx](const Request& req) {
+        if (!ctx.updater) return error(501, "this build can't install updates itself");
+        json body;
+        Response failure;
+        if (!parse_object(req, body, failure)) return failure;
+        std::string url = body.contains("url") && body["url"].is_string() ? body["url"].get<std::string>() : "";
+        std::string sha = body.contains("sha256") && body["sha256"].is_string() ? body["sha256"].get<std::string>() : "";
+        std::string problem;
+        if (!ctx.updater->start_download(url, sha, problem)) return error(400, problem);
+        return Response::json(202, json{{"started", true}}.dump());
+    });
+    server.route("POST", "/api/update/install", [&ctx](const Request&) {
+        if (!ctx.updater) return error(501, "this build can't install updates itself");
+        std::string problem;
+        if (!ctx.updater->install(problem)) return error(409, problem);
+        return Response::json(200, json{{"installing", true}}.dump());
+    });
+
     // ---- settings ----------------------------------------------------------
     server.route("GET", "/api/settings", [&](const Request&) { return respond(store.get_settings()); });
     server.route("PUT", "/api/settings", [&](const Request& req) {
