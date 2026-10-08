@@ -1,7 +1,7 @@
 /**
  * settings.js
- * Handles the Account tab: sign-in / account creation (backed by the C++
- * LoginServer via app.py's /api/auth/* bridge — see loginserver/README.md),
+ * Handles the Account tab: sign-in / account creation (backed by the Cloudflare
+ * account service in /cloudflare, via api.js),
  * loading/saving preferences via api.js, applying appearance changes
  * live (theme + font size), and wiring up the scanner preference controls.
  */
@@ -14,14 +14,14 @@ const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
 // -----------------------------------------------------------------
 // sign in / create account
 // -----------------------------------------------------------------
-// LoginServer's LOGIN command only ever answers "does this
-// username/password pair match?" — it doesn't hand back a session
-// token. So "being signed in" here just means "the last username we
-// successfully authenticated as", remembered locally so it survives a
-// page reload. There's no server-side session to invalidate on sign
-// out, which is fine for this single-device flow.
+// The account service hands back a session token on sign-in / account creation. The username and token are
+// remembered locally so they survive a reload; on startup the token is checked with the service, and a session
+// that has expired (or was signed out elsewhere) quietly returns the app to guest mode.
 const SIGNED_IN_KEY = 'binder_signed_in_user';
+const TOKEN_KEY = 'binder_session_token';
 let signedInUsername = localStorage.getItem(SIGNED_IN_KEY);
+let sessionToken = localStorage.getItem(TOKEN_KEY);
+if (!sessionToken) signedInUsername = null; // signed in under the old, tokenless flow: ask again
 let signInMode = 'login'; // 'login' | 'register'
 
 const accountEls = {
@@ -32,6 +32,8 @@ const accountEls = {
   modal: document.getElementById('modal-signin'),
   title: document.getElementById('signin-title'),
   username: document.getElementById('signin-email'), // field id kept from markup; holds a username, not an email
+  email: document.getElementById('signin-email-address'),
+  emailGroup: document.getElementById('signin-email-group'),
   password: document.getElementById('signin-password'),
   error: document.getElementById('signin-error'),
   cancel: document.getElementById('signin-cancel'),
@@ -54,6 +56,7 @@ function setSignInMode(mode) {
   const isRegister = mode === 'register';
   accountEls.title.textContent = isRegister ? 'Create account' : 'Sign in';
   accountEls.submit.textContent = isRegister ? 'Create account' : 'Sign in';
+  accountEls.emailGroup.classList.toggle('hidden', !isRegister);
   accountEls.password.autocomplete = isRegister ? 'new-password' : 'current-password';
   accountEls.modeToggle.textContent = isRegister
     ? 'Already have an account? Sign in'
@@ -69,8 +72,16 @@ function hideSignInError() {
   accountEls.error.classList.add('hidden');
 }
 
+function clearSession() {
+  signedInUsername = null;
+  sessionToken = null;
+  localStorage.removeItem(SIGNED_IN_KEY);
+  localStorage.removeItem(TOKEN_KEY);
+}
+
 function openSignInModal() {
   accountEls.username.value = '';
+  accountEls.email.value = '';
   accountEls.password.value = '';
   setSignInMode('login');
   updateSignInSubmitState();
@@ -81,13 +92,17 @@ function closeSignInModal() {
   accountEls.modal.classList.add('hidden');
 }
 function updateSignInSubmitState() {
-  accountEls.submit.disabled = !(accountEls.username.value.trim() && accountEls.password.value);
+  const needsEmail = signInMode === 'register';
+  accountEls.submit.disabled = !(
+    accountEls.username.value.trim() && accountEls.password.value && (!needsEmail || accountEls.email.value.trim())
+  );
 }
 
 accountEls.signinBtn.addEventListener('click', () => {
   if (signedInUsername) {
-    signedInUsername = null;
-    localStorage.removeItem(SIGNED_IN_KEY);
+    const token = sessionToken;
+    clearSession();
+    api.logout(token).catch(() => { /* already signed out locally; the session expires on its own */ });
     updateAccountUI();
     showToast('Signed out');
   } else {
@@ -96,16 +111,24 @@ accountEls.signinBtn.addEventListener('click', () => {
 });
 accountEls.username.addEventListener('input', updateSignInSubmitState);
 accountEls.password.addEventListener('input', updateSignInSubmitState);
+accountEls.email.addEventListener('input', updateSignInSubmitState);
 accountEls.cancel.addEventListener('click', closeSignInModal);
 accountEls.modal.addEventListener('click', (e) => { if (e.target === accountEls.modal) closeSignInModal(); });
 accountEls.modeToggle.addEventListener('click', () => {
   setSignInMode(signInMode === 'login' ? 'register' : 'login');
+  updateSignInSubmitState();
+  (signInMode === 'register' ? accountEls.email : accountEls.password).focus();
 });
 
 accountEls.submit.addEventListener('click', async () => {
   const username = accountEls.username.value.trim();
+  const email = accountEls.email.value.trim();
   const password = accountEls.password.value;
   if (!username || !password) return;
+  if (signInMode === 'register' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    showSignInError('Enter a valid email address');
+    return;
+  }
 
   hideSignInError();
   accountEls.submit.disabled = true;
@@ -115,11 +138,13 @@ accountEls.submit.addEventListener('click', async () => {
 
   try {
     const result = signInMode === 'register'
-      ? await api.register(username, password)
+      ? await api.register(username, email, password)
       : await api.login(username, password);
 
     signedInUsername = result.username;
+    sessionToken = result.token;
     localStorage.setItem(SIGNED_IN_KEY, signedInUsername);
+    localStorage.setItem(TOKEN_KEY, sessionToken);
     updateAccountUI();
     closeSignInModal();
     showToast(signInMode === 'register' ? `Account created — welcome, ${signedInUsername}` : `Signed in as ${signedInUsername}`);
@@ -166,8 +191,23 @@ async function persist(partial) {
   }
 }
 
+// Checks the remembered session with the account service in the background. Only a definite "not signed in" (401)
+// signs the user out; being offline or the service being down leaves them signed in.
+async function validateSession() {
+  if (!sessionToken) return;
+  try {
+    await api.me(sessionToken);
+  } catch (err) {
+    if (err.status === 401) {
+      clearSession();
+      updateAccountUI();
+    }
+  }
+}
+
 export async function initSettings() {
   updateAccountUI();
+  validateSession();
 
   currentSettings = await api.getSettings();
   applyAppearance(currentSettings);

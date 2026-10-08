@@ -337,6 +337,10 @@
     <h2 class="sheet-title" id="signin-title">Sign in</h2>
     <label class="field-label" for="signin-email">Username</label>
     <input class="field-input" id="signin-email" type="text" placeholder="yourname" autocomplete="username">
+    <div id="signin-email-group" class="hidden">
+      <label class="field-label" for="signin-email-address">Email</label>
+      <input class="field-input" id="signin-email-address" type="email" placeholder="you@example.com" autocomplete="email" inputmode="email">
+    </div>
     <label class="field-label" for="signin-password">Password</label>
     <input class="field-input" id="signin-password" type="password" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;" autocomplete="current-password">
     <p class="field-hint field-hint--error hidden" id="signin-error"></p>

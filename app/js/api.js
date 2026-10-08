@@ -2,8 +2,8 @@
  * api.js
  * -----------------------------------------------------------------
  * Every function here is the ONE place that talks to the outside
- * world. When the Python backend exists, each function should point
- * at a real endpoint (see the comments marked BACKEND). Until then,
+ * world. Each function points at a real endpoint (the local backend, or
+ * for accounts the Cloudflare service in /cloudflare). Until then,
  * USE_MOCK keeps the app fully working against data saved in
  * localStorage, so the UI can be built and demoed standalone.
  *
@@ -11,6 +11,8 @@
  * file needs to change.
  * -----------------------------------------------------------------
  */
+
+import { AUTH_URL } from './config.js';
 
 const USE_MOCK = false;
 const API_BASE = '/api';
@@ -32,9 +34,8 @@ function loadMockDb() {
       requestRate: 'medium',
       minImageQuality: 'medium',
     },
-    // mock-mode-only account store: username -> password. The real backend
-    // never round-trips plaintext like this — see loginserver's salted
-    // SHA-256 storage — this is purely a standalone-demo stand-in.
+    // mock-mode-only account store: username -> { email, password }. The real account service never stores
+    // plaintext like this (it keeps a salted PBKDF2 hash) — this is purely a standalone-demo stand-in.
     users: {},
   };
 }
@@ -102,6 +103,32 @@ async function request(path, options = {}) {
     // prefer the backend's own error message (e.g. "Invalid credentials",
     // "Username taken") over a bare status code, when it sent one
     throw new Error((data && data.error) || `API ${path} failed: ${res.status}`);
+  }
+  return data;
+}
+
+// ---------------------------------------------------------------
+// account service (Cloudflare Pages, see /cloudflare). The app talks to it directly rather than through the local
+// backend, and authenticates with a session token in an Authorization header.
+// ---------------------------------------------------------------
+async function authRequest(path, { method = 'POST', body, token } = {}) {
+  if (!AUTH_URL) throw new Error("Accounts aren't set up yet");
+  const headers = {};
+  if (body) headers['Content-Type'] = 'application/json';
+  if (token) headers.Authorization = `Bearer ${token}`;
+  let res;
+  try {
+    res = await fetch(`${AUTH_URL}/api/auth${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  } catch (e) {
+    const err = new Error("Can't reach the account service \u2014 check your connection");
+    err.offline = true;
+    throw err;
+  }
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    const err = new Error((data && data.error) || `Account service error (${res.status})`);
+    err.status = res.status;
+    throw err;
   }
   return data;
 }
@@ -282,35 +309,44 @@ export const api = {
   },
 
   // ---- auth ------------------------------------------------------------
-  // Backed by the C++ LoginServer (see loginserver/) via app.py's
-  // /api/auth/* bridge routes — see loginserver/README.md for the
-  // underlying LOGIN/REGISTER protocol.
+  // Backed by the Cloudflare account service (/cloudflare). login and register resolve to
+  // { username, token, expires_at }; keep the token and send it to me() / logout().
   async login(username, password) {
     if (USE_MOCK) {
       await delay(200);
       const db = loadMockDb();
-      if (!db.users[username] || db.users[username] !== password) {
-        throw new Error('Invalid credentials');
+      if (!db.users[username] || db.users[username].password !== password) {
+        throw new Error('Invalid username or password');
       }
-      return { username };
+      return { username, token: 'mock-token' };
     }
-    // BACKEND: POST /api/auth/login {username, password} -> {username} | {error}
-    return request('/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) });
+    return authRequest('/login', { body: { username, password } });
   },
 
-  async register(username, password) {
+  async register(username, email, password) {
     if (USE_MOCK) {
       await delay(200);
       const db = loadMockDb();
       if (db.users[username]) {
         throw new Error('Username taken');
       }
-      db.users[username] = password;
+      db.users[username] = { email, password };
       saveMockDb(db);
-      return { username };
+      return { username, token: 'mock-token' };
     }
-    // BACKEND: POST /api/auth/register {username, password} -> {username} | {error}
-    return request('/auth/register', { method: 'POST', body: JSON.stringify({ username, password }) });
+    return authRequest('/register', { body: { username, email, password } });
+  },
+
+  // Resolves to { username } while the session is valid; rejects with err.status === 401 once it has expired
+  // or been signed out elsewhere, and with err.offline when the service can't be reached.
+  async me(token) {
+    if (USE_MOCK) return { username: 'mock' };
+    return authRequest('/me', { method: 'GET', token });
+  },
+
+  async logout(token) {
+    if (USE_MOCK) return { ok: true };
+    return authRequest('/logout', { token });
   },
 
   // ---- settings --------------------------------------------------------------
