@@ -97,6 +97,8 @@
             <div class="account-info">
               <p class="account-name" id="account-name">You're browsing as a guest</p>
               <p class="account-hint" id="account-hint">Sign in to sync your collections across devices</p>
+              <p class="account-hint account-sync hidden" id="account-sync"></p>
+              <button class="link-btn account-sync-now hidden" id="sync-now-btn" type="button">Sync now</button>
             </div>
             <button class="btn btn-primary account-action" id="account-signin-btn">Sign in</button>
           </div>
@@ -158,7 +160,8 @@
           </div>
         </div>
 
-        <p class="settings-footnote">Binder v0.1</p>
+        <p class="settings-footnote" id="app-version">Binder</p>
+        <button class="link-btn" id="check-updates-btn" type="button">Check for updates</button>
       </div>
     </section>
 
@@ -288,6 +291,28 @@
 </div>
 
 
+<!-- a newer release exists (updates.js) -->
+<div class="update-banner hidden" id="update-banner" role="status">
+  <span class="update-banner-text"></span>
+  <button class="btn btn-primary" data-action="update" type="button">Update</button>
+  <button class="icon-btn" data-action="later" type="button" aria-label="Not now">
+    <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+  </button>
+</div>
+
+<!-- whose collections are on this device (sync.js) -->
+<div class="overlay hidden" id="modal-sync-owner">
+  <div class="sheet sheet--compact">
+    <div class="sheet-handle"></div>
+    <h2 class="sheet-title">Add this device's collections?</h2>
+    <p class="field-hint" id="sync-owner-text"></p>
+    <div class="sheet-actions">
+      <button class="btn btn-secondary" id="sync-owner-cancel">Sign out</button>
+      <button class="btn btn-primary" id="sync-owner-merge">Add them</button>
+    </div>
+  </div>
+</div>
+
 <!-- confirm delete collection -->
 <div class="overlay hidden" id="modal-confirm-delete">
   <div class="sheet sheet--compact">
@@ -311,6 +336,7 @@
     <div class="card-detail-image" id="card-detail-image"></div>
     <h2 class="card-detail-name" id="card-detail-name"></h2>
     <p class="card-detail-meta" id="card-detail-meta"></p>
+    <p class="card-detail-price" id="card-detail-price"></p>
 
     <p class="field-label">Condition</p>
     <div class="segmented segmented--condition" id="card-detail-condition" role="tablist" aria-label="Condition">

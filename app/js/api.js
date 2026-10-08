@@ -104,6 +104,10 @@ async function request(path, options = {}) {
     // "Username taken") over a bare status code, when it sent one
     throw new Error((data && data.error) || `API ${path} failed: ${res.status}`);
   }
+  // sync.js listens for this to schedule a sync after the user changes their collections
+  if (options.method && options.method !== 'GET' && path.startsWith('/collections')) {
+    window.dispatchEvent(new Event('binder:local-change'));
+  }
   return data;
 }
 
@@ -111,14 +115,14 @@ async function request(path, options = {}) {
 // account service (Cloudflare Pages, see /cloudflare). The app talks to it directly rather than through the local
 // backend, and authenticates with a session token in an Authorization header.
 // ---------------------------------------------------------------
-async function authRequest(path, { method = 'POST', body, token } = {}) {
+export async function accountRequest(path, { method = 'POST', body, token } = {}) {
   if (!AUTH_URL) throw new Error("Accounts aren't set up yet");
   const headers = {};
   if (body) headers['Content-Type'] = 'application/json';
   if (token) headers.Authorization = `Bearer ${token}`;
   let res;
   try {
-    res = await fetch(`${AUTH_URL}/api/auth${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
+    res = await fetch(`${AUTH_URL}/api${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
   } catch (e) {
     const err = new Error("Can't reach the account service \u2014 check your connection");
     err.offline = true;
@@ -242,6 +246,25 @@ export const api = {
     });
   },
 
+  // Stores the catalog id a card came from (used to look up its price). Older cards were saved without one.
+  async updateCardUid(collectionId, cardId, uid) {
+    if (USE_MOCK) return null;
+    return request(`/collections/${collectionId}/cards/${cardId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ uid }),
+    });
+  },
+
+  // ---- sync with the account (see sync.js) -------------------------------------
+  // BACKEND: GET /api/sync/state -> {collections: [doc], deleted: [{id, at}]}
+  async syncState() {
+    return request('/sync/state');
+  },
+  // BACKEND: POST /api/sync/apply {collections, expect} -> {applied: [ids], skipped: [ids]}
+  async syncApply(body) {
+    return request('/sync/apply', { method: 'POST', body: JSON.stringify(body) });
+  },
+
   // ---- card database search ----------------------------------------------
   async searchCards(game, query) {
     if (USE_MOCK) {
@@ -320,7 +343,7 @@ export const api = {
       }
       return { username, token: 'mock-token' };
     }
-    return authRequest('/login', { body: { username, password } });
+    return accountRequest('/auth/login', { body: { username, password } });
   },
 
   async register(username, email, password) {
@@ -334,19 +357,19 @@ export const api = {
       saveMockDb(db);
       return { username, token: 'mock-token' };
     }
-    return authRequest('/register', { body: { username, email, password } });
+    return accountRequest('/auth/register', { body: { username, email, password } });
   },
 
   // Resolves to { username } while the session is valid; rejects with err.status === 401 once it has expired
   // or been signed out elsewhere, and with err.offline when the service can't be reached.
   async me(token) {
     if (USE_MOCK) return { username: 'mock' };
-    return authRequest('/me', { method: 'GET', token });
+    return accountRequest('/auth/me', { method: 'GET', token });
   },
 
   async logout(token) {
     if (USE_MOCK) return { ok: true };
-    return authRequest('/logout', { token });
+    return accountRequest('/auth/logout', { token });
   },
 
   // ---- settings --------------------------------------------------------------

@@ -16,8 +16,16 @@ android {
         // 24 is the minimum for the NDK-side libraries (ONNX Runtime's Android package, std::filesystem).
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        // The release build sets BINDER_VERSION (e.g. "v1.0.4"); the version code rises with it so a newer APK can
+        // install over an older one. Local builds are 1.0 / 1.
+        val releaseVersion = System.getenv("BINDER_VERSION") ?: ""
+        val parts = Regex("^v?(\\d+)\\.(\\d+)\\.(\\d+)$").find(releaseVersion)?.destructured
+        versionCode = if (parts != null) {
+            parts.component1().toInt() * 1_000_000 + parts.component2().toInt() * 1_000 + parts.component3().toInt()
+        } else {
+            1
+        }
+        versionName = if (parts != null) releaseVersion.removePrefix("v") else "1.0"
 
         ndk {
             // arm64-v8a covers virtually every real device this app would
@@ -45,7 +53,24 @@ android {
         }
     }
 
+    // Optional fixed signing key (CI passes it in; see BUILDING.md, "Updates"). Without one the debug APK is signed
+    // with the machine's throwaway debug key, and Android won't install a newer APK over one signed with another key.
+    val keystorePath = System.getenv("BINDER_KEYSTORE_PATH")
+    if (!keystorePath.isNullOrEmpty()) {
+        signingConfigs {
+            create("binder") {
+                storeFile = file(keystorePath)
+                storePassword = System.getenv("BINDER_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("BINDER_KEY_ALIAS")
+                keyPassword = System.getenv("BINDER_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
+        debug {
+            if (!keystorePath.isNullOrEmpty()) signingConfig = signingConfigs.getByName("binder")
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

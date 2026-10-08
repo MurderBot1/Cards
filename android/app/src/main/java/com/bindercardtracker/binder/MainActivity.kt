@@ -2,7 +2,9 @@ package com.bindercardtracker.binder
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -11,6 +13,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.View
+import android.webkit.JavascriptInterface
 import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -33,6 +36,7 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val MAX_LOAD_RETRIES = 40 // ~10s at 250ms apart
         private const val RETRY_DELAY_MS = 250L
+        private const val RELEASES_PREFIX = "https://github.com/MurderBot1/Cards/releases/"
         private val DATA_FILES = listOf("cards.sqlite3", "card-vectors.cvi") // carddownload::Options::files
     }
 
@@ -71,6 +75,7 @@ class MainActivity : AppCompatActivity() {
         }
         serverUrl = "http://127.0.0.1:$port/"
         configureWebView()
+        webView.addJavascriptInterface(UpdateBridge(), "BinderAndroid")
         loadWhenReady()
         if (askFirst) askAboutMeteredDownload()
     }
@@ -205,6 +210,22 @@ class MainActivity : AppCompatActivity() {
             return // give up silently rather than loop forever; onReceivedError already logged it
         }
         mainHandler.postDelayed({ webView.loadUrl(serverUrl) }, RETRY_DELAY_MS)
+    }
+
+    /** What the page's "update available" banner calls to open a download (js/updates.js): this project's GitHub
+     * release pages and files only, handed to the browser, which downloads them (an APK then installs over this
+     * app if it is signed with the same key). */
+    private inner class UpdateBridge {
+        @JavascriptInterface
+        fun openExternal(url: String): Boolean {
+            if (!url.startsWith(RELEASES_PREFIX) || url.length > 400) return false
+            return try {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                true
+            } catch (e: Exception) {
+                false
+            }
+        }
     }
 
     @Suppress("DEPRECATION")

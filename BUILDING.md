@@ -165,5 +165,30 @@ takes a username, email and password, and sign-in returns a session token the ap
 HTTPS; set its address as `AUTH_URL` in `app/js/config.js` (setup steps are in `cloudflare/README.md`). Until that is set,
 the Sign in screen says accounts aren't set up yet and the rest of the app works as before.
 
+Signed-in devices keep their collections in sync through the same service (the account page shows when it last synced), and
+the collection screens show card prices from it; see `cloudflare/README.md`.
+
 The older `/api/auth/*` routes in the local backend, which spoke to a separate TCP LoginServer, are no longer used by the
 app.
+
+## Updates
+
+The app checks the project's GitHub releases on startup (and from "Check for updates" on the Account tab) and offers the
+newest `vX.Y.Z` release with a banner. **Update** opens the right download for the platform: the APK on Android, the zip
+for Windows, macOS or Linux on a computer (you unzip it over the old copy). It can only do that in a *released* build: the
+release workflow stamps the version into `app/js/version.js` (and Android's version name and code), while a local build or
+the rolling `latest` build says `dev` and never asks to update.
+
+**Android updates need a fixed signing key.** Android installs a new APK over an old one only if both were signed with the
+same key, and a CI runner invents a new debug key every time, so without one the banner's download fails with "App not
+installed" until the old app is uninstalled (signed-in collections come back through sync). To give the builds one key:
+
+```
+keytool -genkeypair -v -keystore binder.keystore -alias binder -keyalg RSA -keysize 2048 -validity 10000
+base64 -w0 binder.keystore            # macOS: base64 -i binder.keystore
+```
+
+then add these repository secrets (Settings → Secrets and variables → Actions): `ANDROID_KEYSTORE_B64` (that base64
+text), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (`binder`) and `ANDROID_KEY_PASSWORD`. Keep `binder.keystore` somewhere
+safe: if it is lost, the next release can't be installed over the old ones. The first build signed with it also needs one
+uninstall of the throwaway-signed version.

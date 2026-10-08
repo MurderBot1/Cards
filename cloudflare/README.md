@@ -9,6 +9,8 @@ by a [D1](https://developers.cloudflare.com/d1/) database. Both are on Cloudflar
 | `POST /api/auth/login` | `{username, password}` | `200 {username, token, expires_at}` |
 | `GET /api/auth/me` | `Authorization: Bearer <token>` | `200 {username, expires_at}` or `401` |
 | `POST /api/auth/logout` | `Authorization: Bearer <token>` | `200 {ok: true}` |
+| `POST /api/sync` | `{cursor, collections: [doc], deleted: [{id, at}]}` + token | `200 {cursor, more, collections: [doc]}` |
+| `POST /api/prices` | `{cards: [{key, game, name, set, uid}]}` (no account needed) | `200 {currency, prices: {key: {usd, usd_foil} \| null}, unavailable: [key]}` |
 
 - Usernames are 3 to 32 characters (letters, digits, `.`, `-`, `_`) and unique ignoring case. Passwords are 8 to 256.
 - The email is required to create an account and stored lowercased (unique). **Nothing uses it yet:** no verification, no
@@ -20,8 +22,23 @@ by a [D1](https://developers.cloudflare.com/d1/) database. Both are on Cloudflar
 - Requests authenticate with a header, never a cookie, so the API allows any origin (the app calls it from
   `http://127.0.0.1:<port>`).
 
-Layout: `src/worker.js` (routing, CORS), `src/auth/*.js` (the four endpoints), `src/lib.js` (validation, hashing, sessions,
-rate limiting), `schema.sql`, `wrangler.jsonc`, `public/` (a placeholder page).
+**Sync** (`src/sync.js`): the app sends the collections that changed on that device; the service merges them with the
+account's copy and answers with the merged result plus anything other devices changed since the app's `cursor`. A collection
+is a doc `{id, name, updated, cards: [...], tomb: {cardId: ms}}` (or `{id, deleted: ms}` once deleted); every card has
+`updated` (the device's clock, in ms). The newest edit of a card wins, and a removal (a `tomb` entry) beats an older copy
+of the card, so nothing is resurrected. Two devices adding different cards both keep them; two devices changing the *same*
+card at about the same time keep the later change (clock differences between devices can swing that). A deleted collection
+stays deleted unless it was edited after the deletion. At most 90 collections per request (the app batches) and about
+1.5 MB per collection.
+
+**Prices** (`src/prices.js`): market prices in USD from Scryfall (Magic, one batch call), pokemontcg.io (Pokémon) and
+YGOPRODeck (Yu-Gi-Oh!, per card rather than per printing), cached in D1 for 12 hours (6 for "no price"), at most 60 cards
+and 30 requests per minute per address. Cards are looked up by the catalog id the app stores for them. Optionally set a
+Worker secret `POKEMONTCG_API_KEY` (free from pokemontcg.io) for a higher Pokémon rate limit: Settings → Variables and
+Secrets, or `npx wrangler secret put POKEMONTCG_API_KEY`.
+
+Layout: `src/worker.js` (routing, CORS), `src/auth/*.js` (the account endpoints), `src/sync.js`, `src/prices.js`,
+`src/lib.js` (validation, hashing, sessions, rate limiting), `schema.sql`, `wrangler.jsonc`, `public/` (a placeholder page).
 
 ## One-time setup (Cloudflare dashboard)
 
@@ -30,6 +47,8 @@ rate limiting), `schema.sql`, `wrangler.jsonc`, `public/` (a placeholder page).
    the rest of the line if the console flattens a paste, and D1 then reports "Requests without any query are not
    supported". Notes on the columns: `email` is stored lowercased and unused for now; `password_hash` is
    `pbkdf2$<iterations>$<salt b64>$<hash b64>`; `sessions` keeps only a SHA-256 of each token.)
+   **After an update that adds tables (sync and prices did), run `schema.sql` again**: every statement is
+   `IF NOT EXISTS`, so it only adds what's missing.
 2. **Put the database ID in [`wrangler.jsonc`](wrangler.jsonc)** (`database_id`; it's on the database's page, and it is
    not a secret). This is what binds the database to the Worker as `DB`.
 3. **Deploy from this folder.** In the Worker's *Settings → Build* (Workers Builds), set **Root directory** to

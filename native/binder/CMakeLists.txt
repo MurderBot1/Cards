@@ -3,9 +3,12 @@ find_package(Threads REQUIRED)
 # The API: every endpoint js/api.js expects, as a function that registers
 # routes on a cardhttp::Server. A library (not just part of main) so the tests
 # can drive it end to end over real HTTP.
-add_library(binder_api STATIC src/api.cpp)
+add_library(binder_api STATIC src/api.cpp src/open_url.cpp)
 target_include_directories(binder_api PUBLIC src)
 target_link_libraries(binder_api PUBLIC cardhttp cardstore cardauth cardscan cardlog)
+if(WIN32)
+    target_link_libraries(binder_api PRIVATE shell32)  # ShellExecute, for opening a download in the browser
+endif()
 
 # The assembled backend (store + engine + server + routes), shared by the desktop app and the Android library.
 add_library(binder_app STATIC src/app.cpp)

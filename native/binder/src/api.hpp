@@ -2,6 +2,7 @@
 #pragma once
 
 #include <filesystem>
+#include <functional>
 #include <string>
 
 #include "cardauth/auth.hpp"
@@ -18,6 +19,9 @@ struct ApiContext {
     cardauth::Config auth;
     std::filesystem::path frontend_dir;  // index.html, css/, js/
     SetupStatus* setup = nullptr;        // background first-run work, for GET /api/setup; none = nothing to report
+    // How POST /api/open-url opens a release URL (already checked to be one); default: the system browser. Tests
+    // replace it so nothing is launched.
+    std::function<bool(const std::string&)> open_url;
 };
 
 // Minimum Laplacian-variance blur score an uploaded scan must clear, per the
