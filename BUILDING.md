@@ -158,6 +158,23 @@ downloads the catalog on first launch (like the desktop one), or you can put
 `cards.sqlite3`, `card-vectors.cvi` (and any `.onnx` files) in the app's private `files/data/` directory, e.g. for
 development `adb push` them and copy with `run-as com.bindercardtracker.binder`. (Models are still not downloaded.)
 
+## iOS
+
+`native/binder_ios` is a small UIKit app (Objective-C++): the same C++ backend on localhost plus a `WKWebView`, with downloads
+going through `NSURLSession`. CI builds it on a macOS runner (`ios` job) and attaches `Binder-ios-unsigned.ipa` to each
+release. ONNX Runtime comes from its CocoaPods archive, OpenCV is built from source.
+
+The IPA is **unsigned**, so iOS won't run it as is; sign it on the device when you install it:
+
+- **AltStore** or **Sideloadly** (free): open the IPA with your Apple ID. A free Apple ID's signature lasts 7 days, after
+  which the app has to be re-signed (AltStore does this automatically while it's running on your network).
+- A paid Apple Developer account gives a year-long signature and lets you distribute through TestFlight.
+
+Building locally needs Xcode: `cmake -S native -B build-ios -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphoneos
+-DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY
+-DBINDER_STATIC_DEPS=ON -DBINDER_WITH_VIEW=OFF -DBINDER_WITH_CATALOG_TOOL=OFF -DBINDER_BUILD_TESTS=OFF`, then build the
+`binder_ios` target (see the `ios` job in `.github/workflows/build.yml` for the packaging into the IPA).
+
 ## Login server
 
 Accounts are handled by a small Cloudflare Worker with a D1 database (free tier) in [`cloudflare/`](cloudflare/README.md): sign-up
@@ -181,14 +198,24 @@ the rolling `latest` build says `dev` and never asks to update.
 
 **Android updates need a fixed signing key.** Android installs a new APK over an old one only if both were signed with the
 same key, and a CI runner invents a new debug key every time, so without one the banner's download fails with "App not
-installed" until the old app is uninstalled (signed-in collections come back through sync). To give the builds one key:
+installed" until the old app is uninstalled (signed-in collections come back through sync). To give the builds one key, run this on your own computer (it needs a JDK for `keytool`, plus `openssl`; with the
+GitHub CLI installed and `gh auth login` done it can also store the secrets for you):
+
+```
+scripts/setup-android-signing.sh --set-secrets --repo MurderBot1/Cards
+```
+
+It creates `binder.keystore` with a random password, writes the password and instructions to
+`binder.keystore.secrets.txt` next to it (**back both up**, and never commit them: `.gitignore` already skips them), and
+adds the four secrets below. Without `--set-secrets` it prints the values for you to paste in by hand. To do it all by hand
+instead:
 
 ```
 keytool -genkeypair -v -keystore binder.keystore -alias binder -keyalg RSA -keysize 2048 -validity 10000
 base64 -w0 binder.keystore            # macOS: base64 -i binder.keystore
 ```
 
-then add these repository secrets (Settings → Secrets and variables → Actions): `ANDROID_KEYSTORE_B64` (that base64
+and add these repository secrets (Settings → Secrets and variables → Actions): `ANDROID_KEYSTORE_B64` (that base64
 text), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (`binder`) and `ANDROID_KEY_PASSWORD`. Keep `binder.keystore` somewhere
 safe: if it is lost, the next release can't be installed over the old ones. The first build signed with it also needs one
 uninstall of the throwaway-signed version.

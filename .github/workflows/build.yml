@@ -376,10 +376,18 @@ jobs:
         shell: bash
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           if [ -n "${KEYSTORE_B64}" ]; then
+            if [ -z "${KEYSTORE_PASSWORD}" ] || [ -z "${KEY_ALIAS}" ] || [ -z "${KEY_PASSWORD}" ]; then
+              echo "::error::ANDROID_KEYSTORE_B64 is set but ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD must be set too (see BUILDING.md, 'Updates')."
+              exit 1
+            fi
             echo "${KEYSTORE_B64}" | base64 -d > "${RUNNER_TEMP}/binder.keystore"
             echo "BINDER_KEYSTORE_PATH=${RUNNER_TEMP}/binder.keystore" >> "$GITHUB_ENV"
+            echo "Signing the APK with the fixed key from the ANDROID_KEYSTORE_* secrets"
           else
             echo "No ANDROID_KEYSTORE_B64 secret: using the default debug key"
           fi
@@ -398,14 +406,82 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
-  # Publishes the finished builds to a GitHub release, once all four platforms have built (and passed their tests):
+  # iOS: Binder.app built with the same superbuild (cross-compiled with the iPhoneOS SDK on a macOS runner) and packaged
+  # as an UNSIGNED .ipa. It can't be installed as it is: sideload it (AltStore, Sideloadly, ...), which signs it with
+  # your own Apple ID, or sign it yourself. See BUILDING.md ("iOS").
+  ios:
+    name: iOS
+    needs: [test, models]
+    runs-on: macos-latest
+    if: github.event_name != 'create' || github.event.ref_type == 'branch'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Stamp the app version
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ inputs.version || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || 'dev' }}
+        run: |
+          [[ "${RELEASE_VERSION}" =~ ^[A-Za-z0-9._-]+$ ]] || RELEASE_VERSION=dev
+          echo "export const APP_VERSION = '${RELEASE_VERSION}';" > app/js/version.js
+          cat app/js/version.js
+          # the app's own version (CFBundleShortVersionString / CFBundleVersion) from vX.Y.Z; 1.0.0 / 1 for anything else
+          IOS_VERSION=1.0.0; IOS_BUILD=1
+          if [[ "${RELEASE_VERSION}" =~ ^v?([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            IOS_VERSION="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
+            IOS_BUILD=$(( BASH_REMATCH[1] * 1000000 + BASH_REMATCH[2] * 1000 + BASH_REMATCH[3] ))
+          fi
+          echo "IOS_VERSION=${IOS_VERSION}" >> "$GITHUB_ENV"
+          echo "IOS_BUILD=${IOS_BUILD}" >> "$GITHUB_ENV"
+
+      # Shipped inside the app as data/ (the models), copied to the app's data directory on first launch.
+      - uses: actions/download-artifact@v4
+        with:
+          name: models
+          path: native/binder/packaging/bundled_data
+
+      - uses: actions/cache@v4
+        with:
+          path: .deps
+          key: ios-deps-${{ hashFiles('native/cmake/Deps.cmake') }}
+
+      # CMAKE_TRY_COMPILE_TARGET_TYPE: CMake's compiler checks build static libraries, as an iOS executable can't run here.
+      - name: Configure
+        run: |
+          cmake -S native -B build-ios -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphoneos -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
+            -DBINDER_STATIC_DEPS=ON -DBINDER_WITH_VIEW=OFF -DBINDER_WITH_CATALOG_TOOL=OFF -DBINDER_BUILD_TESTS=OFF \
+            -DBINDER_IOS_VERSION="${IOS_VERSION}" -DBINDER_IOS_BUILD="${IOS_BUILD}" \
+            -DFETCHCONTENT_BASE_DIR="${{ github.workspace }}/.deps"
+
+      # One job per core: an unlimited --parallel makes the OpenCV source build thrash the runner's memory.
+      - name: Build
+        run: cmake --build build-ios --target binder_ios --parallel "$(sysctl -n hw.ncpu)"
+
+      - name: Package
+        run: |
+          mkdir -p Payload
+          cp -R build-ios/bin/Binder.app Payload/
+          ls -R Payload/Binder.app | head -40
+          file Payload/Binder.app/Binder
+          zip -qry Binder-ios-unsigned.ipa Payload
+          ls -l Binder-ios-unsigned.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Binder-ios-unsigned
+          path: Binder-ios-unsigned.ipa
+          if-no-files-found: error
+
+  # Publishes the finished builds to a GitHub release, once all five platforms have built (and passed their tests):
   #   - pushing a tag like v1.2.0 creates a normal release for that tag
   #   - every push to main refreshes the rolling "latest" pre-release with that commit's builds
   #   - a manual run with a `version` (e.g. v1.2.0) creates a normal release with that tag on the commit it ran on
   # Branch creations and manual runs without a version build and upload artifacts but don't publish.
   release:
     name: Release
-    needs: [windows, macos, linux, android]
+    needs: [windows, macos, linux, android, ios]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.version != '')
     permissions:
@@ -422,6 +498,7 @@ jobs:
           cp artifacts/Binder-macos-arm64/Binder-macos-arm64.zip release/
           cp artifacts/Binder-linux/Binder-linux.zip release/
           cp artifacts/Binder-android-debug/app-debug.apk release/Binder-android-debug.apk
+          cp artifacts/Binder-ios-unsigned/Binder-ios-unsigned.ipa release/
           cd release
           sha256sum * > SHA256SUMS.txt
           ls -l

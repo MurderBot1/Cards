@@ -34,11 +34,16 @@ if(NOT ONNXRUNTIME_INCLUDE_DIR OR NOT ONNXRUNTIME_LIB)
     message(FATAL_ERROR "Could not find ONNX Runtime headers/library under ONNXRUNTIME_ROOT_DIR=${ONNXRUNTIME_ROOT_DIR}")
 endif()
 
+# (On iOS the library is a static archive, so what it needs from the system comes with it.)
 add_library(onnxruntime_imported SHARED IMPORTED)
 set_target_properties(onnxruntime_imported PROPERTIES
     IMPORTED_LOCATION "${ONNXRUNTIME_LIB}"
     INTERFACE_INCLUDE_DIRECTORIES "${ONNXRUNTIME_INCLUDE_DIR}"
 )
+if(IOS)
+    set_property(TARGET onnxruntime_imported APPEND PROPERTY INTERFACE_LINK_LIBRARIES
+        "-framework Foundation" "-framework CoreML" "-framework Accelerate")
+endif()
 if(WIN32)
     # .lib here is an import library; the matching .dll must be next to
     # whatever executable ends up loading it at runtime (binder's build copies it there).
