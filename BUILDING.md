@@ -195,8 +195,8 @@ the Sign in screen says accounts aren't set up yet and the rest of the app works
 
 Signed-in devices keep their collections in sync through the same service (the account page shows when it last synced), and
 the collection screens show card prices. Prices are asked of Scryfall, pokemontcg.io and YGOPRODeck directly from the page
-(`app/js/priceSources.js`), so they need no account or setup; if one of those sites can't be reached from the page (blocked,
-rate limited), the Worker's `/api/prices` (a shared D1 cache, see `cloudflare/README.md`) fills in when it's configured.
+(`app/js/priceSources.js`), so they need no account or setup. The Worker is only a shared cache for them (a device reads what
+others already found, and a signed-in one writes back what it looked up; see `cloudflare/README.md`).
 
 The older `/api/auth/*` routes in the local backend, which spoke to a separate TCP LoginServer, are no longer used by the
 app.

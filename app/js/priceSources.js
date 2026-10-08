@@ -8,8 +8,8 @@
  * (mtg-<scryfall id>, pkm-<id>, ygo-<passcode>[-<set>]); older cards without one are priced by name and set, Magic only.
  *
  * The page asks the sites itself, so each device uses its own address's rate limits and nothing has to be set up. A
- * site that can't be reached (offline, blocked, rate limited) throws for that batch; prices.js then falls back to the
- * account service's shared cache when there is one.
+ * site that can't be reached (offline, blocked, rate limited) is reported in `failed` and those cards are tried again
+ * next time.
  */
 
 const TIMEOUT_MS = 10000;

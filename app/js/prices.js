@@ -1,8 +1,8 @@
 /**
  * prices.js
- * Card prices in US dollars, asked of Scryfall, pokemontcg.io and YGOPRODeck directly (priceSources.js): no account
- * and no setup needed. If a site can't be reached from here (blocked, rate limited), the account service's
- * /api/prices, which asks them for us and caches the answers, fills in when it is configured (config.js).
+ * Card prices in US dollars. Every look-up goes straight to Scryfall, pokemontcg.io and YGOPRODeck (priceSources.js), so
+ * no account or setup is needed. The account service (config.js) is only a shared cache: when it is configured, prices
+ * other devices already found are read from it first, and a signed-in device writes what it looked up back to it.
  *
  * Prices are looked up by the catalog id a card was added with (`uid`); cards saved before that was kept get theirs
  * filled in from the local catalog first (backfillUids). Answers are remembered on this device for a few hours so
@@ -11,10 +11,13 @@
 import { AUTH_URL } from './config.js';
 import { accountRequest, api } from './api.js';
 import { lookUpPrices } from './priceSources.js';
+import { getSession } from './session.js';
 
 const CACHE_KEY = 'binder_prices_v1';
 const STALE_MS = 6 * 60 * 60 * 1000;
-const CHUNK = 50; // cards per request (the service accepts up to 60)
+const CACHE_CHUNK = 90; // keys per shared-cache read (the service accepts up to 90)
+const STORE_CHUNK = 60; // prices per shared-cache write
+const CATALOG_KEY = /^(mtg|pkm|ygo)-[A-Za-z0-9_.-]{1,120}$/; // the cache only holds cards that have a catalog id
 const BACKFILL_PER_RUN = 25;
 
 let cache = {};
@@ -78,26 +81,44 @@ export async function loadPrices(cards) {
     changed = true;
   };
   const request = ([key, c]) => ({ key, game: c.game, name: c.name, set: c.set || '', uid: c.uid || '' });
+  const shareable = ([key]) => CATALOG_KEY.test(key);
 
-  // straight from the card sites first
-  const direct = await lookUpPrices(list.map(request));
+  // 1. the shared cache (never an error: it is only a shortcut)
+  const known = new Set();
+  if (AUTH_URL) {
+    const candidates = list.filter(shareable);
+    for (let i = 0; i < candidates.length; i += CACHE_CHUNK) {
+      const part = candidates.slice(i, i + CACHE_CHUNK);
+      try {
+        const response = await accountRequest('/prices/cached', { body: { keys: part.map(([key]) => key) } });
+        for (const [key] of part) {
+          if (Object.prototype.hasOwnProperty.call(response.prices, key)) {
+            remember(key, response.prices[key]);
+            known.add(key);
+          }
+        }
+      } catch (err) {
+        break;
+      }
+    }
+  }
+
+  // 2. everything else straight from the card sites
+  const direct = await lookUpPrices(list.filter(([key]) => !known.has(key)).map(request));
   for (const [key, price] of direct.prices) remember(key, price);
 
-  // whatever they couldn't answer, the account service's shared cache may have
-  const missed = new Set(direct.failed.map((c) => c.key));
-  const fallback = list.filter(([key]) => missed.has(key));
-  if (AUTH_URL) {
-    for (let i = 0; i < fallback.length; i += CHUNK) {
-      const part = fallback.slice(i, i + CHUNK);
-      let response;
+  // 3. share what was just looked up, if signed in
+  const session = getSession();
+  if (AUTH_URL && session) {
+    const found = [...direct.prices].filter(([key]) => CATALOG_KEY.test(key));
+    for (let i = 0; i < found.length; i += STORE_CHUNK) {
       try {
-        response = await accountRequest('/prices', { body: { cards: part.map(request) } });
+        await accountRequest('/prices/store', {
+          token: session.token,
+          body: { prices: found.slice(i, i + STORE_CHUNK).map(([key, p]) => ({ key, usd: p.usd, usd_foil: p.usd_foil })) },
+        });
       } catch (err) {
-        break; // offline, rate limited or the service is down: try again next time
-      }
-      const unavailable = new Set(response.unavailable || []);
-      for (const [key] of part) {
-        if (!unavailable.has(key)) remember(key, response.prices[key]);
+        break;
       }
     }
   }
