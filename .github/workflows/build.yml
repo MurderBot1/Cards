@@ -13,7 +13,12 @@ name: Build
 # release ones — add `&& startsWith(github.event.ref, 'v')` to each `if`
 # below if you'd rather limit it to branches named like "v1.1.1".
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Publish a release with this tag (e.g. v1.0.0) from the commit being built; leave empty to only build"
+        required: false
+        type: string
   push:
     branches:
       - main
@@ -313,12 +318,13 @@ jobs:
   # Publishes the finished builds to a GitHub release, once all four platforms have built (and passed their tests):
   #   - pushing a tag like v1.2.0 creates a normal release for that tag
   #   - every push to main refreshes the rolling "latest" pre-release with that commit's builds
-  # Branch creations and manual runs build and upload artifacts but don't publish.
+  #   - a manual run with a `version` (e.g. v1.2.0) creates a normal release with that tag on the commit it ran on
+  # Branch creations and manual runs without a version build and upload artifacts but don't publish.
   release:
     name: Release
     needs: [windows, macos, linux, android]
     runs-on: ubuntu-latest
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.version != '')
     permissions:
       contents: write  # create the release and its tag
     steps:
@@ -341,8 +347,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}  # this job has no checkout for gh to infer the repository from
+          VERSION: ${{ inputs.version }}
         run: |
-          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+          if [[ "${GITHUB_EVENT_NAME}" == workflow_dispatch ]]; then
+            [[ "${VERSION}" =~ ^v[0-9]+(\.[0-9]+)*([-.][0-9A-Za-z.]+)?$ ]] || { echo "Invalid version '${VERSION}' (expected e.g. v1.2.0)"; exit 1; }
+            gh release create "${VERSION}" release/* --target "${GITHUB_SHA}" \
+              --title "Binder ${VERSION}" --generate-notes
+          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             gh release create "${GITHUB_REF_NAME}" release/* \
               --title "Binder ${GITHUB_REF_NAME}" --generate-notes
           else
