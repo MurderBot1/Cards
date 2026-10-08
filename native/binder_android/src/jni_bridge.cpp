@@ -26,6 +26,8 @@ std::string to_string(JNIEnv* env, jstring s) {
 
 // A cardfetch::Transport that downloads through com.bindercardtracker.binder.Downloader (HttpURLConnection), since the
 // NDK has no libcurl. Used from the backend's background threads, which attach themselves to the JVM per call.
+// The callback of the JvmTransport::get_to_file running on this thread, for Downloader.reportSize to call back into.
+thread_local const std::function<void(unsigned long long)>* t_size_callback = nullptr;
 JavaVM* g_vm = nullptr;
 jclass g_downloader = nullptr;  // global ref
 jmethodID g_download = nullptr;
@@ -46,7 +48,9 @@ public:
         }
         jstring jurl = env->NewStringUTF(url.c_str());
         jstring jdest = env->NewStringUTF(dest.u8string().c_str());
+        t_size_callback = &on_download_size;
         jint status = env->CallStaticIntMethod(g_downloader, g_download, jurl, jdest, static_cast<jint>(timeout_seconds));
+        t_size_callback = nullptr;
         std::string failure;
         if (env->ExceptionCheck()) {
             jthrowable ex = env->ExceptionOccurred();
@@ -137,6 +141,11 @@ JNIEXPORT jint JNICALL Java_com_bindercardtracker_binder_NativeBackend_start(JNI
         g_app.reset();
         return -1;
     }
+}
+
+// Downloader.kt calls this once the response headers give the body's size (see JvmTransport above).
+JNIEXPORT void JNICALL Java_com_bindercardtracker_binder_Downloader_reportSize(JNIEnv*, jclass, jlong bytes) {
+    if (t_size_callback && *t_size_callback && bytes > 0) (*t_size_callback)(static_cast<unsigned long long>(bytes));
 }
 
 // Starts the catalog download that start(..., download_now = false) held back.

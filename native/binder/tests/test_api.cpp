@@ -80,6 +80,9 @@ int main() {
     CHECK_EQ(busy["task"], json("Downloading assets"));
     CHECK_EQ(busy["detail"], json("cards.sqlite3 (1 of 2)"));
     CHECK_EQ(busy["bytes"], json(5));
+    CHECK_EQ(busy["total"], json(0));
+    setup.set_total(20);
+    CHECK_EQ(parse(cli.Get("/api/setup"))["total"], json(20));
     setup.fail("could not download cards.sqlite3");
     auto failed = parse(cli.Get("/api/setup"));
     CHECK_EQ(failed["active"], json(false));

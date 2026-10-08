@@ -41,6 +41,20 @@ size_t write_to_stream(char* data, size_t size, size_t n, void* user) {
     return *out ? size * n : 0;
 }
 
+// Passes the expected body size on to Transport::on_download_size once libcurl knows it (and again if it changes).
+struct SizeReport {
+    const std::function<void(unsigned long long)>* callback;
+    curl_off_t last = 0;
+};
+int report_size(void* user, curl_off_t dltotal, curl_off_t, curl_off_t, curl_off_t) {
+    auto* r = static_cast<SizeReport*>(user);
+    if (dltotal > 0 && dltotal != r->last) {
+        r->last = dltotal;
+        if (*r->callback) (*r->callback)(static_cast<unsigned long long>(dltotal));
+    }
+    return 0;
+}
+
 // Shared by both entry points: the URL, redirects, the stall/connect timeouts and the default headers.
 void configure(Easy& e, const std::string& url, int timeout_seconds, const std::string& user_agent) {
     curl_easy_setopt(e.h, CURLOPT_URL, url.c_str());
@@ -82,6 +96,10 @@ long CurlTransport::get_to_file(const std::string& url, int timeout_seconds, con
     if (!out) throw Error("could not write " + dest.u8string());
     curl_easy_setopt(e.h, CURLOPT_WRITEFUNCTION, write_to_stream);
     curl_easy_setopt(e.h, CURLOPT_WRITEDATA, &out);
+    SizeReport size_report{&on_download_size};
+    curl_easy_setopt(e.h, CURLOPT_NOPROGRESS, 0L);
+    curl_easy_setopt(e.h, CURLOPT_XFERINFOFUNCTION, report_size);
+    curl_easy_setopt(e.h, CURLOPT_XFERINFODATA, &size_report);
     CURLcode rc = curl_easy_perform(e.h);
     out.close();
     std::error_code ec;

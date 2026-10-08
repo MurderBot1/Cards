@@ -17,6 +17,10 @@ object Downloader {
      * connecting and a stalled read, not the whole transfer. Throws on a connection failure (the C++ side turns
      * that into its own error).
      */
+    /** Tells the C++ side how big the body is (Content-Length), once known, so the setup screen can show "x of y". */
+    @JvmStatic
+    external fun reportSize(bytes: Long)
+
     @JvmStatic
     fun download(url: String, dest: String, timeoutSeconds: Int): Int {
         val file = File(dest)
@@ -32,6 +36,8 @@ object Downloader {
                 file.delete()
                 return status
             }
+            val length = conn.contentLengthLong
+            if (length > 0) reportSize(length)
             conn.inputStream.use { input ->
                 file.outputStream().use { output ->
                     val buffer = ByteArray(BUFFER_BYTES)
