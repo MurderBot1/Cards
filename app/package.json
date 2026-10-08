@@ -1,0 +1,5 @@
+{
+  "name": "binder-frontend",
+  "private": true,
+  "type": "module"
+}

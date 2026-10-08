@@ -6,6 +6,7 @@
 #include <httplib.h>
 
 #include "api.hpp"
+#include "open_url.hpp"
 #include "cardtest.hpp"
 
 namespace fs = std::filesystem;
@@ -133,6 +134,29 @@ int main() {
     auto applied = parse(cli.Post("/api/sync/apply", json{{"collections", json::array({remote})}, {"expect", json::object()}}.dump(), kJson));
     CHECK_EQ(applied["applied"], json::array({"remote1"}));
     CHECK_EQ(cli.Get("/api/collections/remote1")->status, 200);
+
+    // ---- open-url: only this project's release downloads, and nothing is launched in the test
+    std::vector<std::string> opened;
+    ctx.open_url = [&](const std::string& url) {
+        opened.push_back(url);
+        return true;
+    };
+    const std::string asset = "https://github.com/MurderBot1/Cards/releases/download/v1.0.5/Binder-linux.zip";
+    CHECK_EQ(cli.Post("/api/open-url", json{{"url", asset}}.dump(), kJson)->status, 200);
+    CHECK_EQ(opened.size(), static_cast<size_t>(1));
+    CHECK_EQ(opened[0], asset);
+    for (const char* bad : {"https://evil.example/releases/", "http://github.com/MurderBot1/Cards/releases/x",
+                            "https://github.com/MurderBot1/Cards/releases/x y", "https://github.com/MurderBot1/Cards/releases/`id`",
+                            "https://github.com/MurderBot1/Cards/releases/x\" ; ls", "https://github.com/MurderBot1/Cards/issues/1",
+                            "https://github.com/MurderBot1/Cards-evil/releases/", "file:///etc/passwd", ""}) {
+        CHECK_EQ(cli.Post("/api/open-url", json{{"url", bad}}.dump(), kJson)->status, 400);
+    }
+    CHECK(binder::is_release_url(asset));
+    CHECK(!binder::is_release_url(std::string("https://github.com/MurderBot1/Cards/releases/a\0b", 48)));  // an embedded NUL
+    CHECK(!binder::is_release_url("https://github.com/MurderBot1/Cards/releases/a'b"));
+    CHECK_EQ(cli.Post("/api/open-url", "{}", kJson)->status, 400);
+    CHECK_EQ(cli.Post("/api/open-url", json{{"url", 5}}.dump(), kJson)->status, 400);
+    CHECK_EQ(opened.size(), static_cast<size_t>(1));  // none of the bad ones got through
 
     // ---- settings
     CHECK_EQ(parse(cli.Get("/api/settings"))["theme"], json("dark"));

@@ -46,6 +46,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libopencv-dev libsqlite3-dev libgtk-3-dev libwebkit2gtk-4.1-dev xvfb libcurl4-openssl-dev zlib1g-dev
 
+      - name: Frontend unit tests
+        run: node --test app/test/*.test.mjs
+
+      - name: Account service tests
+        working-directory: cloudflare
+        run: |
+          npm install --no-audit --no-fund
+          npm test
+
       # Every C++ module's tests: cardvec, cardnet (pure parts), cardlog, cardpaths, cardstore, cardhttp,
       # cardauth, cardtext, cardcatalog, cardscan, cardonnx (against a real ONNX Runtime, downloaded at
       # configure time), cardview (a real window under xvfb), and the binder API driven over real HTTP.
@@ -142,6 +151,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The version this build reports to the app (js/version.js), so it can tell when a newer release exists. A
+      # release run (a v* tag, or a manual run with a version) stamps that version; everything else says "dev",
+      # which never asks to update.
+      - name: Stamp the app version
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ inputs.version || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || 'dev' }}
+        run: |
+          [[ "${RELEASE_VERSION}" =~ ^[A-Za-z0-9._-]+$ ]] || RELEASE_VERSION=dev
+          echo "export const APP_VERSION = '${RELEASE_VERSION}';" > app/js/version.js
+          echo "BINDER_VERSION=${RELEASE_VERSION}" >> "$GITHUB_ENV"
+          cat app/js/version.js
+
       # Shipped as the app's data/ (the app copies it into the user's data directory on first launch). Must be in
       # place before CMake configures, which is when the install rules look at that folder.
       - uses: actions/download-artifact@v4
@@ -182,6 +204,19 @@ jobs:
     if: github.event_name != 'create' || github.event.ref_type == 'branch'
     steps:
       - uses: actions/checkout@v4
+
+      # The version this build reports to the app (js/version.js), so it can tell when a newer release exists. A
+      # release run (a v* tag, or a manual run with a version) stamps that version; everything else says "dev",
+      # which never asks to update.
+      - name: Stamp the app version
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ inputs.version || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || 'dev' }}
+        run: |
+          [[ "${RELEASE_VERSION}" =~ ^[A-Za-z0-9._-]+$ ]] || RELEASE_VERSION=dev
+          echo "export const APP_VERSION = '${RELEASE_VERSION}';" > app/js/version.js
+          echo "BINDER_VERSION=${RELEASE_VERSION}" >> "$GITHUB_ENV"
+          cat app/js/version.js
 
       # Shipped as the app's data/ (the app copies it into the user's data directory on first launch). Must be in
       # place before CMake configures, which is when the install rules look at that folder.
@@ -229,6 +264,19 @@ jobs:
     if: github.event_name != 'create' || github.event.ref_type == 'branch'
     steps:
       - uses: actions/checkout@v4
+
+      # The version this build reports to the app (js/version.js), so it can tell when a newer release exists. A
+      # release run (a v* tag, or a manual run with a version) stamps that version; everything else says "dev",
+      # which never asks to update.
+      - name: Stamp the app version
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ inputs.version || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || 'dev' }}
+        run: |
+          [[ "${RELEASE_VERSION}" =~ ^[A-Za-z0-9._-]+$ ]] || RELEASE_VERSION=dev
+          echo "export const APP_VERSION = '${RELEASE_VERSION}';" > app/js/version.js
+          echo "BINDER_VERSION=${RELEASE_VERSION}" >> "$GITHUB_ENV"
+          cat app/js/version.js
 
       # Shipped as the app's data/ (the app copies it into the user's data directory on first launch). Must be in
       # place before CMake configures, which is when the install rules look at that folder.
@@ -281,6 +329,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The version this build reports to the app (js/version.js), so it can tell when a newer release exists. A
+      # release run (a v* tag, or a manual run with a version) stamps that version; everything else says "dev",
+      # which never asks to update.
+      - name: Stamp the app version
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ inputs.version || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || 'dev' }}
+        run: |
+          [[ "${RELEASE_VERSION}" =~ ^[A-Za-z0-9._-]+$ ]] || RELEASE_VERSION=dev
+          echo "export const APP_VERSION = '${RELEASE_VERSION}';" > app/js/version.js
+          echo "BINDER_VERSION=${RELEASE_VERSION}" >> "$GITHUB_ENV"
+          cat app/js/version.js
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -305,8 +366,27 @@ jobs:
           path: android/app/.cxx
           key: android-cxx-${{ hashFiles('native/cmake/Deps.cmake') }}
 
+      # Optional: sign with a fixed key, so a newer APK installs over an older one (Android refuses an update signed
+      # with a different key, and a fresh runner invents a new debug key every time). Without the secrets the APK
+      # is signed with that throwaway key, which is fine for trying it out. See BUILDING.md ("Updates").
+      - name: Signing key
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          if [ -n "${KEYSTORE_B64}" ]; then
+            echo "${KEYSTORE_B64}" | base64 -d > "${RUNNER_TEMP}/binder.keystore"
+            echo "BINDER_KEYSTORE_PATH=${RUNNER_TEMP}/binder.keystore" >> "$GITHUB_ENV"
+          else
+            echo "No ANDROID_KEYSTORE_B64 secret: using the default debug key"
+          fi
+
       - name: Build debug APK
         working-directory: android
+        env:
+          BINDER_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          BINDER_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          BINDER_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: gradle assembleDebug
 
       - uses: actions/upload-artifact@v4

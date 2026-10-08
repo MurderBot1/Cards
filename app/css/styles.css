@@ -625,6 +625,22 @@ svg {
 .card-price { margin-left: 6px; color: var(--foil-2); font-weight: 600; font-variant-numeric: tabular-nums; }
 .card-detail-price { margin-top: 2px; font-size: 0.9rem; font-weight: 600; color: var(--foil-2); min-height: 1.2em; }
 
+.update-banner {
+  position: absolute;
+  left: 12px; right: 12px;
+  bottom: calc(var(--tab-bar-height) + 64px);  /* above the toast */
+  z-index: 45;
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 10px 10px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--foil-1);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  font-size: 0.85rem; font-weight: 600;
+}
+.update-banner-text { flex: 1; min-width: 0; }
+.update-banner .btn { padding: 8px 14px; font-size: 0.8rem; }
+
 .link-btn {
   display: block;
   margin: 12px auto 0;
@@ -1084,6 +1100,7 @@ svg {
 
   .fab { right: 44px; bottom: 40px; }
   .toast { left: calc(50% + var(--sidebar-width) / 2); }
+  .update-banner { left: calc(var(--sidebar-width) + 24px); right: auto; bottom: 24px; width: 420px; max-width: calc(100% - var(--sidebar-width) - 48px); }
 
   /* modals become centered dialogs rather than edge-to-edge sheets */
   .overlay { left: var(--sidebar-width); align-items: center; justify-content: center; }

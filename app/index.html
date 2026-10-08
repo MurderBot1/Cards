@@ -160,7 +160,8 @@
           </div>
         </div>
 
-        <p class="settings-footnote">Binder v0.1</p>
+        <p class="settings-footnote" id="app-version">Binder</p>
+        <button class="link-btn" id="check-updates-btn" type="button">Check for updates</button>
       </div>
     </section>
 
@@ -289,6 +290,15 @@
   </div>
 </div>
 
+
+<!-- a newer release exists (updates.js) -->
+<div class="update-banner hidden" id="update-banner" role="status">
+  <span class="update-banner-text"></span>
+  <button class="btn btn-primary" data-action="update" type="button">Update</button>
+  <button class="icon-btn" data-action="later" type="button" aria-label="Not now">
+    <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+  </button>
+</div>
 
 <!-- whose collections are on this device (sync.js) -->
 <div class="overlay hidden" id="modal-sync-owner">

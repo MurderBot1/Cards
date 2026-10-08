@@ -5,7 +5,7 @@
   "scripts": {
     "db:local": "wrangler d1 execute binder-accounts --local --file=schema.sql",
     "dev": "npm run db:local && wrangler dev",
-    "test": "node --test \"test/*.test.mjs\""
+    "test": "node --test test/*.test.mjs"
   },
   "devDependencies": {
     "wrangler": "^3.114.0"

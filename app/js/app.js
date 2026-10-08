@@ -7,6 +7,8 @@
 import { initCollections, closeCollectionDetail, isInCollectionDetail } from './collections.js';
 import { initSettings } from './settings.js';
 import { initSync } from './sync.js';
+import { initUpdates } from './updates.js';
+import { showToast } from './ui.js';
 import { initSetupScreen } from './setup.js';
 
 const TAB_TITLES = { shop: 'Shop', collection: 'Collection', settings: 'Account' };
@@ -67,6 +69,7 @@ async function boot() {
   await initSettings();
   await initCollections(onCollectionNavigate);
   initSync();
+  initUpdates({ onToast: showToast });
   showTab('shop');
 }
 
