@@ -46,8 +46,8 @@ if(BINDER_BUILD_TESTS)
 endif()
 
 
-# The desktop app (Android builds the JNI library in ../binder_android instead).
-if(NOT ANDROID)
+# The desktop app (Android builds the JNI library in ../binder_android, iOS the app in ../binder_ios instead).
+if(NOT ANDROID AND NOT IOS)
     add_executable(binder src/main.cpp)
     if(TARGET cardonnx)
         binder_copy_onnxruntime_dlls(binder)
