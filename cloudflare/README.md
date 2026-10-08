@@ -10,7 +10,8 @@ by a [D1](https://developers.cloudflare.com/d1/) database. Both are on Cloudflar
 | `GET /api/auth/me` | `Authorization: Bearer <token>` | `200 {username, expires_at}` or `401` |
 | `POST /api/auth/logout` | `Authorization: Bearer <token>` | `200 {ok: true}` |
 | `POST /api/sync` | `{cursor, collections: [doc], deleted: [{id, at}]}` + token | `200 {cursor, more, collections: [doc]}` |
-| `POST /api/prices` | `{cards: [{key, game, name, set, uid}]}` (no account needed) | `200 {currency, prices: {key: {usd, usd_foil} \| null}, unavailable: [key]}` |
+| `POST /api/prices/cached` | `{keys: [catalog id, ...]}` (no account needed) | `200 {currency, prices: {key: {usd, usd_foil} \| null}}` (only keys with a fresh answer) |
+| `POST /api/prices/store` | `{prices: [{key, usd, usd_foil}]}` + `Authorization: Bearer <token>` | `200 {stored}` |
 
 - Usernames are 3 to 32 characters (letters, digits, `.`, `-`, `_`) and unique ignoring case. Passwords are 8 to 256.
 - The email is required to create an account and stored lowercased (unique). **Nothing uses it yet:** no verification, no
@@ -31,11 +32,12 @@ card at about the same time keep the later change (clock differences between dev
 stays deleted unless it was edited after the deletion. At most 90 collections per request (the app batches) and about
 1.5 MB per collection.
 
-**Prices** (`src/prices.js`): market prices in USD from Scryfall (Magic, one batch call), pokemontcg.io (Pokémon) and
-YGOPRODeck (Yu-Gi-Oh!, per card rather than per printing), cached in D1 for 12 hours (6 for "no price"), at most 60 cards
-and 30 requests per minute per address. Cards are looked up by the catalog id the app stores for them. Optionally set a
-Worker secret `POKEMONTCG_API_KEY` (free from pokemontcg.io) for a higher Pokémon rate limit: Settings → Variables and
-Secrets, or `npx wrangler secret put POKEMONTCG_API_KEY`.
+**Prices** (`src/prices.js`): a shared cache only. The app looks prices up itself at Scryfall, pokemontcg.io and YGOPRODeck
+(`app/js/priceSources.js`); before doing so it asks `/api/prices/cached` for what other devices already found (fresh for 12
+hours, 6 for "no price"), and a signed-in device sends what it looked up to `/api/prices/store` (catalog-id keys only, prices
+validated, an entry stored in the last 30 minutes is kept, 60 requests per minute per address). Anyone signed in can write
+to it, so a hostile account could plant a wrong price for other devices until it expires; the cost of that is a wrong
+number on screen, nothing more. No API keys are needed by the Worker.
 
 Layout: `src/worker.js` (routing, CORS), `src/auth/*.js` (the account endpoints), `src/sync.js`, `src/prices.js`,
 `src/lib.js` (validation, hashing, sessions, rate limiting), `schema.sql`, `wrangler.jsonc`, `public/` (a placeholder page).

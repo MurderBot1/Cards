@@ -1,30 +1,16 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { onPrices, pokemonPrice, scryfallPrice, yugiohPrice } from '../src/prices.js';
+import { onCachedPrices, onStorePrices } from '../src/prices.js';
 
-test('parsing the sources', () => {
-  assert.deepEqual(scryfallPrice({ prices: { usd: '1.50', usd_foil: '4.00' } }), { usd: 1.5, usd_foil: 4 });
-  assert.deepEqual(scryfallPrice({ prices: { usd: null, usd_foil: '3.25' } }), { usd: 3.25, usd_foil: 3.25 }); // foil-only card
-  assert.deepEqual(scryfallPrice({ prices: { usd_etched: '9.99' } }), { usd: 9.99, usd_foil: 9.99 });
-  assert.deepEqual(scryfallPrice({ prices: {} }), { usd: null, usd_foil: null });
-  assert.deepEqual(pokemonPrice({ tcgplayer: { prices: { normal: { market: 0.5 }, holofoil: { market: 12.34 } } } }), { usd: 0.5, usd_foil: 12.34 });
-  assert.deepEqual(pokemonPrice({ tcgplayer: { prices: { holofoil: { market: 20 } } } }), { usd: 20, usd_foil: 20 });
-  assert.deepEqual(pokemonPrice({}), { usd: null, usd_foil: null });
-  assert.deepEqual(yugiohPrice({ card_prices: [{ tcgplayer_price: '0.35' }] }), { usd: 0.35, usd_foil: null });
-  assert.deepEqual(yugiohPrice({ card_prices: [{ tcgplayer_price: '0.00' }] }), { usd: null, usd_foil: null });
-});
-
-// A tiny in-memory stand-in for the D1 calls onPrices makes.
-function fakeDb() {
+// A tiny in-memory stand-in for the D1 calls the price routes make.
+function fakeDb({ signedIn = true } = {}) {
   const prices = new Map();
   const hits = new Map();
   const statement = (sql) => ({
     bind(...args) {
       return {
         async all() {
-          if (sql.startsWith('SELECT key')) {
-            return { results: args.map((k) => prices.get(k)).filter(Boolean) };
-          }
+          if (sql.startsWith('SELECT key')) return { results: args.map((k) => prices.get(k)).filter(Boolean) };
           throw new Error('unexpected: ' + sql);
         },
         async first() {
@@ -33,6 +19,7 @@ function fakeDb() {
             hits.set(k, (hits.get(k) || 0) + 1);
             return { n: hits.get(k) };
           }
+          if (sql.includes('FROM sessions')) return signedIn ? { id: 1, username: 'alice', expires_at: 9e9 } : null;
           throw new Error('unexpected: ' + sql);
         },
         async run() {
@@ -47,72 +34,74 @@ function fakeDb() {
   return { prepare: statement, prices };
 }
 
-const post = (cards) => new Request('https://x/api/prices', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cards }) });
+const TOKEN = 'a'.repeat(30);
+const req = (path, body, auth = true) =>
+  new Request(`https://x/api/prices/${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(auth ? { Authorization: `Bearer ${TOKEN}` } : {}) },
+    body: JSON.stringify(body),
+  });
+const cached = (env, keys) => onCachedPrices({ request: req('cached', { keys }, false), env });
+const store = (env, prices, auth = true) => onStorePrices({ request: req('store', { prices }, auth), env });
 
-test('looks cards up at the right sources, caches them, then answers from the cache', async () => {
-  const calls = [];
-  const fetchFn = async (url, init = {}) => {
-    calls.push({ url: String(url), body: init.body });
-    const u = String(url);
-    const ok = (data) => ({ ok: true, status: 200, json: async () => data });
-    if (u.includes('scryfall')) {
-      return ok({ data: [{ id: 'abc', name: 'Lightning Bolt', set: 'm10', prices: { usd: '2.00', usd_foil: '5.00' } }, { id: 'def', name: 'Sol Ring', set: 'cmr', prices: { usd: '1.25' } }] });
-    }
-    if (u.includes('pokemontcg')) return ok({ data: [{ id: 'base1-4', tcgplayer: { prices: { holofoil: { market: 300 } } } }] });
-    if (u.includes('ygoprodeck')) return ok({ data: [{ id: 46986414, card_prices: [{ tcgplayer_price: '2.10' }] }] });
-    throw new Error('unexpected ' + u);
-  };
+test('what one device stores, another gets from the cache', async () => {
   const env = { DB: fakeDb() };
-  const cards = [
-    { key: 'mtg-abc', game: 'mtg', name: 'Lightning Bolt', set: 'M10', uid: 'mtg-abc' },
-    { key: 'sol', game: 'mtg', name: 'Sol Ring', set: 'CMR' }, // an older card with no uid: priced by name and set
-    { key: 'pkm-base1-4', game: 'pokemon', name: 'Charizard', set: 'BS', uid: 'pkm-base1-4' },
-    { key: 'pkm-gone', game: 'pokemon', name: 'Mystery', set: 'XX', uid: 'pkm-gone' },
-    { key: 'ygo-46986414-LOB-EN005', game: 'yugioh', name: 'Dark Magician', set: 'LOB', uid: 'ygo-46986414-LOB-EN005' },
-    { key: 'old-ygo', game: 'yugioh', name: 'Old', set: '' }, // no uid: no price
-  ];
-  const first = await (await onPrices({ request: post(cards), env }, fetchFn)).json();
-  assert.equal(first.currency, 'USD');
-  assert.deepEqual([first.prices['mtg-abc'].usd, first.prices['mtg-abc'].usd_foil], [2, 5]);
-  assert.equal(first.prices.sol.usd, 1.25);
-  assert.equal(first.prices['pkm-base1-4'].usd_foil, 300);
-  assert.equal(first.prices['pkm-gone'], null);
-  assert.equal(first.prices['ygo-46986414-LOB-EN005'].usd, 2.1);
-  assert.equal(first.prices['old-ygo'], null);
-  assert.deepEqual(first.unavailable, []);
-  const scry = calls.find((c) => c.url.includes('scryfall'));
-  assert.deepEqual(JSON.parse(scry.body).identifiers, [{ id: 'abc' }, { name: 'Sol Ring', set: 'cmr' }]);
-  assert.equal(calls.length, 3); // one request per game
+  assert.deepEqual((await (await cached(env, ['mtg-abc', 'pkm-base1-4'])).json()).prices, {}, 'nothing known yet');
 
-  calls.length = 0;
-  const second = await (await onPrices({ request: post(cards), env }, fetchFn)).json();
-  assert.equal(calls.length, 0, 'served from the cache');
-  assert.deepEqual(second.prices, first.prices);
+  const stored = await store(env, [
+    { key: 'mtg-abc', usd: 2, usd_foil: 5 },
+    { key: 'pkm-base1-4', usd: null, usd_foil: null }, // looked up, no price
+    { key: 'ygo-46986414-LOB-EN005', usd: 2.104, usd_foil: null },
+  ]);
+  assert.equal(stored.status, 200);
+  assert.equal((await stored.json()).stored, 3);
+
+  const out = await (await cached(env, ['mtg-abc', 'pkm-base1-4', 'ygo-46986414-LOB-EN005', 'mtg-unknown'])).json();
+  assert.equal(out.currency, 'USD');
+  assert.deepEqual([out.prices['mtg-abc'].usd, out.prices['mtg-abc'].usd_foil], [2, 5]);
+  assert.equal(out.prices['pkm-base1-4'], null, 'a known "no price" is null');
+  assert.equal(out.prices['ygo-46986414-LOB-EN005'].usd, 2.1, 'rounded to cents');
+  assert.equal('mtg-unknown' in out.prices, false, 'unknown keys are left for the app to look up');
 });
 
-test('a source being down is reported, not cached, and does not hide the other games', async () => {
-  const fetchFn = async (url) => {
-    if (String(url).includes('scryfall')) return { ok: false, status: 503, json: async () => ({}) };
-    return { ok: true, status: 200, json: async () => ({ data: [{ id: 46986414, card_prices: [{ tcgplayer_price: '1.00' }] }] }) };
-  };
+test('old entries are not served, and recent ones are not overwritten', async () => {
   const env = { DB: fakeDb() };
-  const out = await (await onPrices({ request: post([
-    { key: 'a', game: 'mtg', name: 'Bolt', set: 'M10', uid: 'mtg-abc' },
-    { key: 'b', game: 'yugioh', name: 'DM', set: '', uid: 'ygo-46986414' },
-  ]), env }, fetchFn)).json();
-  assert.deepEqual(out.unavailable, ['a']);
-  assert.equal(out.prices.b.usd, 1);
-  assert.equal(env.DB.prices.has('a'), false);
+  const old = Math.floor(Date.now() / 1000) - 13 * 3600;
+  env.DB.prices.set('mtg-old', { key: 'mtg-old', usd: 1, usd_foil: null, updated_at: old });
+  env.DB.prices.set('mtg-oldmissing', { key: 'mtg-oldmissing', usd: null, usd_foil: null, updated_at: Math.floor(Date.now() / 1000) - 7 * 3600 });
+  assert.deepEqual((await (await cached(env, ['mtg-old', 'mtg-oldmissing'])).json()).prices, {}, 'a price past 12 hours, a "no price" past 6');
+
+  await store(env, [{ key: 'mtg-new', usd: 3, usd_foil: null }]);
+  const again = await (await store(env, [{ key: 'mtg-new', usd: 99, usd_foil: null }])).json();
+  assert.equal(again.stored, 0, 'a price stored minutes ago stays');
+  assert.equal(env.DB.prices.get('mtg-new').usd, 3);
+  assert.equal((await (await store(env, [{ key: 'mtg-old', usd: 1.5, usd_foil: null }])).json()).stored, 1, 'an old one is replaced');
 });
 
-test('bad requests and the rate limit', async () => {
-  const env = { DB: fakeDb() };
-  const bad = async (cards) => (await onPrices({ request: post(cards), env }, async () => ({}))).status;
+test('storing needs a signed-in user and sane data', async () => {
+  const env = { DB: fakeDb({ signedIn: false }) };
+  assert.equal((await store(env, [{ key: 'mtg-abc', usd: 1, usd_foil: null }])).status, 401);
+  assert.equal((await store(env, [{ key: 'mtg-abc', usd: 1, usd_foil: null }], false)).status, 401);
+
+  const signedIn = { DB: fakeDb() };
+  const bad = async (prices) => (await store(signedIn, prices)).status;
   assert.equal(await bad([]), 400);
-  assert.equal(await bad([{ key: 'a', game: 'digimon', name: 'x' }]), 400);
-  assert.equal(await bad(Array.from({ length: 61 }, (_, i) => ({ key: `k${i}`, game: 'mtg', name: 'x' }))), 400);
-  const fetchFn = async () => ({ ok: true, status: 200, json: async () => ({ data: [] }) });
+  assert.equal(await bad([{ key: 'mtg-abc', usd: -1, usd_foil: null }]), 400);
+  assert.equal(await bad([{ key: 'mtg-abc', usd: 'free', usd_foil: null }]), 400);
+  assert.equal(await bad([{ key: 'mtg-abc', usd: 2e6, usd_foil: null }]), 400);
+  assert.equal(await bad([{ key: 'Lightning Bolt|M10', usd: 1, usd_foil: null }]), 400, 'only catalog-id keys');
+  assert.equal(await bad([{ key: 'digimon-1', usd: 1, usd_foil: null }]), 400);
+  assert.equal(await bad(Array.from({ length: 61 }, (_, i) => ({ key: `mtg-${i}`, usd: 1, usd_foil: null }))), 400);
+  assert.equal(signedIn.DB.prices.size, 0, 'nothing from a rejected request is kept');
+});
+
+test('bad cache reads and the rate limit', async () => {
+  const env = { DB: fakeDb() };
+  const bad = async (keys) => (await cached(env, keys)).status;
+  assert.equal(await bad([]), 400);
+  assert.equal(await bad(['not a key']), 400);
+  assert.equal(await bad(Array.from({ length: 91 }, (_, i) => `mtg-${i}`)), 400);
   let status = 200;
-  for (let i = 0; i < 31; i++) status = (await onPrices({ request: post([{ key: `r${i}`, game: 'mtg', name: 'x' }]), env }, fetchFn)).status;
+  for (let i = 0; i < 61; i++) status = (await cached(env, [`mtg-${i}`])).status;
   assert.equal(status, 429);
 });
