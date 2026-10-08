@@ -158,6 +158,23 @@ downloads the catalog on first launch (like the desktop one), or you can put
 `cards.sqlite3`, `card-vectors.cvi` (and any `.onnx` files) in the app's private `files/data/` directory, e.g. for
 development `adb push` them and copy with `run-as com.bindercardtracker.binder`. (Models are still not downloaded.)
 
+## iOS
+
+`native/binder_ios` is a small UIKit app (Objective-C++): the same C++ backend on localhost plus a `WKWebView`, with downloads
+going through `NSURLSession`. CI builds it on a macOS runner (`ios` job) and attaches `Binder-ios-unsigned.ipa` to each
+release. ONNX Runtime comes from its CocoaPods archive, OpenCV is built from source.
+
+The IPA is **unsigned**, so iOS won't run it as is; sign it on the device when you install it:
+
+- **AltStore** or **Sideloadly** (free): open the IPA with your Apple ID. A free Apple ID's signature lasts 7 days, after
+  which the app has to be re-signed (AltStore does this automatically while it's running on your network).
+- A paid Apple Developer account gives a year-long signature and lets you distribute through TestFlight.
+
+Building locally needs Xcode: `cmake -S native -B build-ios -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphoneos
+-DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY
+-DBINDER_STATIC_DEPS=ON -DBINDER_WITH_VIEW=OFF -DBINDER_WITH_CATALOG_TOOL=OFF -DBINDER_BUILD_TESTS=OFF`, then build the
+`binder_ios` target (see the `ios` job in `.github/workflows/build.yml` for the packaging into the IPA).
+
 ## Login server
 
 Accounts are handled by a small Cloudflare Worker with a D1 database (free tier) in [`cloudflare/`](cloudflare/README.md): sign-up
