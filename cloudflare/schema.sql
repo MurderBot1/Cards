@@ -6,5 +6,5 @@ CREATE INDEX IF NOT EXISTS login_failures_lookup ON login_failures(username_lowe
 CREATE INDEX IF NOT EXISTS login_failures_ip ON login_failures(ip, at);
 CREATE TABLE IF NOT EXISTS sync_docs (user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, id TEXT NOT NULL, doc TEXT NOT NULL, server_updated INTEGER NOT NULL, PRIMARY KEY (user_id, id));
 CREATE INDEX IF NOT EXISTS sync_docs_pull ON sync_docs(user_id, server_updated);
-CREATE TABLE IF NOT EXISTS prices (key TEXT PRIMARY KEY, usd REAL, usd_foil REAL, updated_at INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS api_hits (ip TEXT NOT NULL, bucket INTEGER NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (ip, bucket));
+DROP TABLE IF EXISTS prices;
+DROP TABLE IF EXISTS api_hits;

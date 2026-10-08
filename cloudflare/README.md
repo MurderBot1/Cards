@@ -10,8 +10,6 @@ by a [D1](https://developers.cloudflare.com/d1/) database. Both are on Cloudflar
 | `GET /api/auth/me` | `Authorization: Bearer <token>` | `200 {username, expires_at}` or `401` |
 | `POST /api/auth/logout` | `Authorization: Bearer <token>` | `200 {ok: true}` |
 | `POST /api/sync` | `{cursor, collections: [doc], deleted: [{id, at}]}` + token | `200 {cursor, more, collections: [doc]}` |
-| `POST /api/prices/cached` | `{keys: [catalog id, ...]}` (no account needed) | `200 {currency, prices: {key: {usd, usd_foil} \| null}}` (only keys with a fresh answer) |
-| `POST /api/prices/store` | `{prices: [{key, usd, usd_foil}]}` + `Authorization: Bearer <token>` | `200 {stored}` |
 
 - Usernames are 3 to 32 characters (letters, digits, `.`, `-`, `_`) and unique ignoring case. Passwords are 8 to 256.
 - The email is required to create an account and stored lowercased (unique). **Nothing uses it yet:** no verification, no
@@ -32,14 +30,10 @@ card at about the same time keep the later change (clock differences between dev
 stays deleted unless it was edited after the deletion. At most 90 collections per request (the app batches) and about
 1.5 MB per collection.
 
-**Prices** (`src/prices.js`): a shared cache only. The app looks prices up itself at Scryfall, pokemontcg.io and YGOPRODeck
-(`app/js/priceSources.js`); before doing so it asks `/api/prices/cached` for what other devices already found (fresh for 12
-hours, 6 for "no price"), and a signed-in device sends what it looked up to `/api/prices/store` (catalog-id keys only, prices
-validated, an entry stored in the last 30 minutes is kept, 60 requests per minute per address). Anyone signed in can write
-to it, so a hostile account could plant a wrong price for other devices until it expires; the cost of that is a wrong
-number on screen, nothing more. No API keys are needed by the Worker.
+The service does accounts and collection sync, and nothing else. Anything about cards themselves (prices, card data) is
+fetched by the app straight from the card sites (`app/js/priceSources.js`) and never passes through here.
 
-Layout: `src/worker.js` (routing, CORS), `src/auth/*.js` (the account endpoints), `src/sync.js`, `src/prices.js`,
+Layout: `src/worker.js` (routing, CORS), `src/auth/*.js` (the account endpoints), `src/sync.js`,
 `src/lib.js` (validation, hashing, sessions, rate limiting), `schema.sql`, `wrangler.jsonc`, `public/` (a placeholder page).
 
 ## One-time setup (Cloudflare dashboard)
@@ -49,8 +43,8 @@ Layout: `src/worker.js` (routing, CORS), `src/auth/*.js` (the account endpoints)
    the rest of the line if the console flattens a paste, and D1 then reports "Requests without any query are not
    supported". Notes on the columns: `email` is stored lowercased and unused for now; `password_hash` is
    `pbkdf2$<iterations>$<salt b64>$<hash b64>`; `sessions` keeps only a SHA-256 of each token.)
-   **After an update that adds tables (sync and prices did), run `schema.sql` again**: every statement is
-   `IF NOT EXISTS`, so it only adds what's missing.
+   **After an update that changes tables (sync added some), run `schema.sql` again**: it only adds what's missing
+   (`IF NOT EXISTS`), and it drops the `prices` and `api_hits` tables an earlier version used, which nothing uses now.
 2. **Put the database ID in [`wrangler.jsonc`](wrangler.jsonc)** (`database_id`; it's on the database's page, and it is
    not a secret). This is what binds the database to the Worker as `DB`.
 3. **Deploy from this folder.** In the Worker's *Settings → Build* (Workers Builds), set **Root directory** to

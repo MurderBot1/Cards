@@ -6,7 +6,6 @@ import { onRequestPost as login } from './auth/login.js';
 import { onRequestPost as logout } from './auth/logout.js';
 import { onRequestGet as me } from './auth/me.js';
 import { onRequestPost as register } from './auth/register.js';
-import { onCachedPrices, onStorePrices } from './prices.js';
 import { onSync } from './sync.js';
 
 const ROUTES = {
@@ -15,8 +14,6 @@ const ROUTES = {
   'GET /api/auth/me': me,
   'POST /api/auth/logout': logout,
   'POST /api/sync': onSync,
-  'POST /api/prices/cached': onCachedPrices,
-  'POST /api/prices/store': onStorePrices,
 };
 const PATHS = new Set(Object.keys(ROUTES).map((key) => key.split(' ')[1]));
 
