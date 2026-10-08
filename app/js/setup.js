@@ -2,7 +2,7 @@
  * setup.js
  * The first-run "setting up the app for you" screen. The backend reports whatever it is busy doing in the
  * background (downloading the card catalog, and any future first-run work) at GET /api/setup as
- * { active, task, detail, bytes, error }; this polls it and shows the current task under a spinner. When nothing
+ * { active, task, detail, bytes, total, error }; this polls it and shows the current task under a spinner. When nothing
  * is running the screen never appears.
  */
 const POLL_MS = 1000;
@@ -11,6 +11,7 @@ const screen = document.getElementById('setup-screen');
 const taskEl = document.getElementById('setup-task');
 const detailEl = document.getElementById('setup-detail');
 const errorEl = document.getElementById('setup-error');
+const barEl = document.getElementById('setup-bar');
 const spinnerEl = document.getElementById('setup-spinner');
 const continueBtn = document.getElementById('setup-continue');
 
@@ -38,8 +39,20 @@ function render(status) {
     return;
   }
   taskEl.textContent = status.task || '';
-  const progress = status.bytes ? ' \u2014 ' + formatBytes(status.bytes) : '';
+  let progress = '';
+  if (status.total) {
+    const done = Math.min(status.bytes || 0, status.total);
+    progress = ' \u2014 ' + formatBytes(done) + ' of ' + formatBytes(status.total) +
+      ' (' + Math.floor((done / status.total) * 100) + '%)';
+  } else if (status.bytes) {
+    progress = ' \u2014 ' + formatBytes(status.bytes);
+  }
   detailEl.textContent = (status.detail || '') + (status.detail ? progress : '');
+  barEl.classList.toggle('hidden', !status.total);
+  if (status.total) {
+    barEl.max = status.total;
+    barEl.value = Math.min(status.bytes || 0, status.total);
+  }
 }
 
 async function poll() {

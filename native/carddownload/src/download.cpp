@@ -31,7 +31,9 @@ Result download_missing(cardfetch::Transport& transport, const fs::path& data_di
         say("downloading " + url);
         try {
             fs::create_directories(data_dir);
+            transport.on_download_size = options.on_size;
             long status = transport.get_to_file(url, options.timeout_seconds, part);
+            transport.on_download_size = nullptr;
             if (!cardfetch::is_success(status)) {
                 std::error_code ec;
                 fs::remove(part, ec);
@@ -39,6 +41,7 @@ Result download_missing(cardfetch::Transport& transport, const fs::path& data_di
             }
             fs::rename(part, dest);
         } catch (const std::exception& e) {
+            transport.on_download_size = nullptr;
             std::error_code ec;
             fs::remove(part, ec);
             result.ok = false;

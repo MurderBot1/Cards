@@ -33,6 +33,11 @@ public:
     // Streams the body into `dest` (created or truncated) and returns the HTTP status. On a failure status the
     // file is removed. Throws Error on a transport-level failure (DNS, connection, timeout).
     virtual long get_to_file(const std::string& url, int timeout_seconds, const std::filesystem::path& dest) = 0;
+
+    // Optional: a transport that learns the body's size (Content-Length) while get_to_file runs calls this with it
+    // as soon as the response headers are in, so a caller can show "x of y". Never called when the size is unknown.
+    // Set by the caller before get_to_file; called on the thread running it.
+    std::function<void(unsigned long long)> on_download_size;
 };
 
 // HTTP status 2xx.

@@ -222,8 +222,12 @@ int main() {
         auto whole = curl.get(base + "/big", 10);
         CHECK(whole.status == 200 && whole.body == big);
         fs::path dest = tmp.path() / "dl" / "big.bin";
+        unsigned long long reported = 0;
+        curl.on_download_size = [&](unsigned long long n) { reported = n; };
         CHECK_EQ(curl.get_to_file(base + "/big", 10, dest), 200L);
         CHECK(slurp(dest) == big);
+        CHECK_EQ(reported, static_cast<unsigned long long>(big.size()));  // the Content-Length, as the download starts
+        curl.on_download_size = nullptr;
         // a failure status leaves no file behind
         fs::path missing = tmp.path() / "dl" / "gone.bin";
         CHECK_EQ(curl.get_to_file(base + "/gone", 5, missing), 404L);

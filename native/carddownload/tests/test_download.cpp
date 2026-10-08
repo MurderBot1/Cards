@@ -25,6 +25,7 @@ public:
         auto it = pages.find(url);
         if (it == pages.end()) return 404;
         std::ofstream(dest, std::ios::binary) << it->second;
+        if (on_download_size) on_download_size(it->second.size());
         if (fail_mid_transfer) throw cardfetch::Error("connection reset");
         return 200;
     }
@@ -61,7 +62,12 @@ int main() {
         o2.on_file = [&](const std::string& n, size_t i, size_t total) {
             seen.push_back(n + " " + std::to_string(i) + "/" + std::to_string(total));
         };
+        std::vector<unsigned long long> sizes;
+        o2.on_size = [&](unsigned long long bytes) { sizes.push_back(bytes); };
         CHECK(carddownload::download_missing(t2, tmp.path() / "other", o2).ok);
+        CHECK_EQ(sizes.size(), size_t(2));
+        CHECK_EQ(sizes[0], 3ull);
+        CHECK(!t2.on_download_size);  // cleared once the transfers are over
         CHECK_EQ(seen.size(), size_t(2));
         CHECK_EQ(seen[0], std::string("a.bin 1/2"));
         CHECK_EQ(seen[1], std::string("b.bin 2/2"));

@@ -16,6 +16,7 @@ public:
         std::string task;             // e.g. "Downloading assets"
         std::string detail;           // e.g. "card-vectors.cvi (2 of 2)"
         unsigned long long bytes = 0; // size so far of `progress_file`, when the task has one
+        unsigned long long total = 0; // what `bytes` is heading for, when that's known (else 0)
         std::string error;            // set when setup stopped on a failure
     };
 
@@ -25,8 +26,14 @@ public:
         task_ = std::move(task);
         detail_ = std::move(detail);
         progress_file_ = std::move(progress_file);
+        total_ = 0;
         error_.clear();
         active_ = true;
+    }
+    // The size `progress_file` will reach, once known.
+    void set_total(unsigned long long total) {
+        std::lock_guard<std::mutex> l(mu_);
+        total_ = total;
     }
     void clear() {
         std::lock_guard<std::mutex> l(mu_);
@@ -34,6 +41,7 @@ public:
         task_.clear();
         detail_.clear();
         progress_file_.clear();
+        total_ = 0;
     }
     // Ends the active task, remembering why so the screen can say so instead of silently disappearing.
     void fail(std::string error) {
@@ -44,7 +52,7 @@ public:
 
     Snapshot snapshot() const {
         std::lock_guard<std::mutex> l(mu_);
-        Snapshot s{active_, task_, detail_, 0, error_};
+        Snapshot s{active_, task_, detail_, 0, total_, error_};
         if (active_ && !progress_file_.empty()) {
             std::error_code ec;
             auto size = std::filesystem::file_size(progress_file_, ec);
@@ -58,6 +66,7 @@ private:
     bool active_ = false;
     std::string task_, detail_, error_;
     std::filesystem::path progress_file_;
+    unsigned long long total_ = 0;
 };
 
 }  // namespace binder

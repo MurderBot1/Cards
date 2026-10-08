@@ -102,6 +102,7 @@ void App::warm_up_in_background() {
             part += ".part";
             setup->set_task("Downloading assets", name + " (" + std::to_string(number) + " of " + std::to_string(total) + ")", part);
         };
+        download.on_size = [setup](unsigned long long bytes) { setup->set_total(bytes); };
         std::thread([engine, options, setup, data_dir, download, needed, make_transport] {
             if (needed) {
                 carddownload::Result result;

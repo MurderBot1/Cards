@@ -68,7 +68,7 @@ void register_routes(cardhttp::Server& server, ApiContext& ctx) {
     server.route("GET", "/api/setup", [&ctx](const Request&) {
         SetupStatus::Snapshot s = ctx.setup ? ctx.setup->snapshot() : SetupStatus::Snapshot{};
         return Response::json(200, json{{"active", s.active}, {"task", s.task}, {"detail", s.detail},
-                                        {"bytes", s.bytes}, {"error", s.error}}.dump());
+                                        {"bytes", s.bytes}, {"total", s.total}, {"error", s.error}}.dump());
     });
 
     // ---- collections -------------------------------------------------------
