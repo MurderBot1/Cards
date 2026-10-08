@@ -5,9 +5,10 @@
  * On startup (at most every few hours) and on request from the Account tab, the list of releases on GitHub is read
  * and the newest published version (vX.Y.Z; the rolling "latest" build and drafts don't count) is compared with this
  * build's version (version.js). If it is newer, a banner offers the right download for this platform: the Android
- * APK on Android, the zip for Windows, macOS or Linux on a computer. "Update" opens that download (in the system
- * browser; the page can't install anything itself). Android installs the downloaded APK over the old one, provided
- * both are signed with the same key (see BUILDING.md, "Updates"); on a computer you unzip it over the old copy.
+ * APK on Android, the unsigned IPA on iPhone/iPad, the zip for Windows, macOS or Linux on a computer. "Update" opens
+ * that download (in the system browser; the page can't install anything itself). Android installs the downloaded
+ * APK over the old one, provided both are signed with the same key (see BUILDING.md, "Updates"); an iOS IPA has to
+ * be installed with a sideloading tool; on a computer you unzip it over the old copy.
  */
 import { APP_VERSION } from './version.js';
 
@@ -44,9 +45,12 @@ export function pickLatest(releases) {
   return best;
 }
 
-export function detectPlatform(userAgent, platform = '') {
+export function detectPlatform(userAgent, platform = '', touchPoints = 0) {
   const ua = `${userAgent || ''} ${platform || ''}`;
   if (/android/i.test(ua)) return 'android';
+  // iOS says "like Mac OS X" in its user agent, so it has to be recognised before macOS; an iPad can even pretend to
+  // be a Mac, but a Mac has no touch screen
+  if (/iphone|ipad|ipod/i.test(ua) || (/mac/i.test(ua) && touchPoints > 1)) return 'ios';
   if (/win/i.test(ua) && !/darwin/i.test(ua)) return 'windows';
   if (/mac/i.test(ua)) return 'macos';
   if (/linux|x11/i.test(ua)) return 'linux';
@@ -55,6 +59,7 @@ export function detectPlatform(userAgent, platform = '') {
 
 const ASSET_NAMES = {
   android: 'Binder-android-debug.apk',
+  ios: 'Binder-ios-unsigned.ipa',
   windows: 'Binder-windows.zip',
   macos: 'Binder-macos-arm64.zip',
   linux: 'Binder-linux.zip',
@@ -81,6 +86,9 @@ async function openExternal(url) {
   try {
     if (window.BinderAndroid && typeof window.BinderAndroid.openExternal === 'function') {
       if (window.BinderAndroid.openExternal(url)) return true;
+    } else if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.binderOpen) {
+      window.webkit.messageHandlers.binderOpen.postMessage(url);  // the iOS app hands it to Safari
+      return true;
     } else {
       const res = await fetch('/api/open-url', { method: 'POST', body: JSON.stringify({ url }) });
       if (res.ok) return true;
@@ -124,7 +132,7 @@ export function initUpdates({ onToast = () => {} } = {}) {
 
   banner.querySelector('[data-action="update"]').addEventListener('click', async () => {
     if (!latestFound) return;
-    const url = pickDownload(latestFound, detectPlatform(navigator.userAgent, navigator.platform));
+    const url = pickDownload(latestFound, detectPlatform(navigator.userAgent, navigator.platform, navigator.maxTouchPoints));
     if (!(await openExternal(url))) onToast(`Couldn't open the download — get it from ${latestFound.html_url}`);
   });
   banner.querySelector('[data-action="later"]').addEventListener('click', () => {

@@ -3,10 +3,16 @@
 #include <cctype>
 #include <cstring>
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
 #if defined(_WIN32)
 #include <windows.h>
 #include <shellapi.h>
-#elif !defined(__ANDROID__)
+#elif defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
+// nothing to include: the Android WebView and the iOS app open downloads through their own bridges
+#else
 #include <fcntl.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -34,7 +40,7 @@ bool open_release_url(const std::string& url) {
     if (!is_release_url(url)) return false;
 #if defined(_WIN32)
     return reinterpret_cast<INT_PTR>(ShellExecuteA(nullptr, "open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL)) > 32;
-#elif defined(__ANDROID__)
+#elif defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
     return false;
 #else
 #if defined(__APPLE__)

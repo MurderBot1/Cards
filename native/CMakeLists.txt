@@ -28,7 +28,7 @@ endif()
 # zlib and libcurl for the catalog tool are looked up *before* the dependencies: a from-source OpenCV that builds its own
 # bundled zlib leaves a cached ZLIB_LIBRARY naming that internal target, which a later find_package(ZLIB) would pick up.
 option(BINDER_WITH_CATALOG_TOOL "Build the catalog builder (binder-catalog); needs libcurl and zlib" ON)
-if(BINDER_WITH_CATALOG_TOOL AND NOT ANDROID)
+if(BINDER_WITH_CATALOG_TOOL AND NOT ANDROID AND NOT IOS)
     find_package(ZLIB QUIET)
     find_package(CURL QUIET)
 endif()
@@ -67,7 +67,7 @@ endif()
 # The catalog builder (binder-catalog): a developer tool that downloads card data and builds the catalog and
 # vector index the app reads. It needs libcurl and zlib: Linux and macOS have them, Windows downloads and builds its
 # own, and on Android it's skipped (the catalog files it makes are portable, so build them on a desktop).
-if(BINDER_WITH_CATALOG_TOOL AND NOT ANDROID)
+if(BINDER_WITH_CATALOG_TOOL AND NOT ANDROID AND NOT IOS)
     if(WIN32 AND NOT (ZLIB_FOUND AND CURL_FOUND))
         binder_fetch_zlib_and_curl()  # Windows has neither; see cmake/Deps.cmake
     endif()
@@ -90,4 +90,7 @@ endif()
 add_subdirectory(binder)
 if(ANDROID)
     add_subdirectory(binder_android)  # the JNI library MainActivity loads (there's no desktop executable here)
+endif()
+if(IOS)
+    add_subdirectory(binder_ios)  # Binder.app: a WKWebView on the same backend (build with -DCMAKE_SYSTEM_NAME=iOS)
 endif()

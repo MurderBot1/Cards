@@ -39,6 +39,11 @@ test('platforms and downloads', () => {
   assert.equal(detectPlatform('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)', 'MacIntel'), 'macos');
   assert.equal(detectPlatform('Mozilla/5.0 (X11; Linux x86_64)', 'Linux x86_64'), 'linux');
   assert.equal(detectPlatform('', ''), null);
+  // iOS says "like Mac OS X", and an iPad can claim to be a Mac; a real Mac has no touch screen
+  assert.equal(detectPlatform('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148', 'iPhone'), 'ios');
+  assert.equal(detectPlatform('Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15', 'iPad'), 'ios');
+  assert.equal(detectPlatform('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15', 'MacIntel', 5), 'ios');
+  assert.equal(detectPlatform('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15', 'MacIntel', 0), 'macos');
 
   const r = release('v1.0.5', {
     assets: [
@@ -47,12 +52,14 @@ test('platforms and downloads', () => {
       { name: 'Binder-android-debug.apk', browser_download_url: 'https://x/app.apk' },
       { name: 'Binder-linux.zip', browser_download_url: 'https://x/linux.zip' },
       { name: 'Binder-macos-arm64.zip', browser_download_url: 'https://x/mac.zip' },
+      { name: 'Binder-ios-unsigned.ipa', browser_download_url: 'https://x/app.ipa' },
     ],
   });
   assert.equal(pickDownload(r, 'android'), 'https://x/app.apk');
   assert.equal(pickDownload(r, 'windows'), 'https://x/win.zip');
   assert.equal(pickDownload(r, 'macos'), 'https://x/mac.zip');
   assert.equal(pickDownload(r, 'linux'), 'https://x/linux.zip');
+  assert.equal(pickDownload(r, 'ios'), 'https://x/app.ipa');
   assert.equal(pickDownload(r, null), r.html_url, 'unknown platform: the release page');
   assert.equal(pickDownload(release('v1.0.5'), 'linux'), 'https://github.com/MurderBot1/Cards/releases/tag/v1.0.5', 'no assets: the release page');
 });
