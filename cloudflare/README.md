@@ -34,17 +34,19 @@ The service does accounts and collection sync, and nothing else. Anything about 
 fetched by the app straight from the card sites (`app/js/priceSources.js`) and never passes through here.
 
 Layout: `src/worker.js` (routing, CORS), `src/auth/*.js` (the account endpoints), `src/sync.js`,
-`src/lib.js` (validation, hashing, sessions, rate limiting), `schema.sql`, `wrangler.jsonc`, `public/` (a placeholder page).
+`src/lib.js` (validation, hashing, sessions, rate limiting), `src/schema.js` + `schema.sql` (the tables), `wrangler.jsonc`, `public/` (a placeholder page).
 
 ## One-time setup (Cloudflare dashboard)
 
-1. **Create the database.** Workers & Pages → D1 → *Create database*, name it `binder-accounts`. Open it, go to *Console*,
-   paste the contents of [`schema.sql`](schema.sql) and run it. (It has no comments on purpose: a `--` comment swallows
-   the rest of the line if the console flattens a paste, and D1 then reports "Requests without any query are not
-   supported". Notes on the columns: `email` is stored lowercased and unused for now; `password_hash` is
-   `pbkdf2$<iterations>$<salt b64>$<hash b64>`; `sessions` keeps only a SHA-256 of each token.)
-   **After an update that changes tables (sync added some), run `schema.sql` again**: it only adds what's missing
-   (`IF NOT EXISTS`), and it drops the `prices` and `api_hits` tables an earlier version used, which nothing uses now.
+1. **Create the database.** Workers & Pages → D1 → *Create database*, name it `binder-accounts`. That is all: the Worker
+   creates its own tables (and any it gains later) the first time it runs after a deploy, from the statements in
+   [`src/schema.js`](src/schema.js); there is nothing to paste into the console. [`schema.sql`](schema.sql) is the same
+   list in plain SQL (a test keeps the two identical) for reference or for running by hand in the console. It has no
+   comments on purpose: a `--` comment swallows the rest of the line if the console flattens a paste, and D1 then reports
+   "Requests without any query are not supported". Notes on the columns: `email` is stored lowercased and unused for
+   now; `password_hash` is `pbkdf2$<iterations>$<salt b64>$<hash b64>`; `sessions` keeps only a SHA-256 of each token.
+   Every statement is idempotent (`IF NOT EXISTS`); the two `DROP TABLE IF EXISTS` lines remove the price-cache tables an
+   earlier version used. To change the schema, add statements to the end of both files.
 2. **Put the database ID in [`wrangler.jsonc`](wrangler.jsonc)** (`database_id`; it's on the database's page, and it is
    not a secret). This is what binds the database to the Worker as `DB`.
 3. **Deploy from this folder.** In the Worker's *Settings → Build* (Workers Builds), set **Root directory** to
