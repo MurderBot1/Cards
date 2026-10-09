@@ -195,8 +195,13 @@ jobs:
           if ($version -notmatch '^\d+\.\d+\.\d+$') { $version = '0.0.0' }
           $makensis = (Get-Command makensis -ErrorAction SilentlyContinue).Source
           if (-not $makensis) {
-            choco install nsis -y --no-progress
+            # Chocolatey's feed now and then answers 503; try a few times before giving up
             $makensis = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+            for ($attempt = 1; $attempt -le 5 -and -not (Test-Path $makensis); $attempt++) {
+              choco install nsis -y --no-progress
+              if (-not (Test-Path $makensis)) { Write-Host "NSIS install attempt $attempt failed"; Start-Sleep -Seconds (15 * $attempt) }
+            }
+            if (-not (Test-Path $makensis)) { throw "couldn't install NSIS" }
           }
           & $makensis /V2 "/DVERSION=$version" "/DSOURCE=$PWD\dist\Binder" "/DICON=$PWD\native\binder\packaging\icons\icon.ico" `
             "/DOUTFILE=$PWD\Binder-windows-setup.exe" native\binder\packaging\windows\installer.nsi
