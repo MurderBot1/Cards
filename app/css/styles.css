@@ -1128,3 +1128,6 @@ svg {
 .update-screen .link-btn { color: var(--text-dim, #9496A8); }
 @keyframes setup-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .setup-spinner { animation-duration: 3s; } }
+
+/* The website (js/env.js) has no camera features, no catalog download and no app updates */
+html.is-web [data-app-only] { display: none !important; }

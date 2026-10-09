@@ -34,7 +34,7 @@ The service does accounts and collection sync, and nothing else. Anything about 
 fetched by the app straight from the card sites (`app/js/priceSources.js`) and never passes through here.
 
 Layout: `src/worker.js` (routing, CORS), `src/auth/*.js` (the account endpoints), `src/sync.js`,
-`src/lib.js` (validation, hashing, sessions, rate limiting), `src/schema.js` + `schema.sql` (the tables), `wrangler.jsonc`, `public/` (a placeholder page).
+`src/lib.js` (validation, hashing, sessions, rate limiting), `src/schema.js` + `schema.sql` (the tables), `wrangler.jsonc`. The app itself (`../app`) is served as the website.
 
 ## One-time setup (Cloudflare dashboard)
 

@@ -1,0 +1,304 @@
+/**
+ * webstore.js
+ * The website's stand-in for the local backend's collections and settings (native/cardstore/src/store.cpp): the same
+ * rules, status codes and messages, over the same routes, but kept in the browser's storage. Because it speaks the
+ * same sync protocol (/sync/state, /sync/apply), sync.js keeps these collections in step with the account exactly as it
+ * does for the apps.
+ *
+ *   handle('GET', '/collections') -> { status: 200, body: [...] }
+ */
+const DB_KEY = 'binder_web_db_v1';
+const CONDITIONS = ['Near Mint', 'Lightly Played', 'Moderately Played', 'Heavily Played', 'Damaged'];
+const GAMES = ['mtg', 'pokemon', 'yugioh'];
+const DEFAULT_CONDITION = 'Near Mint';
+// the messages the frontend shows (same text as the native backend)
+const CONDITIONS_REPR = "('Near Mint', 'Lightly Played', 'Moderately Played', 'Heavily Played', 'Damaged')";
+const GAMES_REPR = "('mtg', 'pokemon', 'yugioh')";
+
+const defaultSettings = () => ({ theme: 'dark', fontSize: 'medium', requestRate: 'medium', minImageQuality: 'medium' });
+const emptyDb = () => ({ collections: [], settings: defaultSettings() });
+const error = (status, message) => ({ status, body: { error: message } });
+const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
+// Python-style truthiness of a request field: missing, null, "", 0, [] and {} all mean "not provided"
+const truthy = (v) => {
+  if (v === null || v === undefined || v === false) return false;
+  if (typeof v === 'number') return v !== 0;
+  if (typeof v === 'string') return v.length > 0;
+  if (Array.isArray(v)) return v.length > 0;
+  if (isObject(v)) return Object.keys(v).length > 0;
+  return true;
+};
+// `updated` of a stored collection/card; 1 for data written before stamps existed
+const stampOf = (v) => (v && isNumber(v.updated) ? v.updated : 1);
+const clone = (v) => JSON.parse(JSON.stringify(v));
+
+function randomId() {
+  let id = '';
+  for (let i = 0; i < 8; i++) id += Math.floor(Math.random() * 16).toString(16);
+  return id;
+}
+
+// localStorage, or memory when the browser won't give us any (private windows, blocked storage)
+function defaultStorage() {
+  const memory = new Map();
+  let real = null;
+  try {
+    real = typeof localStorage !== 'undefined' ? localStorage : null;
+    if (real) real.getItem(DB_KEY);
+  } catch (e) {
+    real = null;
+  }
+  return {
+    getItem(key) {
+      try { if (real) return real.getItem(key); } catch (e) { /* use memory */ }
+      return memory.has(key) ? memory.get(key) : null;
+    },
+    setItem(key, value) {
+      memory.set(key, value);
+      try { if (real) real.setItem(key, value); } catch (e) { /* kept in memory */ }
+    },
+  };
+}
+
+export class WebStore {
+  constructor({ storage = defaultStorage(), makeId = randomId, nowMs = () => Date.now() } = {}) {
+    this.storage = storage;
+    this.makeId = makeId;
+    this.nowMs = nowMs;
+  }
+
+  load() {
+    let db = null;
+    try { db = JSON.parse(this.storage.getItem(DB_KEY) || 'null'); } catch (e) { db = null; }
+    if (!isObject(db)) db = emptyDb();
+    if (!Array.isArray(db.collections)) db.collections = [];
+    if (!isObject(db.settings)) db.settings = defaultSettings();
+    return db;
+  }
+
+  save(db) {
+    this.storage.setItem(DB_KEY, JSON.stringify(db));
+  }
+
+  listCollections() {
+    return { status: 200, body: this.load().collections };
+  }
+
+  createCollection(body) {
+    const name = body && typeof body.name === 'string' ? body.name.trim() : '';
+    if (!name) return error(400, 'name is required');
+    const db = this.load();
+    const collection = { id: this.makeId(), name, cards: [], updated: this.nowMs() };
+    db.collections.push(collection);
+    this.save(db);
+    return { status: 201, body: collection };
+  }
+
+  getCollection(id) {
+    const c = this.load().collections.find((x) => x.id === id);
+    return c ? { status: 200, body: c } : error(404, 'not found');
+  }
+
+  deleteCollection(id) {
+    const db = this.load();
+    const kept = db.collections.filter((c) => c.id !== id);
+    if (kept.length === db.collections.length) return error(404, 'not found');
+    db.collections = kept;
+    if (!isObject(db.deleted)) db.deleted = {};
+    db.deleted[id] = this.nowMs();
+    this.save(db);
+    return { status: 200, body: { deleted: true } };
+  }
+
+  addCard(collectionId, body) {
+    body = isObject(body) ? body : {};
+    const { name, game } = body;
+    if (!truthy(name)) return error(400, 'card name is required');
+    if (typeof game !== 'string' || !GAMES.includes(game)) return error(400, `game must be one of ${GAMES_REPR}`);
+    const db = this.load();
+    const collection = db.collections.find((c) => c.id === collectionId);
+    if (!collection) return error(404, 'not found');
+
+    const conditionIn = body.condition;
+    const condition = truthy(conditionIn) ? (typeof conditionIn === 'string' ? conditionIn : '') : DEFAULT_CONDITION;
+    if (!CONDITIONS.includes(condition)) return error(400, `condition must be one of ${CONDITIONS_REPR}`);
+
+    // Cards only stack (quantity + 1) when name, set, game AND condition all match. A request with no "set" never
+    // stacks: stored cards always carry one ("" by default), and a missing set is not "".
+    const setIn = body.set === undefined ? null : body.set;
+    const existing = collection.cards.find(
+      (c) => c.name === name && (c.set === undefined ? null : c.set) === setIn && c.game === game && (c.condition ?? DEFAULT_CONDITION) === condition
+    );
+    const now = this.nowMs();
+    if (existing) {
+      existing.quantity += 1;
+      existing.updated = now;
+    } else {
+      const card = {
+        id: this.makeId(),
+        name,
+        game,
+        set: body.set !== undefined ? body.set : '',
+        rarity: body.rarity !== undefined ? body.rarity : '',
+        image: body.image !== undefined ? body.image : '',
+        condition,
+        quantity: 1,
+        updated: now,
+      };
+      // the catalog id the card was picked from (a search result's "id"): lets prices be looked up exactly
+      const catalogId = body.uid !== undefined ? body.uid : body.id;
+      if (typeof catalogId === 'string' && catalogId) card.uid = catalogId;
+      collection.cards.push(card);
+    }
+    collection.updated = now;
+    this.save(db);
+    return { status: 201, body: collection };
+  }
+
+  updateCard(collectionId, cardId, body) {
+    body = isObject(body) ? body : {};
+    const { quantity, condition, uid } = body;
+    const has = (v) => v !== undefined && v !== null;
+    if (!has(quantity) && !has(condition) && !has(uid)) return error(400, 'quantity and/or condition is required');
+    if (has(uid) && typeof uid !== 'string') return error(400, 'uid must be a string');
+    if (has(quantity) && !isNumber(quantity)) return error(400, 'quantity must be a number');
+    if (has(condition) && !(typeof condition === 'string' && CONDITIONS.includes(condition))) {
+      return error(400, `condition must be one of ${CONDITIONS_REPR}`);
+    }
+    const db = this.load();
+    const collection = db.collections.find((c) => c.id === collectionId);
+    if (!collection) return error(404, 'not found');
+
+    const now = this.nowMs();
+    if (has(quantity) && quantity <= 0) {
+      const kept = collection.cards.filter((c) => c.id !== cardId);
+      if (kept.length !== collection.cards.length) {
+        collection.cards = kept;
+        if (!isObject(collection.tomb)) collection.tomb = {};
+        collection.tomb[cardId] = now;
+        collection.updated = now;
+      }
+    } else {
+      for (const c of collection.cards) {
+        if (c.id !== cardId) continue;
+        if (has(quantity)) c.quantity = quantity;
+        if (has(condition)) c.condition = condition;
+        if (has(uid)) c.uid = uid;
+        c.updated = now;
+        collection.updated = now;
+      }
+    }
+    this.save(db);
+    return { status: 200, body: collection };
+  }
+
+  // ---- sync (see sync.js and cloudflare/src/sync.js) ----------------------------------------------------------
+  syncState() {
+    const db = this.load();
+    const collections = db.collections.map((c) => {
+      let newest = stampOf(c);
+      const cards = (c.cards || []).map((card) => {
+        const copy = { ...card, updated: stampOf(card) };
+        newest = Math.max(newest, copy.updated);
+        return copy;
+      });
+      return { id: c.id || '', name: c.name || '', updated: newest, cards, tomb: isObject(c.tomb) ? c.tomb : {} };
+    });
+    const deleted = isObject(db.deleted)
+      ? Object.entries(db.deleted).filter(([, at]) => isNumber(at)).map(([id, at]) => ({ id, at }))
+      : [];
+    return { status: 200, body: { collections, deleted } };
+  }
+
+  syncApply(body) {
+    if (!isObject(body)) return error(400, 'sync body must be a JSON object');
+    const incoming = body.collections === undefined ? [] : body.collections;
+    const expect = isObject(body.expect) ? body.expect : {};
+    if (!Array.isArray(incoming)) return error(400, 'collections must be an array');
+
+    const db = this.load();
+    const applied = [];
+    const skipped = [];
+    if (!isObject(db.deleted)) db.deleted = {};
+
+    for (const doc of incoming) {
+      if (!isObject(doc) || typeof doc.id !== 'string') continue;
+      const id = doc.id;
+      // what this device had for it when the sync started, versus now
+      const local = db.collections.find((c) => c.id === id);
+      let localStamp = 0;
+      if (local) {
+        localStamp = stampOf(local);
+        for (const card of local.cards || []) localStamp = Math.max(localStamp, stampOf(card));
+      }
+      const expectedPresent = isNumber(expect[id]);
+      if (local ? !(expectedPresent && expect[id] === localStamp) : expectedPresent) {
+        skipped.push(id);
+        continue;
+      }
+
+      if ('deleted' in doc) {
+        if (!isNumber(doc.deleted)) continue;
+        if (local) db.collections = db.collections.filter((c) => c.id !== id);
+        db.deleted[id] = doc.deleted;
+        applied.push(id);
+        continue;
+      }
+      if (!Array.isArray(doc.cards) || typeof doc.name !== 'string') continue;
+
+      const merged = { id, name: doc.name, cards: doc.cards, updated: stampOf(doc) };
+      if (isObject(doc.tomb)) merged.tomb = doc.tomb;
+      if (local) db.collections[db.collections.indexOf(local)] = merged;
+      else db.collections.push(merged);
+      delete db.deleted[id];
+      applied.push(id);
+    }
+    this.save(db);
+    return { status: 200, body: { applied, skipped } };
+  }
+
+  getSettings() {
+    return { status: 200, body: this.load().settings };
+  }
+
+  updateSettings(body) {
+    if (!isObject(body)) return error(400, 'settings must be a JSON object');
+    const db = this.load();
+    Object.assign(db.settings, body);
+    this.save(db);
+    return { status: 200, body: db.settings };
+  }
+
+  // The routes of the local backend that the page uses, so api.js needs no second code path.
+  // `path` is what follows /api, e.g. '/collections/ab12/cards'.
+  handle(method, path, body) {
+    const parts = path.split('?')[0].split('/').filter(Boolean);
+    const [root, id, sub, cardId] = parts;
+    if (root === 'collections') {
+      if (!id) {
+        if (method === 'GET') return this.listCollections();
+        if (method === 'POST') return this.createCollection(body);
+      } else if (!sub) {
+        if (method === 'GET') return this.getCollection(id);
+        if (method === 'DELETE') return this.deleteCollection(id);
+      } else if (sub === 'cards') {
+        if (!cardId && method === 'POST') return this.addCard(id, body);
+        if (cardId && method === 'PATCH') return this.updateCard(id, cardId, body);
+      }
+    } else if (root === 'sync') {
+      if (id === 'state' && method === 'GET') return this.syncState();
+      if (id === 'apply' && method === 'POST') return this.syncApply(body);
+    } else if (root === 'settings' && !id) {
+      if (method === 'GET') return this.getSettings();
+      if (method === 'PUT') return this.updateSettings(body);
+    }
+    return error(404, 'not found');
+  }
+}
+
+let shared = null;
+export function webStore() {
+  if (!shared) shared = new WebStore();
+  return shared;
+}

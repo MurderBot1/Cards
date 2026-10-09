@@ -13,6 +13,9 @@
  */
 
 import { AUTH_URL } from './config.js';
+import { IS_WEB } from './env.js';
+import { searchCardsWeb } from './cardSearch.js';
+import { webStore } from './webstore.js';
 
 const USE_MOCK = false;
 const API_BASE = '/api';
@@ -94,6 +97,7 @@ const SAMPLE_CARDS = {
 // generic request wrapper for the real backend
 // ---------------------------------------------------------------
 async function request(path, options = {}) {
+  if (IS_WEB) return webRequest(path, options);
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { 'Content-Type': 'application/json' },
     ...options,
@@ -108,6 +112,18 @@ async function request(path, options = {}) {
   if (options.method && options.method !== 'GET' && path.startsWith('/collections')) {
     window.dispatchEvent(new Event('binder:local-change'));
   }
+  return data;
+}
+
+// The website has no local backend: the same routes are answered from the browser's own storage (webstore.js).
+function webRequest(path, options) {
+  const method = (options.method || 'GET').toUpperCase();
+  let body;
+  try { body = options.body ? JSON.parse(options.body) : undefined; } catch (e) { body = undefined; }
+  const { status, body: data } = webStore().handle(method, path, body);
+  if (status >= 400) throw new Error((data && data.error) || `API ${path} failed: ${status}`);
+  // sync.js listens for this to schedule a sync after the user changes their collections
+  if (method !== 'GET' && path.startsWith('/collections')) window.dispatchEvent(new Event('binder:local-change'));
   return data;
 }
 
@@ -287,6 +303,8 @@ export const api = {
       })();
       return all.slice(offset, limit ? offset + limit : undefined);
     }
+    // The website has no card catalog of its own: it asks the card sites directly.
+    if (IS_WEB) return searchCardsWeb(game, query, { limit: limit || 30, offset });
     // BACKEND: GET /api/search?game=mtg&q=bolt&limit=40&offset=0 -> [{id, name, set, rarity, image}]
     const paging = (limit ? `&limit=${limit}` : '') + (offset ? `&offset=${offset}` : '');
     return request(`/search?game=${encodeURIComponent(game)}&q=${encodeURIComponent(query)}${paging}`);

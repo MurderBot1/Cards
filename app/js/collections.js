@@ -8,6 +8,7 @@
  */
 import { api, CONDITIONS, DEFAULT_CONDITION } from './api.js';
 import { showToast } from './ui.js';
+import { IS_WEB } from './env.js';
 import { getSettings } from './settings.js';
 import { backfillUids, collectionValue, formatUsd, loadPrices, pricesEnabled, unitPrice } from './prices.js';
 
@@ -476,7 +477,11 @@ els.cardDetailModal.querySelectorAll('.card-qty [data-action]').forEach((btn) =>
 // -----------------------------------------------------------------
 // "+" action sheet: search or scan
 // -----------------------------------------------------------------
-els.fab.addEventListener('click', () => els.choiceModal.classList.remove('hidden'));
+els.fab.addEventListener('click', () => {
+  // the website can only search (no camera features), so there is nothing to choose between
+  if (IS_WEB) openSearchModal();
+  else els.choiceModal.classList.remove('hidden');
+});
 els.choiceCancelBtn.addEventListener('click', () => els.choiceModal.classList.add('hidden'));
 els.choiceModal.addEventListener('click', (e) => { if (e.target === els.choiceModal) els.choiceModal.classList.add('hidden'); });
 

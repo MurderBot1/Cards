@@ -8,6 +8,7 @@
  * scrolling around doesn't ask again, and an old price is still shown when the service can't be reached.
  */
 import { api } from './api.js';
+import { IS_WEB } from './env.js';
 import { lookUpPrices } from './priceSources.js';
 
 const CACHE_KEY = 'binder_prices_v1';
@@ -87,7 +88,7 @@ export async function loadPrices(cards) {
 // card. Resolves to the updated collection, or null if nothing was changed.
 const triedBackfill = new Set();
 export async function backfillUids(collection) {
-  if (!pricesEnabled()) return null;
+  if (!pricesEnabled() || IS_WEB) return null;  // (the website has no catalog to find the ids in)
   let latest = null;
   let done = 0;
   for (const card of collection.cards) {

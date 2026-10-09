@@ -1,10 +1,11 @@
 {
   // The Worker behind https://binder.<account>.workers.dev. Deploy it from this folder (Workers Builds: set the root
-  // directory to "cloudflare"; the deploy command is `npx wrangler deploy`).
+  // directory to "cloudflare"; the deploy command is `npx wrangler deploy`). Besides the account API it serves the app
+  // itself from ../app as the website (see app/js/env.js: no scanning, collections kept in the browser and synced).
   "name": "binder",
   "main": "src/worker.js",
   "compatibility_date": "2024-09-23",
-  "assets": { "directory": "./public" },
+  "assets": { "directory": "../app" },
   "d1_databases": [
     {
       "binding": "DB",
