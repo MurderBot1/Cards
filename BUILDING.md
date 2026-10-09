@@ -201,6 +201,24 @@ cached only on the device.
 The older `/api/auth/*` routes in the local backend, which spoke to a separate TCP LoginServer, are no longer used by the
 app.
 
+## Website
+
+The same Cloudflare Worker that does accounts also serves the app itself (`cloudflare/wrangler.jsonc` points its static assets
+at `app/`), so `https://binder.<account>.workers.dev/` is a website version of Binder. There is no local backend there, so
+`app/js/env.js` switches the page into web mode whenever it is served from anything but localhost (or with `?web=1`):
+
+- **Shop, Collection and Account** are all there. Sign-in and sync work as in the apps.
+- **Collections** are kept in the browser (`app/js/webstore.js`, a port of `native/cardstore` that answers the same routes), and
+  sync with the account through the same `/sync/state` and `/sync/apply` protocol, so a collection built on the website shows up in
+  the apps and the other way round. Without signing in they live only in that browser.
+- **Adding cards** goes straight to search (`app/js/cardSearch.js`, which asks Scryfall, pokemontcg.io and YGOPRODeck directly,
+  as the prices do). There is no scanning, no card catalog download, no setup screen and no update banner: everything marked
+  `data-app-only` in `index.html` is hidden.
+- Prices work as in the apps (`priceSources.js`).
+
+Previewing it locally: `cd cloudflare && npm install && npx wrangler dev --local`, then open `http://127.0.0.1:8787/?web=1`. The
+Worker deploys from `main` like any other change (nothing about it is in a release: it is not an app).
+
 ## Updates
 
 The app checks the project's GitHub releases on startup (and from "Check for updates" on the Account tab) and offers the

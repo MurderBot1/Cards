@@ -10,6 +10,7 @@ import { initSync } from './sync.js';
 import { initUpdates, launchUpdateCheck } from './updates.js';
 import { showToast } from './ui.js';
 import { initSetupScreen } from './setup.js';
+import { IS_WEB } from './env.js';
 
 const TAB_TITLES = { shop: 'Shop', collection: 'Collection', settings: 'Account' };
 
@@ -65,12 +66,15 @@ function onCollectionNavigate({ inDetail, title, subtitle }) {
 }
 
 async function boot() {
-  launchUpdateCheck();  // not awaited: a "Checking for updates" / "Updating Binder" screen covers the app while it runs
-  initSetupScreen();  // not awaited: it polls in the background and covers the app while setup work runs
+  // The website has nothing to download or update: no first-run setup screen, no update checks
+  if (!IS_WEB) {
+    launchUpdateCheck();  // not awaited: a "Checking for updates" / "Updating Binder" screen covers the app while it runs
+    initSetupScreen();  // not awaited: it polls in the background and covers the app while setup work runs
+  }
   await initSettings();
   await initCollections(onCollectionNavigate);
   initSync();
-  initUpdates({ onToast: showToast });
+  if (!IS_WEB) initUpdates({ onToast: showToast });
   showTab('shop');
 }
 
