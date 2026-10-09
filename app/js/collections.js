@@ -503,6 +503,8 @@ wireGamePicker(els.searchGamePicker, (value) => {
 
 function openSearchModal() {
   els.searchInput.value = '';
+  searchRequestToken += 1;  // drops any page still on its way for the previous search
+  searchExhausted = true;
   els.searchResults.innerHTML = '';
   els.searchEmpty.classList.remove('hidden');
   els.searchModal.classList.remove('hidden');
@@ -521,20 +523,78 @@ els.searchInput.addEventListener('input', () => {
   searchDebounce = setTimeout(() => runSearch(query), 200);
 });
 
+// Results come a page at a time: the first page when the search changes, and the next one whenever the end of the list
+// scrolls into view (an invisible marker at the bottom of the list is watched for that).
+const SEARCH_PAGE = 40;
+let searchQuery = '';
+let searchLoaded = 0;       // results fetched so far for the current search
+let searchExhausted = false; // the last page came back short: nothing more to fetch
+let searchLoadingMore = false;
+let searchSentinel = null;
+let searchObserver = null;
+
 async function runSearch(query) {
   if (!activeCollection) return;
   const token = ++searchRequestToken;
-  const results = await api.searchCards(selectedSearchGame, query);
+  searchQuery = query;
+  searchLoaded = 0;
+  searchExhausted = false;
+  searchLoadingMore = false;
+  const results = await api.searchCards(selectedSearchGame, query, { limit: SEARCH_PAGE });
   // if the user kept typing (or changed game) while this request was in
   // flight, a newer call already started — drop this stale response
   // instead of letting it flash outdated results onto the screen.
   if (token !== searchRequestToken) return;
-  renderSearchResults(results);
+  els.searchResults.innerHTML = '';
+  searchLoaded = results.length;
+  searchExhausted = results.length < SEARCH_PAGE;
+  els.searchEmpty.classList.toggle('hidden', results.length > 0);
+  appendSearchResults(results);
+  watchSearchEnd();
 }
 
-function renderSearchResults(results) {
-  els.searchResults.innerHTML = '';
-  els.searchEmpty.classList.toggle('hidden', results.length > 0);
+// The next page of the current search, appended below what is already there.
+async function loadMoreSearchResults() {
+  if (searchExhausted || searchLoadingMore || !activeCollection) return;
+  const token = searchRequestToken;
+  searchLoadingMore = true;
+  let results = null;
+  try {
+    results = await api.searchCards(selectedSearchGame, searchQuery, { limit: SEARCH_PAGE, offset: searchLoaded });
+  } catch (err) {
+    showToast("Couldn't load more results");
+  }
+  searchLoadingMore = false;
+  if (token !== searchRequestToken || !results) return;  // a newer search replaced this one (or it failed: scroll again to retry)
+  searchLoaded += results.length;
+  searchExhausted = results.length < SEARCH_PAGE;
+  appendSearchResults(results);
+  watchSearchEnd();
+}
+
+// Keeps the marker at the very end of the list, and (re)starts watching it: observing it again reports whether it is
+// already in view, which is how a page too short to scroll still gets followed by the next one.
+function watchSearchEnd() {
+  if (!searchSentinel) {
+    searchSentinel = document.createElement('div');
+    searchSentinel.className = 'search-sentinel';
+    searchSentinel.setAttribute('aria-hidden', 'true');
+    if (typeof IntersectionObserver === 'function') {
+      searchObserver = new IntersectionObserver((entries) => {
+        if (entries.some((e) => e.isIntersecting)) loadMoreSearchResults();
+      }, { root: els.searchResults, rootMargin: '300px' });
+    }
+  }
+  if (searchObserver) searchObserver.unobserve(searchSentinel);
+  if (searchExhausted) {
+    searchSentinel.remove();
+    return;
+  }
+  els.searchResults.appendChild(searchSentinel);
+  if (searchObserver) searchObserver.observe(searchSentinel);
+}
+
+function appendSearchResults(results) {
   results.forEach((result) => {
     const card = { ...result, game: selectedSearchGame, condition: DEFAULT_CONDITION };
     const row = document.createElement('button');
@@ -557,7 +617,8 @@ function renderSearchResults(results) {
       showToast(`Added ${card.name}`);
       refreshPrices(activeCollection);
     });
-    els.searchResults.appendChild(row);
+    // before the marker, which stays at the end of the list
+    els.searchResults.insertBefore(row, searchSentinel && searchSentinel.parentNode === els.searchResults ? searchSentinel : null);
   });
 }
 

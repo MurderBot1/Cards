@@ -10,7 +10,7 @@
 namespace cardview {
 
 struct Options {
-    std::string title = "Card Master";
+    std::string title = "Binder";
     int width = 1200;
     int height = 800;
     bool debug = false;  // developer tools / inspector

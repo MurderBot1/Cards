@@ -4,7 +4,7 @@ namespace cardscan {
 
 NullEngine::NullEngine(std::string reason) : reason_(std::move(reason)) {}
 
-nlohmann::json NullEngine::search(const std::string&, const std::string&) { return nlohmann::json::array(); }
+nlohmann::json NullEngine::search(const std::string&, const std::string&, int, int) { return nlohmann::json::array(); }
 
 Result NullEngine::detect(const std::string&) { return {503, {{"error", reason_}}}; }
 

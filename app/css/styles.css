@@ -738,6 +738,7 @@ svg {
 .choice-btn:active { background: var(--surface-3); }
 
 .card-list--results { flex: 1; overflow-y: auto; margin-top: 12px; }
+.search-sentinel { height: 1px; flex-shrink: 0; }
 
 /* scan */
 .scan-frame {

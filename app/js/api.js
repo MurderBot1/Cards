@@ -266,24 +266,30 @@ export const api = {
   },
 
   // ---- card database search ----------------------------------------------
-  async searchCards(game, query) {
+  // `limit` cards starting `offset` cards into the results (the backend orders them the same way every time, so pages
+  // follow one another); the default is the backend's first 30.
+  async searchCards(game, query, { limit, offset = 0 } = {}) {
     if (USE_MOCK) {
       await delay(150);
       const idx = indexFor(game);
-      if (!query) return idx.map((e) => e.card);
-      const q = query.toLowerCase();
-      // prefix matches first (what people are usually typing toward),
-      // then contains-matches, mirroring the backend's search ordering.
-      const starts = [];
-      const contains = [];
-      for (const e of idx) {
-        if (e.lname.startsWith(q)) starts.push(e.card);
-        else if (e.lname.includes(q)) contains.push(e.card);
-      }
-      return starts.concat(contains);
+      const all = (() => {
+        if (!query) return idx.map((e) => e.card);
+        const q = query.toLowerCase();
+        // prefix matches first (what people are usually typing toward),
+        // then contains-matches, mirroring the backend's search ordering.
+        const starts = [];
+        const contains = [];
+        for (const e of idx) {
+          if (e.lname.startsWith(q)) starts.push(e.card);
+          else if (e.lname.includes(q)) contains.push(e.card);
+        }
+        return starts.concat(contains);
+      })();
+      return all.slice(offset, limit ? offset + limit : undefined);
     }
-    // BACKEND: GET /api/search?game=mtg&q=bolt -> [{id, name, set, rarity, image}]
-    return request(`/search?game=${encodeURIComponent(game)}&q=${encodeURIComponent(query)}`);
+    // BACKEND: GET /api/search?game=mtg&q=bolt&limit=40&offset=0 -> [{id, name, set, rarity, image}]
+    const paging = (limit ? `&limit=${limit}` : '') + (offset ? `&offset=${offset}` : '');
+    return request(`/search?game=${encodeURIComponent(game)}&q=${encodeURIComponent(query)}${paging}`);
   },
 
   // ---- live detection (scan-modal preview loop) ---------------------------

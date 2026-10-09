@@ -34,7 +34,7 @@ public:
     PipelineEngine(std::filesystem::path catalog_path, std::unique_ptr<ModelSource> models, Logger log = {});
 
     // Engine
-    nlohmann::json search(const std::string& game, const std::string& query) override;
+    nlohmann::json search(const std::string& game, const std::string& query, int limit = 30, int offset = 0) override;
     Result detect(const std::string& image_bytes) override;
     Result scan(const std::string& image_bytes, const std::string& game_hint, double min_blur_score) override;
     void warm_up() override;
