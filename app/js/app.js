@@ -7,7 +7,7 @@
 import { initCollections, closeCollectionDetail, isInCollectionDetail } from './collections.js';
 import { initSettings } from './settings.js';
 import { initSync } from './sync.js';
-import { initUpdates } from './updates.js';
+import { initUpdates, launchUpdateCheck } from './updates.js';
 import { showToast } from './ui.js';
 import { initSetupScreen } from './setup.js';
 
@@ -65,6 +65,7 @@ function onCollectionNavigate({ inDetail, title, subtitle }) {
 }
 
 async function boot() {
+  launchUpdateCheck();  // not awaited: a "Checking for updates" / "Updating Binder" screen covers the app while it runs
   initSetupScreen();  // not awaited: it polls in the background and covers the app while setup work runs
   await initSettings();
   await initCollections(onCollectionNavigate);

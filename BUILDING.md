@@ -216,10 +216,13 @@ newest `vX.Y.Z` release with a banner. **Update** downloads this platform's inst
 
 The backend (`native/binder/src/updater.cpp`, `/api/update/*`; Android: `ApkUpdater.kt`) only downloads this project's
 installer files from a `…/releases/download/vX.Y.Z/` URL and refuses to run one whose SHA-256 differs from the digest GitHub
-publishes for that asset (so a tampered download is never started). "Install updates automatically" on the Account tab
-(on by default) does all of that without a tap: at startup on a computer, while later checks only download and leave a
-"Restart to update" button, so nothing closes in the middle of a scan; on Android it downloads and leaves an Install
-button. A release that failed to install is not retried automatically. It can only do that in a *released* build: the
+publishes for that asset (so a tampered download is never started). Every launch of a released build starts with a
+full-screen "Checking for updates" (it gives up after 6 seconds, so being offline doesn't hold the app up), and when there is
+a newer release and "Install updates automatically" on the Account tab is on (the default) it becomes an "Updating Binder"
+screen with the download's progress and ends with the app restarting into the new version ("Not now" lets the download
+finish in the background and leaves a "Restart to update" button instead). On Android the screen ends with the system
+installer opening. While the app stays open, later checks only download and leave a "Restart to update" button, so nothing
+closes in the middle of a scan. A release that failed to install is not retried automatically. It can only do that in a *released* build: the
 release workflow stamps the version into `app/js/version.js` (and Android's version name and code), while a local build or
 the rolling `latest` build says `dev` and never asks to update. Versions before 1.0.8 shipped zips and don't know the
 installers' names, so they send you to the release page: install v1.0.8 by hand once and it updates itself from then on.
