@@ -6,6 +6,7 @@ import { onRequestPost as login } from './auth/login.js';
 import { onRequestPost as logout } from './auth/logout.js';
 import { onRequestGet as me } from './auth/me.js';
 import { onRequestPost as register } from './auth/register.js';
+import { ensureSchema } from './schema.js';
 import { onSync } from './sync.js';
 
 const ROUTES = {
@@ -26,6 +27,7 @@ export default {
     const handler = ROUTES[`${request.method} ${pathname}`];
     if (!handler) return withCors(PATHS.has(pathname) ? fail('Method not allowed', 405) : fail('Not found', 404));
     try {
+      await ensureSchema(env.DB);  // creates any missing tables the first time this instance runs
       return withCors(await handler({ request, env }));
     } catch (err) {
       console.error(err);
