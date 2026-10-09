@@ -394,6 +394,18 @@
   </div>
 </div>
 
+<!-- launch update screen: "Checking for updates", then "Updating Binder" with the download's progress (updates.js) -->
+<div class="setup-screen update-screen hidden" id="update-screen" role="status" aria-live="polite">
+  <div class="setup-card">
+    <h1 class="setup-title" id="update-title">Checking for updates</h1>
+    <div class="setup-spinner" aria-hidden="true"></div>
+    <p class="setup-task" id="update-task"></p>
+    <p class="setup-detail" id="update-detail"></p>
+    <progress class="setup-bar hidden" id="update-bar" max="1" value="0"></progress>
+    <button class="link-btn hidden" id="update-skip" type="button">Not now</button>
+  </div>
+</div>
+
 <!-- toast -->
 <div class="toast hidden" id="toast"></div>
 

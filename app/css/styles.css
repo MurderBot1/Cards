@@ -1119,8 +1119,11 @@ svg {
   animation: setup-spin 0.9s linear infinite;
 }
 .setup-task { font-weight: 600; color: var(--text, #F0EFF6); }
-.setup-detail { color: var(--text-dim); font-family: var(--font-mono); font-size: 0.85rem; min-height: 1.2em; }
+.setup-detail { color: var(--text-dim, #9496A8);  /* (the theme isn't applied yet while the launch screens show) */ font-family: var(--font-mono); font-size: 0.85rem; min-height: 1.2em; }
 .setup-bar { width: 100%; height: 8px; accent-color: var(--foil-1); }
 .setup-error { color: var(--danger); }
+/* the launch update screen sits over the setup screen */
+.update-screen { z-index: 110; }
+.update-screen .link-btn { color: var(--text-dim, #9496A8); }
 @keyframes setup-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .setup-spinner { animation-duration: 3s; } }

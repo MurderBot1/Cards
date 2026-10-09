@@ -11,13 +11,15 @@
  * starts; on Android the system's installer opens over the downloaded APK (it replaces the old app only if both are
  * signed with the same key, see BUILDING.md "Updates"). iOS can't install anything itself, so there (and wherever
  * the in-app way isn't available) the download opens in the browser instead. "Install updates automatically" (Account
- * tab, on by default) does all that without a tap: at startup on a computer, and for later checks it only downloads,
- * leaving a "Restart to update" button so nothing closes in the middle of a scan.
+ * tab, on by default) does all that without a tap: when the app launches (behind a "Checking for updates" screen, then
+ * an "Updating Binder" screen with the download's progress), and for later checks while the app is open it only
+ * downloads, leaving a "Restart to update" button so nothing closes in the middle of a scan.
  */
 import { APP_VERSION } from './version.js';
 
 const RELEASES_URL = 'https://api.github.com/repos/MurderBot1/Cards/releases?per_page=15';
 const CHECK_EVERY_MS = 6 * 60 * 60 * 1000;
+const LAUNCH_CHECK_TIMEOUT_MS = 6000;  // how long the launch screen waits for GitHub
 const LAST_CHECK_KEY = 'binder_update_last_check';
 const DISMISSED_KEY = 'binder_update_dismissed';
 const AUTO_KEY = 'binder_auto_update';
@@ -174,12 +176,49 @@ function updateBridge(platform) {
   };
 }
 
-let banner = null;
 let latestFound = null;
 let toast = () => {};
 let phase = 'idle';  // idle | downloading | ready | installing
+let skipInstall = false;  // "Not now" on the updating screen: finish downloading, but wait for a tap to install
+
+const $ = (id) => document.getElementById(id);
+
+// ---- the full-screen "Checking for updates" / "Updating Binder" screen shown at launch ----------------------------
+
+let screenOpen = false;
+
+function openScreen(title) {
+  screenOpen = true;
+  $('update-title').textContent = title;
+  $('update-task').textContent = '';
+  $('update-detail').textContent = '';
+  $('update-bar').classList.add('hidden');
+  $('update-skip').classList.add('hidden');
+  $('update-screen').classList.remove('hidden');
+}
+
+function closeScreen() {
+  screenOpen = false;
+  $('update-screen').classList.add('hidden');
+}
+
+function screenProgress(task, { detail = '', done = 0, total = 0, skippable = false } = {}) {
+  $('update-title').textContent = 'Updating Binder';
+  $('update-task').textContent = task;
+  $('update-detail').textContent = detail;
+  const bar = $('update-bar');
+  bar.classList.toggle('hidden', !total);
+  if (total) {
+    bar.max = total;
+    bar.value = Math.min(done, total);
+  }
+  $('update-skip').classList.toggle('hidden', !skippable);
+}
+
+// ---- the banner ------------------------------------------------------------------------------------------------
 
 function setBanner(text, { button = 'Update', busy = false, dismissable = true } = {}) {
+  const banner = $('update-banner');
   banner.querySelector('.update-banner-text').textContent = text;
   const update = banner.querySelector('[data-action="update"]');
   update.textContent = button;
@@ -193,36 +232,62 @@ function showBanner(release) {
   if (phase === 'idle') setBanner(`Update available: ${release.tag_name}`);
 }
 
+// Progress of the update in the one place the user is looking: the updating screen at launch, else the banner.
+function showProgress(release, status, { installing = false, platform = null } = {}) {
+  if (installing) {
+    const task = platform === 'android' ? `Installing ${release.tag_name}` : `Installing ${release.tag_name}`;
+    const detail = platform === 'android' ? 'Confirm in the installer that opens' : 'Binder will restart in a moment';
+    if (screenOpen) screenProgress(task, { detail });
+    else setBanner(platform === 'android' ? `Installing ${release.tag_name}…` : `Installing ${release.tag_name} — Binder will restart…`, { busy: true, dismissable: false });
+    return;
+  }
+  if (screenOpen) {
+    const done = Number(status && status.bytes) || 0;
+    const total = Number(status && status.total) || 0;
+    const percent = total ? ` (${Math.floor((Math.min(done, total) / total) * 100)}%)` : '';
+    const detail = total ? `${formatBytes(done)} of ${formatBytes(total)}${percent}` : done ? formatBytes(done) : '';
+    screenProgress(`Downloading ${release.tag_name}`, { detail, done, total, skippable: true });
+  } else {
+    setBanner(progressText({ ...(status || {}), version: release.tag_name }), { busy: true, dismissable: false });
+  }
+}
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Downloads the update inside the app, then installs it unless `install` is false (the banner then waits for a tap).
-// Falls back to the browser download wherever the app can't do it.
-async function runUpdate(release, { install = true } = {}) {
+// `byUser`: the person asked for it (a tap on Update). Without that, wherever the app can't update itself it just
+// leaves the banner, rather than opening a browser by itself.
+async function runUpdate(release, { install = true, byUser = false } = {}) {
   if (phase === 'downloading' || phase === 'installing') return;
   const platform = detectPlatform(navigator.userAgent, navigator.platform, navigator.maxTouchPoints);
   const asset = pickAsset(release, platform);
   const sha256 = assetSha256(asset);
   const bridge = asset && sha256 ? updateBridge(platform) : null;
-  const browserFallback = async () => {
+  const leaveToBanner = async (openDownload) => {
     phase = 'idle';
+    closeScreen();
     showBanner(release);
-    if (!(await openExternal(pickDownload(release, platform)))) toast(`Couldn't open the download — get it from ${release.html_url}`);
+    if (openDownload && !(await openExternal(pickDownload(release, platform)))) {
+      toast(`Couldn't open the download — get it from ${release.html_url}`);
+    }
   };
-  if (!bridge) return browserFallback();
+  if (!bridge) return leaveToBanner(byUser);
 
   const fail = (message) => {
-    phase = 'idle';
     store(FAILED_KEY, release.tag_name);
     toast(message || "Couldn't install the update");
+    phase = 'idle';
+    closeScreen();
     showBanner(release);
     setBanner(`Update available: ${release.tag_name}`, { button: 'Try again' });
   };
 
   phase = 'downloading';
-  setBanner(progressText({ version: release.tag_name }), { busy: true, dismissable: false });
+  skipInstall = false;
+  showProgress(release, null);
   const started = await bridge.download(asset.browser_download_url, sha256);
   if (!started.ok) {
-    if (started.unsupported) return browserFallback();
+    if (started.unsupported) return leaveToBanner(byUser);
     return fail(started.error);
   }
   for (;;) {
@@ -231,11 +296,13 @@ async function runUpdate(release, { install = true } = {}) {
     if (!status.ok) return fail(status.error);
     if (status.state === 'error') return fail(status.error);
     if (status.state === 'ready') break;
-    if (status.state === 'downloading') setBanner(progressText(status), { busy: true, dismissable: false });
+    if (status.state === 'downloading' && !skipInstall) showProgress(release, status);
+    else if (status.state === 'downloading') setBanner(progressText({ ...status, version: release.tag_name }), { busy: true, dismissable: false });
   }
 
   phase = 'ready';
-  if (!install) {
+  if (!install || skipInstall) {
+    closeScreen();
     setBanner(`${release.tag_name} is ready to install`, { button: platform === 'android' ? 'Install' : 'Restart to update' });
     return;
   }
@@ -244,10 +311,11 @@ async function runUpdate(release, { install = true } = {}) {
 
 async function installNow(release, bridge, platform) {
   phase = 'installing';
-  setBanner(platform === 'android' ? `Installing ${release.tag_name}…` : `Installing ${release.tag_name} — Binder will restart…`, { busy: true, dismissable: false });
+  showProgress(release, null, { installing: true, platform });
   const result = await bridge.install();
   if (!result.ok) {
     phase = 'ready';
+    closeScreen();
     store(FAILED_KEY, release.tag_name);
     toast(result.error || "Couldn't install the update");
     setBanner(`${release.tag_name} is ready to install`, { button: platform === 'android' ? 'Install' : 'Restart to update' });
@@ -256,6 +324,7 @@ async function installNow(release, bridge, platform) {
   if (platform === 'android') {
     // the system installer is showing; if it was cancelled, the update stays ready to try again
     phase = 'ready';
+    closeScreen();
     setBanner(`${release.tag_name} is ready to install`, { button: 'Install' });
   }
 }
@@ -263,10 +332,12 @@ async function installNow(release, bridge, platform) {
 // Resolves to { state: 'newer', release } | { state: 'current' } | { state: 'dev' } | { state: 'error', message }
 // `auto`: 'install' downloads and installs a newer release by itself, 'download' only gets it ready, 'none' leaves it
 // to the banner. Automatic installs are skipped if the setting is off or this release already failed once.
-export async function checkForUpdates({ manual = false, auto = 'none' } = {}) {
+export async function checkForUpdates({ manual = false, auto = 'none', timeoutMs = 0 } = {}) {
   if (!parseVersion(APP_VERSION)) return { state: 'dev' };
+  const controller = timeoutMs && typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
   try {
-    const res = await fetch(RELEASES_URL, { headers: { Accept: 'application/vnd.github+json' } });
+    const res = await fetch(RELEASES_URL, { headers: { Accept: 'application/vnd.github+json' }, signal: controller ? controller.signal : undefined });
     if (!res.ok) throw new Error(`GitHub answered ${res.status}`);
     const latest = pickLatest(await res.json());
     store(LAST_CHECK_KEY, String(Date.now()));
@@ -280,14 +351,39 @@ export async function checkForUpdates({ manual = false, auto = 'none' } = {}) {
     return { state: 'current' };
   } catch (err) {
     return { state: 'error', message: err.message };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
+ * Runs when the app launches, before anything else is shown: a "Checking for updates" screen while the newest release
+ * is looked up (it gives up after a few seconds, so being offline doesn't hold the app up), then, if there is a newer
+ * one and automatic updates are on, an "Updating Binder" screen with the download's progress that ends with the app
+ * restarting into the new version. Otherwise the screen goes away and the app is there. Development builds skip it.
+ */
+export async function launchUpdateCheck() {
+  if (!parseVersion(APP_VERSION)) return;
+  openScreen('Checking for updates');
+  $('update-task').textContent = `Binder ${APP_VERSION}`;
+  $('update-skip').addEventListener('click', () => {
+    skipInstall = true;
+    closeScreen();
+    if (latestFound) setBanner(progressText({ version: latestFound.tag_name }), { busy: true, dismissable: false });
+  });
+  try {
+    await checkForUpdates({ auto: 'install', timeoutMs: LAUNCH_CHECK_TIMEOUT_MS });
+  } finally {
+    // nothing to install (or no automatic update): the app takes over; otherwise runUpdate owns the screen
+    if (phase === 'idle') closeScreen();
   }
 }
 
 export function initUpdates({ onToast = () => {} } = {}) {
   toast = onToast;
-  banner = document.getElementById('update-banner');
-  const version = document.getElementById('app-version');
-  const checkBtn = document.getElementById('check-updates-btn');
+  const banner = $('update-banner');
+  const version = $('app-version');
+  const checkBtn = $('check-updates-btn');
   if (version) version.textContent = `Binder ${parseVersion(APP_VERSION) ? APP_VERSION : '(development build)'}`;
 
   banner.querySelector('[data-action="update"]').addEventListener('click', async () => {
@@ -297,7 +393,7 @@ export function initUpdates({ onToast = () => {} } = {}) {
       const platform = detectPlatform(navigator.userAgent, navigator.platform, navigator.maxTouchPoints);
       return installNow(latestFound, updateBridge(platform), platform);
     }
-    runUpdate(latestFound, { install: true });
+    runUpdate(latestFound, { install: true, byUser: true });
   });
   banner.querySelector('[data-action="later"]').addEventListener('click', () => {
     if (latestFound) store(DISMISSED_KEY, latestFound.tag_name);
@@ -316,7 +412,7 @@ export function initUpdates({ onToast = () => {} } = {}) {
   }
 
   // "Install updates automatically": On / Off
-  const autoSetting = document.getElementById('auto-update-setting');
+  const autoSetting = $('auto-update-setting');
   if (autoSetting) {
     const paint = () => {
       const value = autoUpdateEnabled() ? 'on' : 'off';
@@ -331,17 +427,10 @@ export function initUpdates({ onToast = () => {} } = {}) {
     paint();
   }
 
+  // The launch check (launchUpdateCheck) covers startup; while the app stays open, look again every few hours and
+  // only download, so nothing closes in the middle of a scan.
   if (!parseVersion(APP_VERSION)) return;
-  const platform = detectPlatform(navigator.userAgent, navigator.platform, navigator.maxTouchPoints);
-  const due = () => Date.now() - Number(load(LAST_CHECK_KEY) || 0) > CHECK_EVERY_MS;
-  // The first check after launch installs by itself on a computer (the app restarts into the new version before
-  // anyone has started scanning); later checks, and Android (whose installer needs a tap anyway), only download.
-  let launch = true;
-  const check = () => {
-    checkForUpdates({ auto: launch && platform !== 'android' ? 'install' : 'download' });
-    launch = false;
-  };
-  if (due()) check();
-  else launch = false;
-  setInterval(() => { if (due()) check(); }, CHECK_EVERY_MS);
+  setInterval(() => {
+    if (Date.now() - Number(load(LAST_CHECK_KEY) || 0) > CHECK_EVERY_MS) checkForUpdates({ auto: 'download' });
+  }, CHECK_EVERY_MS / 6);
 }
