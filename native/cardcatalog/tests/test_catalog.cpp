@@ -187,6 +187,20 @@ int main() {
         CHECK_EQ(r.search("", "").size(), kCards.size());                // no query, no game: everything
         CHECK_EQ(r.search("not-a-game", "").size(), kCards.size());
         CHECK_EQ(r.search("mtg", "", 3).size(), static_cast<size_t>(3));  // limit
+        // paging: pages follow one another without repeats or gaps, in the same order as one big read
+        {
+            auto everything = uids(r.search("", "", 100));
+            V paged;
+            for (int offset = 0; offset < 100; offset += 2) {
+                auto page = uids(r.search("", "", 2, offset));
+                if (page.empty()) break;
+                paged.insert(paged.end(), page.begin(), page.end());
+            }
+            CHECK(paged == everything);
+            CHECK_EQ(everything.size(), kCards.size());
+            CHECK(r.search("", "", 2, 1000).empty());  // past the end
+            CHECK(uids(r.search("mtg", "bolt", 1, 1)) == (V{"mtg-2"}));  // second page of a query (same name: uid breaks the tie)
+        }
         auto bolt = r.search("mtg", "bolt");
         CHECK(bolt[0].set_code == "LEA" && bolt[0].image_url == "http://example/1.jpg");
         CHECK(uids(r.search("mtg", "  LIGHTNING  ")) == (V{"mtg-1", "mtg-2"}));  // trimmed, case-insensitive

@@ -19,8 +19,9 @@ class Engine {
 public:
     virtual ~Engine() = default;
 
-    // Catalog search by name for one game ("mtg" | "pokemon" | "yugioh"): a JSON array of cards.
-    virtual nlohmann::json search(const std::string& game, const std::string& query) = 0;
+    // Catalog search by name for one game ("mtg" | "pokemon" | "yugioh"): a JSON array of up to `limit` cards, starting
+    // `offset` cards into the (stably ordered) results, so a caller can page through them.
+    virtual nlohmann::json search(const std::string& game, const std::string& query, int limit = 30, int offset = 0) = 0;
 
     // Detection only (no OCR / catalog lookup): is there a card in this frame, and where.
     // `image_bytes` is an encoded image (JPEG/PNG/...).
@@ -39,7 +40,7 @@ public:
 class NullEngine : public Engine {
 public:
     explicit NullEngine(std::string reason = "Card recognition isn't available in this build.");
-    nlohmann::json search(const std::string& game, const std::string& query) override;
+    nlohmann::json search(const std::string& game, const std::string& query, int limit = 30, int offset = 0) override;
     Result detect(const std::string& image_bytes) override;
     Result scan(const std::string& image_bytes, const std::string& game_hint, double min_blur_score) override;
 

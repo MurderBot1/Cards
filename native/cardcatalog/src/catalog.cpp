@@ -155,7 +155,7 @@ std::vector<std::pair<std::string, std::string>> Reader::unique_names(const std:
     return out;
 }
 
-std::vector<Card> Reader::search(const std::string& game, const std::string& query, int limit) {
+std::vector<Card> Reader::search(const std::string& game, const std::string& query, int limit, int offset) {
     std::vector<std::string> games = is_game(game) ? std::vector<std::string>{game} : std::vector<std::string>{"mtg", "pokemon", "yugioh"};
     std::string placeholders;
     for (size_t i = 0; i < games.size(); ++i) placeholders += i ? ",?" : "?";
@@ -164,8 +164,10 @@ std::vector<Card> Reader::search(const std::string& game, const std::string& que
     // matching every name whose uppercase form isn't ASCII ("Übermut", "Éclair", Cyrillic, Greek).
     std::string q = cardtext::lower_utf8(cardtext::strip_utf8(query));
     std::string sql = std::string("SELECT ") + kColumns + " FROM cards WHERE game IN (" + placeholders + ")";
-    if (!q.empty()) sql += " AND name_lower LIKE ? ORDER BY (name_lower LIKE ?) DESC, name";
-    sql += " LIMIT ?";
+    // A total order (uid breaks ties between printings of one card), so that paging with `offset` never repeats or skips a card.
+    if (!q.empty()) sql += " AND name_lower LIKE ? ORDER BY (name_lower LIKE ?) DESC, name, uid";
+    else sql += " ORDER BY name, uid";
+    sql += " LIMIT ? OFFSET ?";
 
     Stmt s(db_, sql);
     int i = 1;
@@ -174,7 +176,8 @@ std::vector<Card> Reader::search(const std::string& game, const std::string& que
         s.bind(i++, "%" + q + "%");
         s.bind(i++, q + "%");
     }
-    s.bind(i, static_cast<std::int64_t>(limit));
+    s.bind(i++, static_cast<std::int64_t>(limit));
+    s.bind(i, static_cast<std::int64_t>(offset < 0 ? 0 : offset));
     std::vector<Card> out;
     while (s.step()) out.push_back(read_card(s));
     return out;

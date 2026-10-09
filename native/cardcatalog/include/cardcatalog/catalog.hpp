@@ -69,7 +69,7 @@ public:
     std::vector<std::pair<std::string, std::string>> unique_names(const std::string& game);
     // Prefix matches first, then substring, across `game` (or all games if it isn't one).
     // `query` is matched case-insensitively against the stored lowercase name.
-    std::vector<Card> search(const std::string& game, const std::string& query, int limit = 30);
+    std::vector<Card> search(const std::string& game, const std::string& query, int limit = 30, int offset = 0);
     std::int64_t count();
 
     sqlite3* native_handle() { return db_; }  // for diagnostics and tests

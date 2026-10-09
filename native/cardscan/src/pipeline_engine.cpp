@@ -403,12 +403,12 @@ PipelineEngine::Identified PipelineEngine::identify(const Image& frame, const st
 // ---------------------------------------------------------------------------
 // Engine interface
 // ---------------------------------------------------------------------------
-json PipelineEngine::search(const std::string& game, const std::string& query) {
+json PipelineEngine::search(const std::string& game, const std::string& query, int limit, int offset) {
     if (!is_ready()) return json::array();
     try {
         cardcatalog::Reader reader(catalog_path_);
         json out = json::array();
-        for (const auto& c : reader.search(game, query)) out.push_back(to_api_card(c));
+        for (const auto& c : reader.search(game, query, limit, offset)) out.push_back(to_api_card(c));
         return out;
     } catch (const std::exception& e) {
         log_(std::string("search failed (") + e.what() + ")");

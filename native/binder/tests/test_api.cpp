@@ -22,9 +22,13 @@ public:
     double last_min_blur = -1;
     int detect_calls = 0;
 
-    json search(const std::string& game, const std::string& query) override {
+    int last_search_limit = -1, last_search_offset = -1;
+
+    json search(const std::string& game, const std::string& query, int limit, int offset) override {
         last_search_game = game;
         last_search_query = query;
+        last_search_limit = limit;
+        last_search_offset = offset;
         return json::array({{{"name", "Lightning Bolt"}, {"game", game}}});
     }
     cardscan::Result detect(const std::string& image) override {
@@ -263,6 +267,19 @@ int main() {
     CHECK_EQ(found[0]["name"], json("Lightning Bolt"));
     CHECK_EQ(engine.last_search_game, std::string("mtg"));
     CHECK_EQ(engine.last_search_query, std::string("bolt"));
+    CHECK_EQ(engine.last_search_limit, 30);  // paging: the defaults...
+    CHECK_EQ(engine.last_search_offset, 0);
+    cli.Get("/api/search?game=mtg&q=bolt&limit=40&offset=80");
+    CHECK_EQ(engine.last_search_limit, 40);
+    CHECK_EQ(engine.last_search_offset, 80);
+    cli.Get("/api/search?game=mtg&q=bolt&limit=5000&offset=-3");  // ...are clamped, and junk falls back to them
+    CHECK_EQ(engine.last_search_limit, 100);
+    CHECK_EQ(engine.last_search_offset, 0);
+    cli.Get("/api/search?game=mtg&q=bolt&limit=abc&offset=");
+    CHECK_EQ(engine.last_search_limit, 30);
+    CHECK_EQ(engine.last_search_offset, 0);
+    cli.Get("/api/search?game=mtg&q=bolt&limit=0");
+    CHECK_EQ(engine.last_search_limit, 1);
 
     // ---- detect / scan: multipart upload plumbing
     httplib::MultipartFormDataItems no_image = {{"game", "mtg", "", ""}};

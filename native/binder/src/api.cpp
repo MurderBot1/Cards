@@ -1,5 +1,8 @@
 #include "api.hpp"
 
+#include <algorithm>
+#include <cstdlib>
+
 #include "open_url.hpp"
 
 #include <nlohmann/json.hpp>
@@ -164,7 +167,13 @@ void register_routes(cardhttp::Server& server, ApiContext& ctx) {
         std::string q = get("q");
         auto b = q.find_first_not_of(" \t\r\n"), e = q.find_last_not_of(" \t\r\n");
         q = b == std::string::npos ? "" : q.substr(b, e - b + 1);
-        return Response::json(200, engine.search(get("game"), q).dump());
+        // `limit` (1-100, default 30) and `offset` page through the results; anything unreadable falls back to the default
+        auto number = [&](const char* k, int fallback, int lo, int hi) {
+            std::string v = get(k);
+            if (v.empty() || v.size() > 9 || v.find_first_not_of("0123456789") != std::string::npos) return fallback;
+            return std::min(hi, std::max(lo, std::atoi(v.c_str())));
+        };
+        return Response::json(200, engine.search(get("game"), q, number("limit", 30, 1, 100), number("offset", 0, 0, 1000000)).dump());
     });
 
     // Detection only: cheap enough for the scan modal's live-preview loop.
