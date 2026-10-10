@@ -268,6 +268,14 @@ to what the deck needs when the quantity is lowered, travels through sync with t
 `Copies Owned` column (read back by an import into a deck). The deck screen's "check my collections" button fills it
 from the person's collections (same game and name, any printing; only collections count) and never lowers a card.
 
+### Moving cards between lists
+
+`POST /api/collections/<id>/cards/<card id>/move` with `{ to: <list id>, quantity?: <copies> }` (all copies when
+`quantity` is left out) moves copies to any other list, whatever its kind. The copies are added to the other list first
+(stacking onto a matching row, under that list's limits, so a full deck refuses) and only then taken out of this one, so a
+refusal changes nothing. It answers `{ source, target }`. An emptied row leaves a tombstone so other devices drop it too, and
+a deck row's `owned` is kept to what it still needs. The card sheet's "Move to another list…" button uses it.
+
 ## Updates
 
 The app checks the project's GitHub releases on startup (and from "Check for updates" on the Account tab) and offers the

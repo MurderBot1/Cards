@@ -43,6 +43,10 @@ public:
     Result add_cards(const std::string& collection_id, const nlohmann::json& body);
     // body: { quantity?, condition?, uid?, owned? }. `owned` (decks only) is how many copies of the card the person has.
     Result update_card(const std::string& collection_id, const std::string& card_id, const nlohmann::json& body);
+    // Moves copies of a card to another list: body { to: list id, quantity?: copies (default all) }. The copies are added
+    // to the other list (stacking onto a matching row, under that list's limits) and taken out of this one, together or
+    // not at all. Answers { source: list, target: list }.
+    Result move_card(const std::string& collection_id, const std::string& card_id, const nlohmann::json& body);
     // Sets how many copies of each card of a deck the person has, in one write: body { owned: { card id: copies } }.
     // Copies are whole numbers from 0, kept at no more than the deck needs; ids that aren't in the deck are ignored.
     Result set_owned(const std::string& collection_id, const nlohmann::json& body);
