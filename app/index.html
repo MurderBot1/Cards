@@ -212,7 +212,15 @@
               <span>Currency</span>
               <span class="setting-hint">Prices are in US dollars; this shows them converted at the day's exchange rate (a guess from your device's region unless you pick one)</span>
             </div>
-            <select class="field-input" id="currency-setting" aria-label="Currency"></select>
+            <button class="currency-card" id="currency-setting" type="button" aria-haspopup="dialog" aria-label="Choose a currency">
+              <span class="currency-badge" id="currency-badge">$</span>
+              <span class="currency-card-text">
+                <span class="currency-card-title" id="currency-title">US dollar (USD)</span>
+                <span class="currency-card-sub" id="currency-sub"></span>
+              </span>
+              <svg class="currency-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+            </button>
+            <p class="setting-hint currency-rates" id="currency-rates"></p>
           </div>
         </div>
 
@@ -542,6 +550,23 @@
     <div class="sheet-actions">
       <button class="btn btn-secondary" id="share-close" type="button">Close</button>
       <button class="btn btn-primary hidden" id="share-make" type="button">Make link</button>
+    </div>
+  </div>
+</div>
+
+<!-- choose a currency (currency.js, currencyPicker.js) -->
+<div class="overlay hidden" id="modal-currency">
+  <div class="sheet sheet--currency">
+    <div class="sheet-handle"></div>
+    <h2 class="sheet-title">Choose a currency</h2>
+    <div class="search-bar">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+      <input type="search" id="currency-search" placeholder="Search by name or code&hellip;" autocomplete="off">
+    </div>
+    <div class="currency-list" id="currency-list" role="listbox" aria-label="Currencies"></div>
+    <p class="field-hint hidden" id="currency-empty">No currency matches that.</p>
+    <div class="sheet-actions">
+      <button class="btn btn-secondary" id="currency-close" type="button">Close</button>
     </div>
   </div>
 </div>

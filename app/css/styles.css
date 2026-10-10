@@ -1292,3 +1292,59 @@ html.is-web [data-app-only] { display: none !important; }
 /* a deck's game and format, under the toolbar */
 .deck-format-btn { display: block; margin: 0 0 8px; padding: 2px 0; text-align: left; }
 #new-deck-fields .segmented { margin-bottom: 12px; }
+
+/* currency picker (Settings > Prices) */
+.currency-badge {
+  flex: none;
+  width: 40px; height: 40px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+.currency-card {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+.currency-card:hover, .currency-card:focus-visible { border-color: var(--foil-1); }
+.currency-card-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.currency-card-title { font-size: 0.95rem; font-weight: 500; }
+.currency-card-sub { font-size: 0.75rem; color: var(--text-dim); }
+.currency-chevron { width: 18px; height: 18px; flex: none; color: var(--text-faint); }
+.currency-rates { margin: 8px 2px 0; }
+.sheet--currency { display: flex; flex-direction: column; }
+.currency-list {
+  max-height: 46vh;
+  overflow-y: auto;
+  display: flex; flex-direction: column; gap: 6px;
+  margin: 0 -4px 12px;
+  padding: 0 4px;
+}
+.currency-row {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--surface-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+.currency-row:hover { border-color: var(--border); }
+.currency-row.is-selected { border-color: var(--foil-1); background: var(--surface); }
+.currency-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.currency-row-title { font-size: 0.9rem; font-weight: 500; overflow-wrap: anywhere; }
+.currency-row-detail { font-size: 0.72rem; color: var(--text-dim); }
+.currency-row-sample { font-size: 0.72rem; color: var(--text-dim); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.currency-tick { width: 16px; flex: none; text-align: center; color: var(--foil-1); font-weight: 700; }
