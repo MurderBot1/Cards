@@ -245,14 +245,19 @@ collection from the file). Both are CSV.
 
 ## Kinds of list and their limits
 
-The Collection tab holds collections, decks, tradelists and wishlists. They are stored alike (a name and cards); a list's
+The Collection tab holds collections, decks, a tradelist and a wishlist. They are stored alike (a name and cards); a list's
 `kind` (`deck`, `tradelist`, `wishlist`; a collection has none) says which it is. Limits, by kind:
 
 | Kind | Lists | Different cards per list | Copies of one card |
 |---|---|---|---|
 | Collection | 25 | 10,000 | 1,000 |
 | Deck | 100 | 150 | 100 |
-| Tradelist, wishlist | any number | 10,000 | no limit |
+| Tradelist | 1 | 10,000 | no limit |
+| Wishlist | 1 | 10,000 | no limit |
+
+There is one tradelist and one wishlist, not several of each: the "New" tile is hidden once it exists, and creating a second
+is refused ("You can only have one wishlist"). Deleting it frees the place. Tradelists and wishlists made while several
+were allowed (v1.0.14 to v1.0.21) are left alone, none is merged or removed, but no more can be made.
 
 A "different card" is a row (the same card in another condition, set, finish or language is its own row). The numbers
 live in three places that must agree: `native/cardstore/src/store.cpp` (`limits_for`), `app/js/listKinds.js` (`LIMITS`,

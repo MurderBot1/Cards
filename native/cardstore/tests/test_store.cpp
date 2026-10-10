@@ -310,7 +310,7 @@ int main() {
     }
 
     // ---- limits: 25 collections (10,000 cards, 1,000 each), 100 decks (150 cards, 100 each),
-    //      tradelists and wishlists (10,000 cards, no limit on copies, any number of lists)
+    //      the tradelist and the wishlist (10,000 cards, no limit on copies, one list of each)
     {
         cardtest::TempDir t4;
         int n = 0;
@@ -333,14 +333,20 @@ int main() {
             if (i == 0) a_deck = r.body["id"].get<std::string>();
         }
         CHECK_EQ(make("deck").body["error"], json("You can have at most 100 decks"));
-        std::string a_wishlist, a_tradelist;
-        for (int i = 0; i < 30; ++i) {  // no limit on how many
-            auto w = make("wishlist");
-            auto t = make("tradelist");
-            CHECK_EQ(w.status, 201);
-            CHECK_EQ(t.status, 201);
-            if (i == 0) { a_wishlist = w.body["id"].get<std::string>(); a_tradelist = t.body["id"].get<std::string>(); }
-        }
+        // one wishlist and one tradelist, not several
+        auto w = make("wishlist");
+        auto t = make("tradelist");
+        CHECK_EQ(w.status, 201);
+        CHECK_EQ(t.status, 201);
+        std::string a_wishlist = w.body["id"].get<std::string>();
+        std::string a_tradelist = t.body["id"].get<std::string>();
+        CHECK_EQ(make("wishlist").body["error"], json("You can only have one wishlist"));
+        CHECK_EQ(make("tradelist").body["error"], json("You can only have one tradelist"));
+        CHECK_EQ(st.list_collections().body.size(), static_cast<size_t>(25 + 100 + 2));
+        CHECK_EQ(st.delete_collection(a_wishlist).status, 200);
+        auto new_wishlist = make("wishlist");  // deleting it frees the place
+        CHECK_EQ(new_wishlist.status, 201);
+        a_wishlist = new_wishlist.body["id"].get<std::string>();
         // deleting one frees a place
         CHECK_EQ(st.delete_collection(a_deck).status, 200);
         auto replacement = make("deck");

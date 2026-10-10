@@ -1,6 +1,6 @@
 /**
  * listKinds.js
- * The four kinds of list the Collection tab holds: collections, decks, tradelists and wishlists. They are stored the
+ * The four kinds of list the Collection tab holds: collections, decks, a tradelist and a wishlist (one of each of the last two). They are stored the
  * same way (a name and cards); `kind` says which one a list is, and a list saved before kinds existed is a collection.
  */
 
@@ -25,15 +25,15 @@ const WORDS = {
   tradelist: {
     tab: 'Tradelist', singular: 'tradelist', plural: 'tradelists',
     placeholder: 'e.g. Spare Commander Cards',
-    hint: 'A tradelist is the cards you are willing to trade away.',
-    emptyTitle: 'No tradelists yet', emptyText: 'List the cards you would trade away.',
+    hint: 'Your tradelist is the cards you are willing to trade away. There is one tradelist.',
+    emptyTitle: 'No tradelist yet', emptyText: 'List the cards you would trade away.',
     listEmpty: 'This tradelist is empty', listEmptyText: 'Tap the + button to add cards you would trade.',
   },
   wishlist: {
     tab: 'Wishlist', singular: 'wishlist', plural: 'wishlists',
     placeholder: 'e.g. Cards I Want',
-    hint: 'A wishlist is the cards you are looking for.',
-    emptyTitle: 'No wishlists yet', emptyText: 'Keep track of the cards you want next.',
+    hint: 'Your wishlist is the cards you are looking for. There is one wishlist.',
+    emptyTitle: 'No wishlist yet', emptyText: 'Keep track of the cards you want next.',
     listEmpty: 'This wishlist is empty', listEmptyText: 'Tap the + button to add cards you want.',
   },
 };
@@ -67,18 +67,31 @@ export function countLabel(kind, n) {
 export const LIMITS = {
   collection: { lists: 25, cards: 10000, perCard: 1000 },
   deck: { lists: 100, cards: 150, perCard: 100 },
-  tradelist: { lists: null, cards: 10000, perCard: null },
-  wishlist: { lists: null, cards: 10000, perCard: null },
+  tradelist: { lists: 1, cards: 10000, perCard: null },  // one tradelist and one wishlist (all the cards you would
+  wishlist: { lists: 1, cards: 10000, perCard: null },   // trade, all the cards you want), not several of each
 };
 
 export function limitsOf(kind) {
   return LIMITS[KINDS.includes(kind) ? kind : DEFAULT_KIND];
 }
 
+/** True when no more lists of this kind can be made. Lists made before a limit existed may exceed it; none is removed. */
+export function atListLimit(kind, count) {
+  const max = limitsOf(kind).lists;
+  return max !== null && count >= max;
+}
+
+/** "3 of 25 collections", "1 deck"; a kind with a single list just says how many there are. */
+export function listCountText(kind, count) {
+  const max = limitsOf(kind).lists;
+  return max === null || max === 1 || count > max ? countLabel(kind, count) : `${count} of ${max} ${kindWords(kind).plural}`;
+}
+
 const withCommas = (n) => n.toLocaleString('en-US');
 
 // The messages shown when a limit stops something (the same text the C++ store sends)
 export function tooManyListsMessage(kind) {
+  if (limitsOf(kind).lists === 1) return `You can only have one ${kindWords(kind).singular}`;
   return `You can have at most ${limitsOf(kind).lists} ${kindWords(kind).plural}`;
 }
 export function tooManyCardsMessage(kind) {

@@ -48,7 +48,7 @@ struct ListLimits {
 };
 ListLimits limits_for(const json& kind) {
     if (kind == "deck") return {100, 150, 100};
-    if (kind == "tradelist" || kind == "wishlist") return {-1, 10000, -1};
+    if (kind == "tradelist" || kind == "wishlist") return {1, 10000, -1};  // one of each, not several
     return {25, 10000, 1000};  // collections (and anything with no kind)
 }
 std::string kind_word(const json& kind) { return valid_kind(kind) ? kind.get<std::string>() : "collection"; }
@@ -188,7 +188,8 @@ Result Store::create_collection(const json& body) {
             if (k == made_kind) ++have;
         }
         if (have >= limits.max_lists)
-            return error(400, "You can have at most " + std::to_string(limits.max_lists) + " " + kind_word(made_kind) + "s");
+            return error(400, limits.max_lists == 1 ? "You can only have one " + kind_word(made_kind)
+                                                    : "You can have at most " + std::to_string(limits.max_lists) + " " + kind_word(made_kind) + "s");
     }
     json collection = {{"id", make_id_()}, {"name", name}, {"cards", json::array()}, {"updated", now_ms_()}};
     if (is_special_kind(kind)) collection["kind"] = kind;
