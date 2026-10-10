@@ -21,6 +21,7 @@ namespace {
 constexpr const char* kValidConditionsRepr =
     "('Near Mint', 'Lightly Played', 'Moderately Played', 'Heavily Played', 'Damaged')";
 constexpr const char* kValidGamesRepr = "('mtg', 'pokemon', 'yugioh')";
+constexpr const char* kValidKindsRepr = "('collection', 'deck', 'tradelist', 'wishlist')";
 
 bool valid_condition(const std::string& c) {
     return c == "Near Mint" || c == "Lightly Played" || c == "Moderately Played" || c == "Heavily Played" ||
@@ -29,6 +30,13 @@ bool valid_condition(const std::string& c) {
 bool valid_game(const json& g) {
     return g.is_string() && (g == "mtg" || g == "pokemon" || g == "yugioh");
 }
+
+// What a list is: a collection (the default, and how lists from before kinds existed read), a deck, a tradelist or a
+// wishlist. Only the other three are written down; a list with no `kind` is a collection.
+bool valid_kind(const json& k) {
+    return k.is_string() && (k == "collection" || k == "deck" || k == "tradelist" || k == "wishlist");
+}
+bool is_special_kind(const json& k) { return valid_kind(k) && k != "collection"; }
 
 json default_settings() {
     return {{"theme", "dark"}, {"fontSize", "medium"}, {"requestRate", "medium"}, {"minImageQuality", "medium"}};
@@ -125,10 +133,13 @@ Result Store::create_collection(const json& body) {
     auto b = name.find_first_not_of(" \t\r\n"), e = name.find_last_not_of(" \t\r\n");
     name = b == std::string::npos ? "" : name.substr(b, e - b + 1);
     if (name.empty()) return error(400, "name is required");
+    json kind = field(body, "kind");
+    if (!kind.is_null() && !valid_kind(kind)) return error(400, std::string("kind must be one of ") + kValidKindsRepr);
 
     std::lock_guard<std::mutex> lock(mu_);
     json db = load_locked();
     json collection = {{"id", make_id_()}, {"name", name}, {"cards", json::array()}, {"updated", now_ms_()}};
+    if (is_special_kind(kind)) collection["kind"] = kind;
     db["collections"].push_back(collection);
     save_locked(db);
     return {201, collection};
@@ -334,6 +345,7 @@ Result Store::sync_state() {
                     {"updated", stamp_of(c)},
                     {"cards", json::array()},
                     {"tomb", c.contains("tomb") && c["tomb"].is_object() ? c["tomb"] : json::object()}};
+        if (c.contains("kind") && is_special_kind(c["kind"])) doc["kind"] = c["kind"];
         long long newest = stamp_of(c);
         for (auto card : c["cards"]) {
             card["updated"] = stamp_of(card);
@@ -396,6 +408,7 @@ Result Store::sync_apply(const json& body) {
 
         json merged = {{"id", id}, {"name", doc["name"]}, {"cards", doc["cards"]}, {"updated", stamp_of(doc)}};
         if (doc.contains("tomb") && doc["tomb"].is_object()) merged["tomb"] = doc["tomb"];
+        if (doc.contains("kind") && is_special_kind(doc["kind"])) merged["kind"] = doc["kind"];
         if (local) {
             *local = merged;
         } else {

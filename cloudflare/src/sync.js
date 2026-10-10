@@ -3,7 +3,7 @@
 // which the app writes back locally. See native/cardstore (sync_state / sync_apply) for the device side.
 //
 // A collection travels as a "doc":
-//   { id, name, updated, cards: [{id, uid?, name, game, set, rarity, image, condition, quantity, foil?, language?, number?, updated}], tomb: {cardId: ms} }
+//   { id, name, kind?: 'deck' | 'tradelist' | 'wishlist', updated, cards: [{id, uid?, name, game, set, rarity, image, condition, quantity, foil?, language?, number?, updated}], tomb: {cardId: ms} }
 // or, once deleted, { id, deleted: ms }. Times are the device's clock in milliseconds. Merging is last-writer-wins
 // per card; removals are kept as tombstones so they win over older copies instead of being resurrected.
 import { fail, json, readJson, sessionUser } from './lib.js';
@@ -14,6 +14,8 @@ const MAX_CARDS = 20000;
 const MAX_DOC_BYTES = 1500000;
 const CONDITIONS = new Set(['Near Mint', 'Lightly Played', 'Moderately Played', 'Heavily Played', 'Damaged']);
 const GAMES = new Set(['mtg', 'pokemon', 'yugioh']);
+// What a list is. Only the three that aren't plain collections are written down.
+const KINDS = new Set(['deck', 'tradelist', 'wishlist']);
 
 const isTime = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0;
 const text = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
@@ -58,7 +60,12 @@ export function cleanDoc(raw) {
   if (raw.tomb && typeof raw.tomb === 'object') {
     for (const [id, at] of Object.entries(raw.tomb).slice(0, MAX_CARDS)) if (isTime(at)) tomb[id] = at;
   }
-  return { id: raw.id, name: text(raw.name, 200), updated: isTime(raw.updated) ? raw.updated : 1, cards, tomb };
+  const doc = { id: raw.id, name: text(raw.name, 200) };
+  if (KINDS.has(raw.kind)) doc.kind = raw.kind;
+  doc.updated = isTime(raw.updated) ? raw.updated : 1;
+  doc.cards = cards;
+  doc.tomb = tomb;
+  return doc;
 }
 
 // ---- merging ----------------------------------------------------------------------------------
@@ -90,7 +97,13 @@ export function mergeDocs(a, b) {
   cards.sort((x, y) => (x.id < y.id ? -1 : 1));
   const newest = a.updated === b.updated ? (a.name <= b.name ? a : b) : a.updated > b.updated ? a : b;
   const updated = Math.max(a.updated, b.updated, ...cards.map((c) => c.updated), ...Object.values(tomb));
-  return { id: a.id, name: newest.name, updated, cards, tomb };
+  const merged = { id: a.id, name: newest.name };
+  const kind = a.kind || b.kind;  // a list never changes kind, so whichever copy knows it
+  if (kind) merged.kind = kind;
+  merged.updated = updated;
+  merged.cards = cards;
+  merged.tomb = tomb;
+  return merged;
 }
 
 const same = (x, y) => JSON.stringify(x) === JSON.stringify(y);

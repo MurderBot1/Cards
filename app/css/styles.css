@@ -1184,3 +1184,7 @@ html.is-web [data-app-only] { display: none !important; }
 .filter-price { display: flex; align-items: center; gap: 6px; color: var(--text-dim); }
 .filter-price .field-input { min-width: 0; }
 .filter-clear { margin-top: 14px; }
+
+/* ---- kinds of list: collections, decks, tradelist, wishlist (js/listKinds.js) ---- */
+.list-kinds { margin-bottom: 12px; }
+.list-kinds button { font-size: 0.82rem; }

@@ -124,3 +124,27 @@ test('unknown routes, bad storage and a fresh browser', () => {
   assert.deepEqual(store.handle('GET', '/collections').body, []);
   assert.equal(store.handle('GET', '/settings').body.theme, 'dark');
 });
+
+test('kinds of list: collection by default, deck, tradelist or wishlist, kept through sync', () => {
+  const { store } = make();
+  const create = (body) => store.handle('POST', '/collections', body);
+  assert.equal(create({ name: 'Plain' }).body.kind, undefined, 'a collection is not written down');
+  assert.equal(create({ name: 'Plain 2', kind: 'collection' }).body.kind, undefined);
+  assert.equal(create({ name: 'Plain 3', kind: null }).status, 201);
+  assert.equal(create({ name: 'Deck', kind: 'deck' }).body.kind, 'deck');
+  assert.equal(create({ name: 'Trades', kind: 'tradelist' }).body.kind, 'tradelist');
+  assert.equal(create({ name: 'Wants', kind: 'wishlist' }).body.kind, 'wishlist');
+  const bad = create({ name: 'Nope', kind: 'binder' });
+  assert.equal(bad.status, 400);
+  assert.equal(bad.body.error, "kind must be one of ('collection', 'deck', 'tradelist', 'wishlist')");
+  assert.equal(store.handle('GET', '/collections').body.length, 6, 'the refused one was not made');
+
+  const state = store.syncState().body.collections;
+  assert.deepEqual(state.map((c) => c.kind), [undefined, undefined, undefined, 'deck', 'tradelist', 'wishlist']);
+  const deck = state.find((c) => c.kind === 'deck');
+  const remote = { id: 'far', name: 'From elsewhere', kind: 'wishlist', updated: 900000, cards: [] };
+  const applied = store.handle('POST', '/sync/apply', { collections: [{ ...deck, name: 'Deck v2', updated: 800000 }, remote], expect: { [deck.id]: deck.updated } }).body;
+  assert.deepEqual(applied.applied, [deck.id, 'far']);
+  assert.equal(store.handle('GET', `/collections/${deck.id}`).body.kind, 'deck');
+  assert.equal(store.handle('GET', '/collections/far').body.kind, 'wishlist');
+});

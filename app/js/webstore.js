@@ -14,6 +14,10 @@ const DEFAULT_CONDITION = 'Near Mint';
 // the messages the frontend shows (same text as the native backend)
 const CONDITIONS_REPR = "('Near Mint', 'Lightly Played', 'Moderately Played', 'Heavily Played', 'Damaged')";
 const GAMES_REPR = "('mtg', 'pokemon', 'yugioh')";
+// kinds of list; only the last three are written down (no `kind` means a collection)
+const KINDS = ['collection', 'deck', 'tradelist', 'wishlist'];
+const KINDS_REPR = "('collection', 'deck', 'tradelist', 'wishlist')";
+const isSpecialKind = (k) => KINDS.includes(k) && k !== 'collection';
 
 const defaultSettings = () => ({ theme: 'dark', fontSize: 'medium', requestRate: 'medium', minImageQuality: 'medium' });
 const emptyDb = () => ({ collections: [], settings: defaultSettings() });
@@ -88,8 +92,11 @@ export class WebStore {
   createCollection(body) {
     const name = body && typeof body.name === 'string' ? body.name.trim() : '';
     if (!name) return error(400, 'name is required');
+    const kind = body ? body.kind : undefined;
+    if (kind !== undefined && kind !== null && !KINDS.includes(kind)) return error(400, `kind must be one of ${KINDS_REPR}`);
     const db = this.load();
     const collection = { id: this.makeId(), name, cards: [], updated: this.nowMs() };
+    if (isSpecialKind(kind)) collection.kind = kind;
     db.collections.push(collection);
     this.save(db);
     return { status: 201, body: collection };
@@ -252,7 +259,9 @@ export class WebStore {
         newest = Math.max(newest, copy.updated);
         return copy;
       });
-      return { id: c.id || '', name: c.name || '', updated: newest, cards, tomb: isObject(c.tomb) ? c.tomb : {} };
+      const doc = { id: c.id || '', name: c.name || '', updated: newest, cards, tomb: isObject(c.tomb) ? c.tomb : {} };
+      if (isSpecialKind(c.kind)) doc.kind = c.kind;
+      return doc;
     });
     const deleted = isObject(db.deleted)
       ? Object.entries(db.deleted).filter(([, at]) => isNumber(at)).map(([id, at]) => ({ id, at }))
@@ -298,6 +307,7 @@ export class WebStore {
 
       const merged = { id, name: doc.name, cards: doc.cards, updated: stampOf(doc) };
       if (isObject(doc.tomb)) merged.tomb = doc.tomb;
+      if (isSpecialKind(doc.kind)) merged.kind = doc.kind;
       if (local) db.collections[db.collections.indexOf(local)] = merged;
       else db.collections.push(merged);
       delete db.deleted[id];

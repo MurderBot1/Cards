@@ -33,6 +33,44 @@ int main() {
     CHECK_EQ(store.get_collection("id1").status, 200);
     CHECK_EQ(store.get_collection("nope").status, 404);
 
+    // ---- kinds of list: collection (default, not written down), deck, tradelist, wishlist
+    CHECK(!created.body.contains("kind"));
+    auto bad_kind = store.create_collection({{"name", "X"}, {"kind", "binder"}});
+    CHECK_EQ(bad_kind.status, 400);
+    CHECK_EQ(bad_kind.body["error"], json("kind must be one of ('collection', 'deck', 'tradelist', 'wishlist')"));
+    CHECK_EQ(store.create_collection({{"name", "X"}, {"kind", 5}}).status, 400);
+    CHECK_EQ(store.list_collections().body.size(), static_cast<size_t>(1));  // the refused ones were not made
+    auto plain = store.create_collection({{"name", "Plain"}, {"kind", "collection"}});
+    CHECK(!plain.body.contains("kind"));
+    std::vector<std::string> kind_ids = {plain.body["id"].get<std::string>()};
+    for (const char* k : {"deck", "tradelist", "wishlist"}) {
+        auto made = store.create_collection({{"name", std::string("My ") + k}, {"kind", k}});
+        CHECK_EQ(made.status, 201);
+        CHECK_EQ(made.body["kind"], json(k));
+        CHECK_EQ(store.get_collection(made.body["id"].get<std::string>()).body["kind"], json(k));
+        kind_ids.push_back(made.body["id"].get<std::string>());
+    }
+    {
+        // kinds travel through sync (a collection stays one, the others keep their kind)
+        auto state = store.sync_state().body;
+        int kinds_seen = 0;
+        for (auto& c : state["collections"]) {
+            if (c["id"] == "id1" || c["id"] == plain.body["id"]) CHECK(!c.contains("kind"));
+            else kinds_seen += c.contains("kind") ? 1 : 0;
+        }
+        CHECK_EQ(kinds_seen, 3);
+        json doc = {{"id", kind_ids[1]}, {"name", "My deck"}, {"kind", "deck"}, {"updated", 9999999999999LL}, {"cards", json::array()}};
+        auto applied = store.sync_apply({{"collections", json::array({doc})}, {"expect", {{kind_ids[1], store.get_collection(kind_ids[1]).body["updated"]}}}});
+        CHECK_EQ(applied.body["applied"].size(), static_cast<size_t>(1));
+        CHECK_EQ(store.get_collection(kind_ids[1]).body["kind"], json("deck"));
+        json remote = {{"id", "from-phone"}, {"name", "Wants"}, {"kind", "wishlist"}, {"updated", 9999999999999LL}, {"cards", json::array()}};
+        store.sync_apply({{"collections", json::array({remote})}, {"expect", json::object()}});
+        CHECK_EQ(store.get_collection("from-phone").body["kind"], json("wishlist"));
+        kind_ids.push_back("from-phone");
+    }
+    for (auto& id : kind_ids) store.delete_collection(id);
+    CHECK_EQ(store.list_collections().body.size(), static_cast<size_t>(1));
+
     // ---- adding cards: validation
     const std::string cid = "id1";
     CHECK_EQ(store.add_card(cid, {{"game", "mtg"}}).status, 400);                      // no name
