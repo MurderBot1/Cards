@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { countLabel, kindOf, kindWords, KINDS, listsOfKind } from '../js/listKinds.js';
+import {
+  countLabel, kindOf, kindWords, KINDS, limitsOf, listsOfKind, tooManyCardsMessage, tooManyCopiesMessage, tooManyListsMessage,
+} from '../js/listKinds.js';
 
 test('a list with no kind, or one we do not know, is a collection', () => {
   assert.equal(kindOf({ id: '1', name: 'Old' }), 'collection');
@@ -34,4 +36,19 @@ test('counting lists', () => {
   assert.equal(countLabel('deck', 0), '0 decks');
   assert.equal(countLabel('collection', 2), '2 collections');
   assert.equal(countLabel('wishlist', 1), '1 wishlist');
+});
+
+test('limits for each kind, and the messages shown when one is hit', () => {
+  assert.deepEqual(limitsOf('collection'), { lists: 25, cards: 10000, perCard: 1000 });
+  assert.deepEqual(limitsOf('deck'), { lists: 100, cards: 150, perCard: 100 });
+  assert.deepEqual(limitsOf('tradelist'), { lists: null, cards: 10000, perCard: null });
+  assert.deepEqual(limitsOf('wishlist'), { lists: null, cards: 10000, perCard: null });
+  assert.deepEqual(limitsOf('nonsense'), limitsOf('collection'));
+  assert.equal(tooManyListsMessage('collection'), 'You can have at most 25 collections');
+  assert.equal(tooManyListsMessage('deck'), 'You can have at most 100 decks');
+  assert.equal(tooManyCardsMessage('deck'), 'A deck can hold at most 150 different cards');
+  assert.equal(tooManyCardsMessage('collection'), 'A collection can hold at most 10,000 different cards');
+  assert.equal(tooManyCardsMessage('wishlist'), 'A wishlist can hold at most 10,000 different cards');
+  assert.equal(tooManyCopiesMessage('collection'), 'A collection can hold at most 1,000 copies of one card');
+  assert.equal(tooManyCopiesMessage('deck'), 'A deck can hold at most 100 copies of one card');
 });

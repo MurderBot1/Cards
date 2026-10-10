@@ -148,3 +148,46 @@ test('kinds of list: collection by default, deck, tradelist or wishlist, kept th
   assert.equal(store.handle('GET', `/collections/${deck.id}`).body.kind, 'deck');
   assert.equal(store.handle('GET', '/collections/far').body.kind, 'wishlist');
 });
+
+test('limits: lists per kind, different cards, copies of one card (same rules and messages as the native store)', () => {
+  const { store } = make();
+  const create = (kind) => store.handle('POST', '/collections', { name: 'L', kind });
+  const ids = {};
+  for (let i = 0; i < 25; i++) { const r = create('collection'); assert.equal(r.status, 201); ids.collection ??= r.body.id; }
+  assert.deepEqual([create('collection').status, create('collection').body.error], [400, 'You can have at most 25 collections']);
+  for (let i = 0; i < 100; i++) { const r = create('deck'); assert.equal(r.status, 201); ids.deck ??= r.body.id; }
+  assert.equal(create('deck').body.error, 'You can have at most 100 decks', 'decks are counted apart from collections');
+  for (let i = 0; i < 30; i++) { const w = create('wishlist'); const t = create('tradelist'); assert.deepEqual([w.status, t.status], [201, 201]); ids.wishlist ??= w.body.id; ids.tradelist ??= t.body.id; }
+  assert.equal(store.handle('GET', '/collections').body.length, 25 + 100 + 60);
+  store.handle('DELETE', `/collections/${ids.deck}`);
+  assert.equal(create('deck').status, 201, 'deleting one frees a place');
+
+  const add = (id, name, quantity) => store.handle('POST', `/collections/${id}/cards`, { name, game: 'mtg', set: 'M10', ...(quantity ? { quantity } : {}) });
+  assert.equal(add(ids.collection, 'Bolt', 1000).status, 201);
+  assert.equal(add(ids.collection, 'Bolt').body.error, 'A collection can hold at most 1,000 copies of one card');
+  assert.equal(add(ids.collection, 'Sol Ring', 1001).status, 400);
+  const row = store.handle('GET', `/collections/${ids.collection}`).body.cards[0];
+  assert.equal(store.handle('PATCH', `/collections/${ids.collection}/cards/${row.id}`, { quantity: 1001 }).status, 400);
+  assert.equal(store.handle('PATCH', `/collections/${ids.collection}/cards/${row.id}`, { quantity: 999 }).status, 200);
+  assert.equal(store.handle('GET', `/collections/${ids.collection}`).body.cards.length, 1, 'refused ones leave no trace');
+
+  const deck = create('deck');
+  assert.equal(deck.status, 400, 'still 100 decks');
+  store.handle('DELETE', `/collections/${store.handle('GET', '/collections').body.find((c) => c.kind === 'deck').id}`);
+  const deckId = create('deck').body.id;
+  for (let i = 0; i < 150; i++) assert.equal(add(deckId, `Card ${i}`).status, 201);
+  assert.equal(add(deckId, 'One More').body.error, 'A deck can hold at most 150 different cards');
+  assert.equal(add(deckId, 'Card 7', 99).status, 201, 'copies of a card already there are fine up to 100');
+  assert.equal(add(deckId, 'Card 7').body.error, 'A deck can hold at most 100 copies of one card');
+
+  const bulk = store.handle('POST', `/collections/${deckId}/cards/bulk`, { cards: [{ name: 'Card 1', game: 'mtg', set: 'M10' }, { name: 'Brand New', game: 'mtg', set: 'M10' }] });
+  assert.equal(bulk.status, 400);
+  assert.match(bulk.body.error, /^card 2: A deck can hold at most 150/);
+  assert.equal(store.handle('GET', `/collections/${deckId}`).body.cards[1].quantity, 1, 'all or nothing');
+
+  assert.equal(add(ids.wishlist, 'Bulk', 50000).status, 201);
+  assert.equal(add(ids.wishlist, 'Bulk', 50000).status, 201, 'a wishlist has no limit on copies');
+  const many = Array.from({ length: 10000 }, (_, i) => ({ name: `W${i}`, game: 'mtg', set: 'M10' }));
+  assert.equal(store.handle('POST', `/collections/${ids.tradelist}/cards/bulk`, { cards: many }).status, 201);
+  assert.equal(add(ids.tradelist, 'The 10001st').body.error, 'A tradelist can hold at most 10,000 different cards');
+});

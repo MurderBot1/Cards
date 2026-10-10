@@ -38,6 +38,29 @@ bool valid_kind(const json& k) {
 }
 bool is_special_kind(const json& k) { return valid_kind(k) && k != "collection"; }
 
+// How much a list may hold, by kind. -1 means no limit. "Different cards" are rows (a card in another condition,
+// set, finish or language is its own row). The page and the Worker keep the same numbers (app/js/listKinds.js,
+// cloudflare/src/sync.js).
+struct ListLimits {
+    int max_lists;      // how many lists of this kind a person may have
+    int max_cards;      // different cards in one list
+    int max_per_card;   // copies of one card
+};
+ListLimits limits_for(const json& kind) {
+    if (kind == "deck") return {100, 150, 100};
+    if (kind == "tradelist" || kind == "wishlist") return {-1, 10000, -1};
+    return {25, 10000, 1000};  // collections (and anything with no kind)
+}
+std::string kind_word(const json& kind) { return valid_kind(kind) ? kind.get<std::string>() : "collection"; }
+std::string with_commas(long long n) {
+    std::string digits = std::to_string(n), out;
+    for (size_t i = 0; i < digits.size(); ++i) {
+        if (i > 0 && (digits.size() - i) % 3 == 0) out += ',';
+        out += digits[i];
+    }
+    return out;
+}
+
 json default_settings() {
     return {{"theme", "dark"}, {"fontSize", "medium"}, {"requestRate", "medium"}, {"minImageQuality", "medium"}};
 }
@@ -138,6 +161,18 @@ Result Store::create_collection(const json& body) {
 
     std::lock_guard<std::mutex> lock(mu_);
     json db = load_locked();
+    const json made_kind = valid_kind(kind) ? kind : json("collection");
+    const ListLimits limits = limits_for(made_kind);
+    if (limits.max_lists >= 0) {
+        int have = 0;
+        for (auto& c : db["collections"]) {
+            json k = c.contains("kind") ? c["kind"] : json("collection");
+            if (!valid_kind(k)) k = "collection";
+            if (k == made_kind) ++have;
+        }
+        if (have >= limits.max_lists)
+            return error(400, "You can have at most " + std::to_string(limits.max_lists) + " " + kind_word(made_kind) + "s");
+    }
     json collection = {{"id", make_id_()}, {"name", name}, {"cards", json::array()}, {"updated", now_ms_()}};
     if (is_special_kind(kind)) collection["kind"] = kind;
     db["collections"].push_back(collection);
@@ -184,7 +219,7 @@ bool is_foil(const json& v) {
 // Adds one card (or `quantity` copies) to `collection`, stacking onto a matching row. Returns an error to send back,
 // or nothing when it was added. Doesn't load or save: add_card and add_cards do that around it.
 static std::optional<Result> add_one(json& collection, const json& body, long long now,
-                                     const std::function<std::string()>& make_id) {
+                                     const std::function<std::string()>& make_id, bool check_limits = true) {
     json name = field(body, "name");
     json game = field(body, "game");
     if (!truthy(name)) return error(400, "card name is required");
@@ -221,6 +256,23 @@ static std::optional<Result> add_one(json& collection, const json& body, long lo
             break;
         }
     }
+    const json list_kind = collection.contains("kind") ? collection["kind"] : json("collection");
+    const ListLimits limits = limits_for(list_kind);
+    if (check_limits) {
+        if (existing) {
+            const double total = (*existing)["quantity"].is_number() ? (*existing)["quantity"].get<double>() + copies : copies;
+            if (limits.max_per_card >= 0 && total > limits.max_per_card)
+                return error(400, "A " + kind_word(list_kind) + " can hold at most " + with_commas(limits.max_per_card) +
+                                      " copies of one card");
+        } else {
+            if (limits.max_per_card >= 0 && copies > limits.max_per_card)
+                return error(400, "A " + kind_word(list_kind) + " can hold at most " + with_commas(limits.max_per_card) +
+                                      " copies of one card");
+            if (static_cast<long long>(collection["cards"].size()) >= limits.max_cards)
+                return error(400, "A " + kind_word(list_kind) + " can hold at most " + with_commas(limits.max_cards) +
+                                      " different cards");
+        }
+    }
     if (existing) {
         json& q = (*existing)["quantity"];
         q = q.is_number_integer() ? json(q.get<long long>() + copies) : json(q.get<double>() + static_cast<double>(copies));
@@ -252,7 +304,7 @@ static std::optional<Result> add_one(json& collection, const json& body, long lo
 Result Store::add_card(const std::string& collection_id, const json& body) {
     // (validated before the collection is looked up, as ever: a bad request is a 400 even for a missing collection)
     json probe = json::object({{"cards", json::array()}});
-    if (auto bad = add_one(probe, body, 0, [] { return std::string("probe"); })) return *bad;
+    if (auto bad = add_one(probe, body, 0, [] { return std::string("probe"); }, false)) return *bad;
 
     std::lock_guard<std::mutex> lock(mu_);
     json db = load_locked();
@@ -304,6 +356,14 @@ Result Store::update_card(const std::string& collection_id, const std::string& c
     json db = load_locked();
     json* collection = find_collection(db, collection_id);
     if (!collection) return error(404, "not found");
+
+    if (!quantity.is_null() && quantity.get<double>() > 0) {
+        const json list_kind = collection->contains("kind") ? (*collection)["kind"] : json("collection");
+        const ListLimits limits = limits_for(list_kind);
+        if (limits.max_per_card >= 0 && quantity.get<double>() > limits.max_per_card)
+            return error(400, "A " + kind_word(list_kind) + " can hold at most " + with_commas(limits.max_per_card) +
+                                  " copies of one card");
+    }
 
     const long long now = now_ms_();
     if (!quantity.is_null() && quantity.get<double>() <= 0) {

@@ -7,6 +7,8 @@
  *
  *   handle('GET', '/collections') -> { status: 200, body: [...] }
  */
+import { limitsOf, tooManyCardsMessage, tooManyCopiesMessage, tooManyListsMessage } from './listKinds.js';
+
 const DB_KEY = 'binder_web_db_v1';
 const CONDITIONS = ['Near Mint', 'Lightly Played', 'Moderately Played', 'Heavily Played', 'Damaged'];
 const GAMES = ['mtg', 'pokemon', 'yugioh'];
@@ -95,6 +97,11 @@ export class WebStore {
     const kind = body ? body.kind : undefined;
     if (kind !== undefined && kind !== null && !KINDS.includes(kind)) return error(400, `kind must be one of ${KINDS_REPR}`);
     const db = this.load();
+    const madeKind = KINDS.includes(kind) ? kind : 'collection';
+    const maxLists = limitsOf(madeKind).lists;
+    if (maxLists !== null && db.collections.filter((c) => (KINDS.includes(c.kind) ? c.kind : 'collection') === madeKind).length >= maxLists) {
+      return error(400, tooManyListsMessage(madeKind));
+    }
     const collection = { id: this.makeId(), name, cards: [], updated: this.nowMs() };
     if (isSpecialKind(kind)) collection.kind = kind;
     db.collections.push(collection);
@@ -154,6 +161,14 @@ export class WebStore {
         (typeof c.language === 'string' ? c.language : '') === language &&
         (typeof c.number === 'string' ? c.number : '') === number
     );
+    if (!probe) {
+      const listKind = KINDS.includes(collection.kind) ? collection.kind : 'collection';
+      const limits = limitsOf(listKind);
+      if (limits.perCard !== null && (existing ? existing.quantity + copies : copies) > limits.perCard) {
+        return error(400, tooManyCopiesMessage(listKind));
+      }
+      if (!existing && collection.cards.length >= limits.cards) return error(400, tooManyCardsMessage(listKind));
+    }
     if (existing) {
       existing.quantity += copies;
       existing.updated = now;
@@ -188,7 +203,8 @@ export class WebStore {
     const db = this.load();
     const collection = db.collections.find((c) => c.id === collectionId);
     if (!collection) return error(404, 'not found');
-    this.addOne(collection, body, this.nowMs());
+    const refused = this.addOne(collection, body, this.nowMs());
+    if (refused) return refused;  // (a limit)
     this.save(db);
     return { status: 201, body: collection };
   }
@@ -225,6 +241,12 @@ export class WebStore {
     const db = this.load();
     const collection = db.collections.find((c) => c.id === collectionId);
     if (!collection) return error(404, 'not found');
+
+    if (has(quantity) && quantity > 0) {
+      const listKind = KINDS.includes(collection.kind) ? collection.kind : 'collection';
+      const perCard = limitsOf(listKind).perCard;
+      if (perCard !== null && quantity > perCard) return error(400, tooManyCopiesMessage(listKind));
+    }
 
     const now = this.nowMs();
     if (has(quantity) && quantity <= 0) {

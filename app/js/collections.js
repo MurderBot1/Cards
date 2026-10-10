@@ -12,7 +12,7 @@ import { IS_WEB } from './env.js';
 import { initImportExport } from './importExport.js';
 import { getSettings } from './settings.js';
 import { backfillUids, collectionValue, formatUsd, loadPrices, pricesEnabled, unitPrice } from './prices.js';
-import { DEFAULT_KIND, KINDS, countLabel, kindOf, kindWords, listsOfKind } from './listKinds.js';
+import { DEFAULT_KIND, KINDS, countLabel, kindOf, kindWords, limitsOf, listsOfKind } from './listKinds.js';
 import { SORTS, activeFilterCount, emptyFilter, facetValues, filterCards, isCustomView } from './cardFilter.js';
 
 const GAME_LABELS = { mtg: 'Magic: The Gathering', pokemon: 'Pokémon', yugioh: 'Yu-Gi-Oh!' };
@@ -165,7 +165,8 @@ function renderCollectionGrid() {
   els.emptyList.classList.toggle('hidden', shown.length > 0);
   els.emptyListTitle.textContent = words.emptyTitle;
   els.emptyListText.textContent = words.emptyText;
-  els.countLabel.textContent = countLabel(activeKind, shown.length);
+  const maxLists = limitsOf(activeKind).lists;
+  els.countLabel.textContent = maxLists === null ? countLabel(activeKind, shown.length) : `${shown.length} of ${maxLists} ${words.plural}`;
 
   shown.forEach((c) => {
     const gamesPresent = GAMES.filter((g) => c.cards.some((card) => card.game === g));
@@ -314,11 +315,17 @@ els.newCreateBtn.addEventListener('click', async () => {
   const name = els.newName.value.trim();
   if (!name) return;
   els.newCreateBtn.disabled = true;
-  const collection = await api.createCollection(name, activeKind);
-  collections.push(collection);
-  renderCollectionGrid();
-  closeNewCollectionModal();
-  showToast(`Created "${name}"`);
+  try {
+    const collection = await api.createCollection(name, activeKind);
+    collections.push(collection);
+    renderCollectionGrid();
+    closeNewCollectionModal();
+    showToast(`Created "${name}"`);
+  } catch (err) {
+    // e.g. the limit on how many lists there may be
+    showToast(err.message || `Could not create the ${kindWords(activeKind).singular}`, 3500);
+    closeNewCollectionModal();
+  }
 });
 
 // -----------------------------------------------------------------
@@ -400,7 +407,10 @@ function renderCardList(filter) {
   const cards = filterCards(activeCollection.cards, q, cardFilter, unitPrice, DEFAULT_CONDITION);
   if (token !== cardListRenderToken) return; // a newer render already queued
   const total = activeCollection.cards.length;
-  els.detailCount.textContent = `${total} card${total === 1 ? '' : 's'}${narrowed ? ` · ${cards.length} match${cards.length === 1 ? '' : 'es'}` : ''}${valueSuffix(activeCollection.cards)}`;
+  const maxCards = limitsOf(kindOf(activeCollection)).cards;
+  // a deck says how full it is ("12 of 150 cards")
+  const totalText = maxCards <= 1000 ? `${total} of ${maxCards} cards` : `${total} card${total === 1 ? '' : 's'}`;
+  els.detailCount.textContent = `${totalText}${narrowed ? ` · ${cards.length} match${cards.length === 1 ? '' : 'es'}` : ''}${valueSuffix(activeCollection.cards)}`;
   els.cardList.innerHTML = '';
   els.detailEmpty.classList.toggle('hidden', total > 0);
   els.noMatches.classList.toggle('hidden', total === 0 || cards.length > 0);
@@ -439,7 +449,12 @@ function renderCardList(filter) {
 
 async function changeQty(card, delta) {
   const newQty = card.quantity + delta;
-  activeCollection = await api.updateCardQuantity(activeCollection.id, card.id, Math.max(0, newQty));
+  try {
+    activeCollection = await api.updateCardQuantity(activeCollection.id, card.id, Math.max(0, newQty));
+  } catch (err) {
+    showToast(err.message || 'Could not change the quantity', 3500);  // e.g. the limit on copies of one card
+    return;
+  }
   renderCardList(els.detailSearch.value);
   syncActiveCollectionIntoList();
 }
@@ -586,7 +601,12 @@ els.cardDetailModal.querySelectorAll('.card-qty [data-action]').forEach((btn) =>
     if (!detailCard || !activeCollection) return;
     const delta = btn.dataset.action === 'inc' ? 1 : -1;
     const newQty = Math.max(0, detailCard.quantity + delta);
-    activeCollection = await api.updateCardQuantity(activeCollection.id, detailCard.id, newQty);
+    try {
+      activeCollection = await api.updateCardQuantity(activeCollection.id, detailCard.id, newQty);
+    } catch (err) {
+      showToast(err.message || 'Could not change the quantity', 3500);
+      return;
+    }
     renderCardList(els.detailSearch.value);
     syncActiveCollectionIntoList();
     if (newQty <= 0) {
@@ -743,7 +763,12 @@ function appendSearchResults(results) {
       <div class="add-icon"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></div>
     `;
     row.addEventListener('click', async () => {
-      activeCollection = await api.addCardToCollection(activeCollection.id, card);
+      try {
+        activeCollection = await api.addCardToCollection(activeCollection.id, card);
+      } catch (err) {
+        showToast(err.message || `Could not add ${card.name}`, 3500);  // e.g. the list is full
+        return;
+      }
       renderCardList(els.detailSearch.value);
       syncActiveCollectionIntoList();
       showToast(`Added ${card.name}`);

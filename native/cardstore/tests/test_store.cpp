@@ -309,5 +309,94 @@ int main() {
         CHECK_EQ(old_state["cards"][0]["updated"], json(1));
     }
 
+    // ---- limits: 25 collections (10,000 cards, 1,000 each), 100 decks (150 cards, 100 each),
+    //      tradelists and wishlists (10,000 cards, no limit on copies, any number of lists)
+    {
+        cardtest::TempDir t4;
+        int n = 0;
+        cardstore::Store st(t4.path() / "db.json", [&] { return "L" + std::to_string(++n); });
+        auto make = [&](const char* kind) { return st.create_collection({{"name", "list"}, {"kind", kind}}); };
+        std::string first_collection;
+        for (int i = 0; i < 25; ++i) {
+            auto r = make("collection");
+            CHECK_EQ(r.status, 201);
+            if (i == 0) first_collection = r.body["id"].get<std::string>();
+        }
+        auto over_collections = make("collection");
+        CHECK_EQ(over_collections.status, 400);
+        CHECK_EQ(over_collections.body["error"], json("You can have at most 25 collections"));
+        CHECK_EQ(st.list_collections().body.size(), static_cast<size_t>(25));
+        std::string a_deck;
+        for (int i = 0; i < 100; ++i) {
+            auto r = make("deck");  // decks are counted apart from collections
+            CHECK_EQ(r.status, 201);
+            if (i == 0) a_deck = r.body["id"].get<std::string>();
+        }
+        CHECK_EQ(make("deck").body["error"], json("You can have at most 100 decks"));
+        std::string a_wishlist, a_tradelist;
+        for (int i = 0; i < 30; ++i) {  // no limit on how many
+            auto w = make("wishlist");
+            auto t = make("tradelist");
+            CHECK_EQ(w.status, 201);
+            CHECK_EQ(t.status, 201);
+            if (i == 0) { a_wishlist = w.body["id"].get<std::string>(); a_tradelist = t.body["id"].get<std::string>(); }
+        }
+        // deleting one frees a place
+        CHECK_EQ(st.delete_collection(a_deck).status, 200);
+        auto replacement = make("deck");
+        CHECK_EQ(replacement.status, 201);
+
+        auto card = [](const std::string& name) { return json{{"name", name}, {"game", "mtg"}, {"set", "M10"}}; };
+        auto with_qty = [&](const std::string& name, long long q) { auto c = card(name); c["quantity"] = q; return c; };
+        // copies of one card
+        CHECK_EQ(st.add_card(first_collection, with_qty("Bolt", 1000)).status, 201);
+        auto too_many = st.add_card(first_collection, card("Bolt"));  // 1001st copy stacks onto the row
+        CHECK_EQ(too_many.status, 400);
+        CHECK_EQ(too_many.body["error"], json("A collection can hold at most 1,000 copies of one card"));
+        CHECK_EQ(st.add_card(first_collection, with_qty("Sol Ring", 1001)).status, 400);
+        auto bolt_id = st.get_collection(first_collection).body["cards"][0]["id"].get<std::string>();
+        CHECK_EQ(st.update_card(first_collection, bolt_id, {{"quantity", 1001}}).status, 400);
+        CHECK_EQ(st.update_card(first_collection, bolt_id, {{"quantity", 999}}).status, 200);
+        CHECK_EQ(st.get_collection(first_collection).body["cards"].size(), static_cast<size_t>(1));  // refused ones left no trace
+        CHECK_EQ(st.get_collection(first_collection).body["cards"][0]["quantity"], json(999));
+
+        // decks: 150 different cards, 100 copies of each
+        auto deck = replacement.body["id"].get<std::string>();
+        for (int i = 0; i < 150; ++i) CHECK_EQ(st.add_card(deck, card("Card " + std::to_string(i))).status, 201);
+        auto deck_full = st.add_card(deck, card("One More"));
+        CHECK_EQ(deck_full.status, 400);
+        CHECK_EQ(deck_full.body["error"], json("A deck can hold at most 150 different cards"));
+        CHECK_EQ(st.add_card(deck, card("Card 7")).status, 201);  // another copy of a card already there is fine
+        CHECK_EQ(st.add_card(deck, with_qty("Card 7", 98)).status, 201);  // 1 + 1 + 98 = 100
+        auto deck_copies = st.add_card(deck, card("Card 7"));
+        CHECK_EQ(deck_copies.status, 400);
+        CHECK_EQ(deck_copies.body["error"], json("A deck can hold at most 100 copies of one card"));
+        CHECK_EQ(st.get_collection(deck).body["cards"].size(), static_cast<size_t>(150));
+
+        // bulk add is all or nothing under the same limits (the row number is named)
+        auto bulk = st.add_cards(deck, {{"cards", json::array({card("Card 1"), card("Brand New")})}});
+        CHECK_EQ(bulk.status, 400);
+        CHECK(bulk.body["error"].get<std::string>().rfind("card 2: A deck can hold at most 150", 0) == 0);
+        CHECK_EQ(st.get_collection(deck).body["cards"][1]["quantity"], json(1));  // card 1 was not added to
+
+        // wishlists and tradelists: no limit on copies; 10,000 different cards
+        CHECK_EQ(st.add_card(a_wishlist, with_qty("Bulk", 50000)).status, 201);
+        CHECK_EQ(st.add_card(a_wishlist, with_qty("Bulk", 50000)).status, 201);
+        json many = json::array();
+        for (int i = 0; i < 9999; ++i) many.push_back(card("W" + std::to_string(i)));
+        CHECK_EQ(st.add_cards(a_tradelist, {{"cards", many}}).status, 201);  // 9,999 rows
+        CHECK_EQ(st.add_card(a_tradelist, card("The 10000th")).status, 201);
+        auto trade_full = st.add_card(a_tradelist, card("The 10001st"));
+        CHECK_EQ(trade_full.status, 400);
+        CHECK_EQ(trade_full.body["error"], json("A tradelist can hold at most 10,000 different cards"));
+
+        // a list that already holds more than it may (saved before limits) can still be lowered and read
+        std::ofstream(t4.path() / "big.json") << R"({"collections":[{"id":"b1","name":"Big","cards":[{"id":"c1","name":"X","game":"mtg","set":"","quantity":5000,"condition":"Near Mint"}]}],"settings":{}})";
+        cardstore::Store big(t4.path() / "big.json");
+        CHECK_EQ(big.add_card("b1", json{{"name", "X"}, {"game", "mtg"}, {"set", ""}}).status, 400);
+        CHECK_EQ(big.update_card("b1", "c1", {{"quantity", 4000}}).status, 400);
+        CHECK_EQ(big.update_card("b1", "c1", {{"quantity", 0}}).status, 200);  // removing is always allowed
+    }
+
     return cardtest::finish("cardstore");
 }
