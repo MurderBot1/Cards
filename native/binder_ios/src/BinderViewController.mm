@@ -197,7 +197,7 @@ static NSString* const kSaveHandlerName = @"binderSave";   // { name, text }: an
     if (![text writeToURL:file atomically:YES encoding:NSUTF8StringEncoding error:&error]) return;
     UIActivityViewController* share = [[UIActivityViewController alloc] initWithActivityItems:@[ file ] applicationActivities:nil];
     share.popoverPresentationController.sourceView = self.view;  // (iPad shows it as a popover)
-    share.popoverPresentationController.sourceRect = CGRectMake(CGRectGetMidX(self.view.bounds), CGRectGetMidY(self.view.bounds), 1, 1);
+    share.popoverPresentationController.sourceRect = CGRectMake(self.view.bounds.size.width / 2, self.view.bounds.size.height / 2, 1, 1);
     [self presentViewController:share animated:YES completion:nil];
 }
 
