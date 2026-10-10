@@ -39,8 +39,9 @@ function showTab(tab) {
   views.forEach((v) => v.classList.toggle('is-active', v.dataset.view === tab));
   tabButtons.forEach((b) => b.classList.toggle('is-active', b.dataset.tab === tab));
 
-  // leaving the collection tab always resets back to its list sub-view
-  if (tab !== 'collection' && isInCollectionDetail()) {
+  // leaving the collection tab always resets back to its list sub-view, and so does tapping it while a list is open
+  // (the tab is already the active one, so that tap means "back to my lists")
+  if (isInCollectionDetail()) {
     closeCollectionDetail();
   }
 
