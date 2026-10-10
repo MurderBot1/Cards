@@ -11,6 +11,7 @@ export const STATEMENTS = [
   'CREATE INDEX IF NOT EXISTS login_failures_ip ON login_failures(ip, at)',
   'CREATE TABLE IF NOT EXISTS sync_docs (user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, id TEXT NOT NULL, doc TEXT NOT NULL, server_updated INTEGER NOT NULL, PRIMARY KEY (user_id, id))',
   'CREATE INDEX IF NOT EXISTS sync_docs_pull ON sync_docs(user_id, server_updated)',
+  'CREATE TABLE IF NOT EXISTS shares (token TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, doc_id TEXT NOT NULL, created_at INTEGER NOT NULL, UNIQUE (user_id, doc_id))',
   'DROP TABLE IF EXISTS prices',
   'DROP TABLE IF EXISTS api_hits',
 ];

@@ -84,6 +84,9 @@
           <button class="icon-btn icon-btn--tool" id="export-collection-btn" aria-label="Export this collection as CSV" title="Export this collection as CSV">
             <svg viewBox="0 0 24 24"><path d="M12 4v11M8 11l4 4 4-4M4 15v4a1 1 0 001 1h14a1 1 0 001-1v-4"/></svg>
           </button>
+          <button class="icon-btn icon-btn--tool" id="share-collection-btn" aria-label="Share this list with a link" title="Share this list with a link">
+            <svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="M8.2 10.8l7.6-4.4M8.2 13.2l7.6 4.4"/></svg>
+          </button>
           <button class="icon-btn icon-btn--danger" id="delete-collection-btn" aria-label="Delete collection">
             <svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>
           </button>
@@ -501,6 +504,31 @@
     <div class="sheet-actions">
       <button class="btn btn-secondary" id="move-card-cancel" type="button">Cancel</button>
       <button class="btn btn-primary" id="move-card-go" type="button">Move</button>
+    </div>
+  </div>
+</div>
+
+<!-- share a list with a link -->
+<div class="overlay hidden" id="modal-share">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <h2 class="sheet-title" id="share-title">Share this list</h2>
+    <p class="field-hint" id="share-intro">Anyone with the link can see this list&rsquo;s name and cards &mdash; not your username or email, and they can&rsquo;t change anything. The page follows the list as it syncs.</p>
+    <div id="share-link-block" class="hidden">
+      <label class="field-label" for="share-link">Link</label>
+      <input class="field-input" id="share-link" type="text" readonly>
+      <div class="sheet-actions">
+        <button class="btn btn-primary" id="share-copy" type="button">Copy link</button>
+      </div>
+      <div class="share-more">
+        <button class="link-btn" id="share-renew" type="button">Make a new link</button>
+        <button class="link-btn link-btn--danger" id="share-stop" type="button">Stop sharing</button>
+      </div>
+    </div>
+    <p class="field-hint field-hint--error hidden" id="share-error"></p>
+    <div class="sheet-actions">
+      <button class="btn btn-secondary" id="share-close" type="button">Close</button>
+      <button class="btn btn-primary hidden" id="share-make" type="button">Make link</button>
     </div>
   </div>
 </div>
