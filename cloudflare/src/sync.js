@@ -17,6 +17,29 @@ const GAMES = new Set(['mtg', 'pokemon', 'yugioh']);
 // What a list is. Only the three that aren't plain collections are written down.
 const KINDS = new Set(['deck', 'tradelist', 'wishlist']);
 
+// What a list may hold, by kind (null: no limit). The app enforces the same numbers while a person edits; this is the
+// backstop for anything that talks to the Worker directly. A "different card" is a row of the list. The copies of one
+// card are checked here as well. (How many lists a person has is only held by the app.)
+export const LIMITS = {
+  collection: { cards: 10000, perCard: 1000 },
+  deck: { cards: 150, perCard: 100 },
+  tradelist: { cards: 10000, perCard: null },
+  wishlist: { cards: 10000, perCard: null },
+};
+
+// A message when a doc holds more than its kind allows, else null.
+export function limitMessage(doc) {
+  if (doc.deleted !== undefined) return null;
+  const kind = doc.kind || 'collection';
+  const limits = LIMITS[kind];
+  const label = `"${doc.name}": a ${kind}`;
+  if (doc.cards.length > limits.cards) return `${label} can hold at most ${limits.cards.toLocaleString('en-US')} different cards`;
+  if (limits.perCard !== null && doc.cards.some((c) => c.quantity > limits.perCard)) {
+    return `${label} can hold at most ${limits.perCard.toLocaleString('en-US')} copies of one card`;
+  }
+  return null;
+}
+
 const isTime = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0;
 const text = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
 
@@ -125,6 +148,8 @@ export async function onSync({ request, env }) {
   for (const raw of Array.isArray(body.collections) ? body.collections : []) {
     const doc = cleanDoc(raw);
     if (!doc) return fail('One of the collections is not valid', 400);
+    const over = limitMessage(doc);
+    if (over) return fail(over, 400);
     if (JSON.stringify(doc).length > MAX_DOC_BYTES) return fail(`"${doc.name}" is too large to sync`, 413);
     incoming.set(doc.id, incoming.has(doc.id) ? mergeDocs(incoming.get(doc.id), doc) : doc);
   }

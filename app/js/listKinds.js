@@ -58,3 +58,32 @@ export function countLabel(kind, n) {
   const w = kindWords(kind);
   return `${n} ${n === 1 ? w.singular : w.plural}`;
 }
+
+/**
+ * What each kind of list may hold. `null` is no limit. A "different card" is a row of the list (the same card in
+ * another condition, set, finish or language is its own row). The C++ store (native/cardstore) and the Worker
+ * (cloudflare/src/sync.js) hold the same numbers.
+ */
+export const LIMITS = {
+  collection: { lists: 25, cards: 10000, perCard: 1000 },
+  deck: { lists: 100, cards: 150, perCard: 100 },
+  tradelist: { lists: null, cards: 10000, perCard: null },
+  wishlist: { lists: null, cards: 10000, perCard: null },
+};
+
+export function limitsOf(kind) {
+  return LIMITS[KINDS.includes(kind) ? kind : DEFAULT_KIND];
+}
+
+const withCommas = (n) => n.toLocaleString('en-US');
+
+// The messages shown when a limit stops something (the same text the C++ store sends)
+export function tooManyListsMessage(kind) {
+  return `You can have at most ${limitsOf(kind).lists} ${kindWords(kind).plural}`;
+}
+export function tooManyCardsMessage(kind) {
+  return `A ${kindWords(kind).singular} can hold at most ${withCommas(limitsOf(kind).cards)} different cards`;
+}
+export function tooManyCopiesMessage(kind) {
+  return `A ${kindWords(kind).singular} can hold at most ${withCommas(limitsOf(kind).perCard)} copies of one card`;
+}

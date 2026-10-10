@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { cleanDoc, mergeDocs } from '../src/sync.js';
+import { cleanDoc, limitMessage, mergeDocs } from '../src/sync.js';
 
 const card = (id, over = {}) => ({ id, name: `Card ${id}`, game: 'mtg', set: 'M10', rarity: '', image: '', condition: 'Near Mint', quantity: 1, updated: 100, ...over });
 const doc = (over = {}) => ({ id: 'c1', name: 'Binder', updated: 100, cards: [], tomb: {}, ...over });
@@ -85,4 +85,18 @@ test('the kind of a list (deck, tradelist, wishlist) survives cleaning and mergi
   assert.equal('kind' in mergeDocs(b, cleanDoc(doc({ updated: 300 }))), false);
   assert.equal(mergeDocs(a, { id: 'c1', deleted: 50 }).kind, 'deck', 'a list that lives on after an older delete keeps its kind');
   assert.equal(JSON.stringify(mergeDocs(a, a)), JSON.stringify(a), 'merging a list with itself changes nothing');
+});
+
+test('limits per kind are enforced on what is sent (different cards, copies of one card)', () => {
+  const cards = (n, over = {}) => Array.from({ length: n }, (_, i) => card(`c${i}`, over));
+  assert.equal(limitMessage(cleanDoc(doc({ kind: 'deck', cards: cards(150, { quantity: 100 }) }))), null);
+  assert.equal(limitMessage(cleanDoc(doc({ kind: 'deck', cards: cards(151) }))), '"Binder": a deck can hold at most 150 different cards');
+  assert.equal(limitMessage(cleanDoc(doc({ kind: 'deck', cards: cards(1, { quantity: 101 }) }))), '"Binder": a deck can hold at most 100 copies of one card');
+  assert.equal(limitMessage(cleanDoc(doc({ cards: cards(10000, { quantity: 1000 }) }))), null, 'a collection: 10,000 cards, 1,000 copies');
+  assert.match(limitMessage(cleanDoc(doc({ cards: cards(10001) }))), /a collection can hold at most 10,000 different cards/);
+  assert.match(limitMessage(cleanDoc(doc({ cards: cards(1, { quantity: 1001 }) }))), /a collection can hold at most 1,000 copies/);
+  assert.equal(limitMessage(cleanDoc(doc({ kind: 'wishlist', cards: cards(3, { quantity: 99999 }) }))), null, 'no limit on copies in a wishlist');
+  assert.equal(limitMessage(cleanDoc(doc({ kind: 'tradelist', cards: cards(10000, { quantity: 5000 }) }))), null);
+  assert.match(limitMessage(cleanDoc(doc({ kind: 'tradelist', cards: cards(10001) }))), /a tradelist can hold at most 10,000/);
+  assert.equal(limitMessage({ id: 'x', deleted: 5 }), null, 'a deleted list has no cards to count');
 });

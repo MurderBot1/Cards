@@ -243,6 +243,22 @@ collection from the file). Both are CSV.
   export from one of them doesn't import, send the file's first line and it is a one-line addition to the header table in
   `collectionCsv.js`.
 
+## Kinds of list and their limits
+
+The Collection tab holds collections, decks, tradelists and wishlists. They are stored alike (a name and cards); a list's
+`kind` (`deck`, `tradelist`, `wishlist`; a collection has none) says which it is. Limits, by kind:
+
+| Kind | Lists | Different cards per list | Copies of one card |
+|---|---|---|---|
+| Collection | 25 | 10,000 | 1,000 |
+| Deck | 100 | 150 | 100 |
+| Tradelist, wishlist | any number | 10,000 | no limit |
+
+A "different card" is a row (the same card in another condition, set, finish or language is its own row). The numbers
+live in three places that must agree: `native/cardstore/src/store.cpp` (`limits_for`), `app/js/listKinds.js` (`LIMITS`,
+used by the website's store) and `cloudflare/src/sync.js` (`LIMITS`; the Worker checks the cards in a list it is sent,
+not how many lists a person has). A list that already holds more than its limit can be read and lowered but not added to.
+
 ## Updates
 
 The app checks the project's GitHub releases on startup (and from "Check for updates" on the Account tab) and offers the
