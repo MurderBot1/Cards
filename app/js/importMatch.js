@@ -63,10 +63,10 @@ function pick(found, identifier) {
 /**
  * Finds the Scryfall card for each Magic row. `rows` are parsed rows (collectionCsv.js); resolves to a Map from a row's
  * index to its search-result-shaped card ({ id: 'mtg-…', name, set, number, rarity, image, game }). Rows that aren't
- * found are left out. `onProgress(done, total)` is called as batches finish. A request that fails (offline) ends the
+ * found are left out (`convert` can turn each Scryfall card into something else: cardInfo.js asks for its raw data). `onProgress(done, total)` is called as batches finish. A request that fails (offline) ends the
  * look-up early, leaving whatever was found; it never throws.
  */
-export async function matchMagicRows(rows, { fetchFn = (...args) => fetch(...args), onProgress = () => {} } = {}) {
+export async function matchMagicRows(rows, { fetchFn = (...args) => fetch(...args), onProgress = () => {}, convert = scryfallResult } = {}) {
   const matches = new Map();
   let sets = {};
   if (rows.some((r) => !r.setCode && r.setName)) {
@@ -96,7 +96,7 @@ export async function matchMagicRows(rows, { fetchFn = (...args) => fetch(...arg
         for (const entry of batch) {
           const card = pick(found, entry.identifier);
           for (const i of entry.rows) {
-            if (card) matches.set(i, scryfallResult(card));
+            if (card) matches.set(i, convert(card));
             else missed.add(i);
           }
         }
