@@ -12,6 +12,7 @@ import { IS_WEB } from './env.js';
 import { initImportExport } from './importExport.js';
 import { getSettings } from './settings.js';
 import { backfillUids, collectionValue, formatUsd, loadPrices, pricesEnabled, unitPrice } from './prices.js';
+import { SORTS, activeFilterCount, emptyFilter, facetValues, filterCards, isCustomView } from './cardFilter.js';
 
 const GAME_LABELS = { mtg: 'Magic: The Gathering', pokemon: 'Pokémon', yugioh: 'Yu-Gi-Oh!' };
 const GAMES = ['mtg', 'pokemon', 'yugioh'];
@@ -42,6 +43,18 @@ const els = {
   detailSearch: document.getElementById('collection-search-input'),
   cardList: document.getElementById('collection-card-list'),
   detailEmpty: document.getElementById('collection-detail-empty'),
+  noMatches: document.getElementById('collection-no-matches'),
+  filterToggle: document.getElementById('filter-toggle-btn'),
+  filterBadge: document.getElementById('filter-badge'),
+  filterPanel: document.getElementById('filter-panel'),
+  filterSort: document.getElementById('filter-sort'),
+  filterGame: document.getElementById('filter-game'),
+  filterSet: document.getElementById('filter-set'),
+  filterRarity: document.getElementById('filter-rarity'),
+  filterCondition: document.getElementById('filter-condition'),
+  filterMin: document.getElementById('filter-min-price'),
+  filterMax: document.getElementById('filter-max-price'),
+  filterClear: document.getElementById('filter-clear-btn'),
   fab: document.getElementById('fab-add-card'),
   deleteCollectionBtn: document.getElementById('delete-collection-btn'),
 
@@ -328,6 +341,7 @@ async function openCollection(id) {
   els.detailSubview.classList.remove('hidden');
   els.fab.classList.remove('hidden');
   els.detailSearch.value = '';
+  resetFilters();
   renderCardList('');
   const count = activeCollection.cards.length;
   if (onNavigate) {
@@ -352,12 +366,15 @@ function renderCardList(filter) {
   if (!activeCollection) return;
   const token = ++cardListRenderToken;
   const q = filter.trim().toLowerCase();
-  const cards = activeCollection.cards.filter((c) => c.name.toLowerCase().includes(q));
+  const narrowed = q !== '' || activeFilterCount(cardFilter) > 0;
+  const cards = filterCards(activeCollection.cards, q, cardFilter, unitPrice, DEFAULT_CONDITION);
   if (token !== cardListRenderToken) return; // a newer render already queued
   const total = activeCollection.cards.length;
-  els.detailCount.textContent = `${total} card${total === 1 ? '' : 's'}${q ? ` · ${cards.length} match${cards.length === 1 ? '' : 'es'}` : ''}${valueSuffix(activeCollection.cards)}`;
+  els.detailCount.textContent = `${total} card${total === 1 ? '' : 's'}${narrowed ? ` · ${cards.length} match${cards.length === 1 ? '' : 'es'}` : ''}${valueSuffix(activeCollection.cards)}`;
   els.cardList.innerHTML = '';
   els.detailEmpty.classList.toggle('hidden', total > 0);
+  els.noMatches.classList.toggle('hidden', total === 0 || cards.length > 0);
+  updateFilterControls();
 
   cards.forEach((card) => {
     const condition = card.condition || DEFAULT_CONDITION;
@@ -404,10 +421,80 @@ function syncActiveCollectionIntoList() {
   if (onNavigate) onNavigate({ inDetail: true, title: activeCollection.name, subtitle: `${count} card${count === 1 ? '' : 's'}` });
 }
 
+// ---- filter and sort (cardFilter.js) -------------------------------------------------------------
+let cardFilter = emptyFilter();
+let detailSearchDebounce = null;
+
+function resetFilters() {
+  cardFilter = emptyFilter();
+  els.filterMin.value = '';
+  els.filterMax.value = '';
+  els.filterPanel.classList.add('hidden');
+  els.filterToggle.setAttribute('aria-expanded', 'false');
+}
+
+function fillSelect(select, firstLabel, options, current, label = (v) => v) {
+  const values = current && !options.includes(current) ? [...options, current] : options;  // keep a pick that no card has now
+  select.innerHTML = '';
+  const add = (value, text) => {
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = text;
+    select.appendChild(opt);
+  };
+  if (firstLabel !== null) add('', firstLabel);
+  values.forEach((v) => add(v, label(v)));
+  select.value = current;
+}
+
+// Redraws the drop-downs from the cards now in the list, and the count on the filter button.
+function updateFilterControls() {
+  if (!activeCollection) return;
+  const facets = facetValues(activeCollection.cards, DEFAULT_CONDITION, CONDITIONS);
+  fillSelect(els.filterSort, null, SORTS.map((s) => s.value), cardFilter.sort, (v) => SORTS.find((s) => s.value === v).label);
+  fillSelect(els.filterGame, 'All games', facets.games, cardFilter.game, (g) => GAME_LABELS[g] || g);
+  fillSelect(els.filterSet, 'All sets', facets.sets, cardFilter.set);
+  fillSelect(els.filterRarity, 'All rarities', facets.rarities, cardFilter.rarity);
+  fillSelect(els.filterCondition, 'All conditions', facets.conditions, cardFilter.condition);
+  const count = activeFilterCount(cardFilter);
+  els.filterBadge.textContent = String(count);
+  els.filterBadge.classList.toggle('hidden', count === 0);
+  els.filterClear.disabled = !isCustomView(cardFilter) && els.filterMin.value === '' && els.filterMax.value === '';
+}
+
+function readFilterControls() {
+  cardFilter = {
+    sort: els.filterSort.value,
+    game: els.filterGame.value,
+    set: els.filterSet.value,
+    rarity: els.filterRarity.value,
+    condition: els.filterCondition.value,
+    minPrice: els.filterMin.value,
+    maxPrice: els.filterMax.value,
+  };
+  renderCardList(els.detailSearch.value);
+}
+
+els.filterToggle.addEventListener('click', () => {
+  const opening = els.filterPanel.classList.contains('hidden');
+  els.filterPanel.classList.toggle('hidden', !opening);
+  els.filterToggle.setAttribute('aria-expanded', String(opening));
+});
+[els.filterSort, els.filterGame, els.filterSet, els.filterRarity, els.filterCondition].forEach((el) => el.addEventListener('change', readFilterControls));
+[els.filterMin, els.filterMax].forEach((el) => el.addEventListener('input', () => {
+  clearTimeout(detailSearchDebounce);
+  detailSearchDebounce = setTimeout(readFilterControls, 200);
+}));
+els.filterClear.addEventListener('click', () => {
+  els.filterMin.value = '';
+  els.filterMax.value = '';
+  cardFilter = emptyFilter();
+  renderCardList(els.detailSearch.value);
+});
+
 // debounce collection-detail search too: it's local filtering so it's
 // cheap, but on a big binder re-rendering hundreds of rows on every
 // keystroke is still wasted work while the person is still typing.
-let detailSearchDebounce = null;
 els.detailSearch.addEventListener('input', () => {
   clearTimeout(detailSearchDebounce);
   const value = els.detailSearch.value;
