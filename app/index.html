@@ -112,7 +112,7 @@
             </select>
           </label>
           <div class="filter-field filter-field--price">
-            <span class="field-label">Price each (USD)</span>
+            <span class="field-label" id="filter-price-label">Price each (USD)</span>
             <div class="filter-price">
               <input class="field-input" id="filter-min-price" type="text" inputmode="decimal" placeholder="Min" aria-label="Minimum price">
               <span aria-hidden="true">&ndash;</span>
@@ -186,6 +186,17 @@
               <button data-value="medium" role="tab">Medium</button>
               <button data-value="large" role="tab">Large</button>
             </div>
+          </div>
+        </div>
+
+        <div class="settings-group">
+          <h3 class="settings-group-title">Prices</h3>
+          <div class="setting-row">
+            <div class="setting-label">
+              <span>Currency</span>
+              <span class="setting-hint">Prices are in US dollars; this shows them converted at the day's exchange rate (a guess from your device's region unless you pick one)</span>
+            </div>
+            <select class="field-input" id="currency-setting" aria-label="Currency"></select>
           </div>
         </div>
 
