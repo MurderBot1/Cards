@@ -100,3 +100,15 @@ test('limits per kind are enforced on what is sent (different cards, copies of o
   assert.match(limitMessage(cleanDoc(doc({ kind: 'tradelist', cards: cards(10001) }))), /a tradelist can hold at most 10,000/);
   assert.equal(limitMessage({ id: 'x', deleted: 5 }), null, 'a deleted list has no cards to count');
 });
+
+test('how many copies of a deck card the person has is kept: a whole number from 1, never over what is needed', () => {
+  const owned = (over) => cleanDoc(doc({ kind: 'deck', cards: [card('a', { quantity: 4, ...over })] })).cards[0];
+  assert.equal(owned({ owned: 3 }).owned, 3);
+  assert.equal(owned({ owned: 99 }).owned, 4, 'never over what is needed');
+  for (const bad of [0, -1, 1.5, '2', null, undefined]) assert.equal('owned' in owned({ owned: bad }), false, `${String(bad)} is not kept`);
+  // it merges with the card like any other field (the newer edit wins)
+  const a = cleanDoc(doc({ kind: 'deck', cards: [card('a', { quantity: 4, owned: 1, updated: 100 })] }));
+  const b = cleanDoc(doc({ kind: 'deck', cards: [card('a', { quantity: 4, owned: 3, updated: 200 })] }));
+  assert.equal(mergeDocs(a, b).cards[0].owned, 3);
+  assert.equal(mergeDocs(b, a).cards[0].owned, 3);
+});

@@ -233,6 +233,16 @@ export const api = {
     return request(`/collections/${collectionId}/cards/bulk`, { method: 'POST', body: JSON.stringify({ cards }) });
   },
 
+  // How many copies of one card of a deck the person has (decks only) -> the updated deck
+  async setCardOwned(collectionId, cardId, owned) {
+    return request(`/collections/${collectionId}/cards/${cardId}`, { method: 'PATCH', body: JSON.stringify({ owned }) });
+  },
+
+  // Many at once: { card id: copies } -> the updated deck
+  async setDeckOwned(collectionId, owned) {
+    return request(`/collections/${collectionId}/owned`, { method: 'POST', body: JSON.stringify({ owned }) });
+  },
+
   async updateCardQuantity(collectionId, cardId, quantity) {
     if (USE_MOCK) {
       await delay(60);

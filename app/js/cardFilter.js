@@ -4,6 +4,8 @@
  * Pure functions on card objects, so the website and the apps share them and they can be tested without a page.
  */
 
+import { missingOf } from './deckOwnership.js';
+
 export const SORTS = [
   { value: '', label: 'Order added' },
   { value: 'name-asc', label: 'Name A–Z' },
@@ -15,7 +17,8 @@ export const SORTS = [
 const SORT_VALUES = new Set(SORTS.map((s) => s.value));
 
 export function emptyFilter() {
-  return { game: '', set: '', rarity: '', condition: '', minPrice: '', maxPrice: '', sort: '' };
+  // `ownership` (decks): '' for every card, 'missing' for cards still needing copies, 'complete' for cards fully had
+  return { game: '', set: '', rarity: '', condition: '', ownership: '', minPrice: '', maxPrice: '', sort: '' };
 }
 
 // "12.5", "$12.50" and "12,50" all read as 12.5; anything else (including blank) is no limit.
@@ -32,6 +35,7 @@ const same = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').
 export function activeFilterCount(filter) {
   let n = 0;
   for (const key of ['game', 'set', 'rarity', 'condition']) if (filter[key]) n += 1;
+  if (filter.ownership === 'missing' || filter.ownership === 'complete') n += 1;
   if (parsePrice(filter.minPrice) !== null) n += 1;
   if (parsePrice(filter.maxPrice) !== null) n += 1;
   return n;
@@ -81,6 +85,8 @@ export function filterCards(cards, query, filter, priceOf = () => null, defaultC
     if (filter.set && !same(card.set, filter.set)) return;
     if (filter.rarity && !same(card.rarity, filter.rarity)) return;
     if (filter.condition && !same(card.condition || defaultCondition, filter.condition)) return;
+    if (filter.ownership === 'missing' && missingOf(card) === 0) return;
+    if (filter.ownership === 'complete' && missingOf(card) > 0) return;
     const price = priceOf(card);
     if (min !== null || max !== null) {
       if (price === null || price === undefined) return;

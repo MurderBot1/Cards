@@ -75,6 +75,9 @@
             <svg viewBox="0 0 24 24"><path d="M4 5h16l-6 8v6l-4-2v-4z"/></svg>
             <span class="filter-badge hidden" id="filter-badge">0</span>
           </button>
+          <button class="icon-btn icon-btn--tool hidden" id="own-check-btn" aria-label="Mark the cards you already have in your collections" title="Mark the cards you already have in your collections">
+            <svg viewBox="0 0 24 24"><path d="M4 7l2 2 3-3M4 14l2 2 3-3M12 8h8M12 15h8"/></svg>
+          </button>
           <button class="icon-btn icon-btn--tool" id="import-collection-btn" aria-label="Import cards from a file" title="Import cards from a file">
             <svg viewBox="0 0 24 24"><path d="M12 15V4M8 8l4-4 4 4M4 15v4a1 1 0 001 1h14a1 1 0 001-1v-4"/></svg>
           </button>
@@ -100,6 +103,13 @@
           </label>
           <label class="filter-field"><span class="field-label">Condition</span>
             <select class="field-input" id="filter-condition"></select>
+          </label>
+          <label class="filter-field hidden" id="filter-owned-field"><span class="field-label">Cards you have</span>
+            <select class="field-input" id="filter-owned">
+              <option value="">All cards</option>
+              <option value="missing">Missing some copies</option>
+              <option value="complete">Have all copies</option>
+            </select>
           </label>
           <div class="filter-field filter-field--price">
             <span class="field-label">Price each (USD)</span>
@@ -436,6 +446,15 @@
       <button class="qty-btn" data-action="dec" aria-label="Decrease quantity"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
       <span id="card-detail-qty">1</span>
       <button class="qty-btn" data-action="inc" aria-label="Increase quantity"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+    </div>
+
+    <div id="card-detail-owned-block" class="hidden">
+      <p class="field-label">Copies you have</p>
+      <div class="card-qty card-qty--large" id="card-detail-owned-stepper">
+        <button class="qty-btn" data-action="owned-dec" aria-label="Fewer copies you have"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+        <span id="card-detail-owned">0</span>
+        <button class="qty-btn" data-action="owned-inc" aria-label="More copies you have"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+      </div>
     </div>
   </div>
 </div>

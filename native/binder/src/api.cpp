@@ -102,6 +102,13 @@ void register_routes(cardhttp::Server& server, ApiContext& ctx) {
         if (!parse_object(req, body, failure)) return failure;
         return respond(store.add_cards(req.params.at("id"), body));
     });
+    // which cards of a deck the person has: { owned: { card id: copies } } -> the updated deck
+    server.route("POST", "/api/collections/<id>/owned", [&](const Request& req) {
+        json body;
+        Response failure;
+        if (!parse_object(req, body, failure)) return failure;
+        return respond(store.set_owned(req.params.at("id"), body));
+    });
     server.route("PATCH", "/api/collections/<id>/cards/<card_id>", [&](const Request& req) {
         json body;
         Response failure;

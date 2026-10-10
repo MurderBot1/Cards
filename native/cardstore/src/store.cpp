@@ -52,6 +52,23 @@ ListLimits limits_for(const json& kind) {
     return {25, 10000, 1000};  // collections (and anything with no kind)
 }
 std::string kind_word(const json& kind) { return valid_kind(kind) ? kind.get<std::string>() : "collection"; }
+bool is_deck(const json& list) { return list.contains("kind") && list["kind"] == "deck"; }
+// A whole number of copies from 0 (as a JSON number), or -1 when it is not one.
+long long whole_copies(const json& v) {
+    if (v.is_number_integer()) return v.get<long long>() >= 0 ? v.get<long long>() : -1;
+    if (v.is_number_float()) {
+        double d = v.get<double>();
+        return d >= 0 && d == static_cast<double>(static_cast<long long>(d)) ? static_cast<long long>(d) : -1;
+    }
+    return -1;
+}
+// Writes how many copies of a card the person has: only when there is something to say, and never more than needed.
+void write_owned(json& card, long long owned) {
+    const double needed = card.value("quantity", 0.0);
+    const long long kept = std::min<long long>(owned, static_cast<long long>(needed));
+    if (kept > 0) card["owned"] = kept;
+    else card.erase("owned");
+}
 std::string with_commas(long long n) {
     std::string digits = std::to_string(n), out;
     for (size_t i = 0; i < digits.size(); ++i) {
@@ -273,9 +290,12 @@ static std::optional<Result> add_one(json& collection, const json& body, long lo
                                       " different cards");
         }
     }
+    // `owned` (a deck's "I have these", e.g. from a re-imported export): kept for decks, quietly left out elsewhere
+    const long long owned_in = is_deck(collection) ? whole_copies(field(body, "owned")) : -1;
     if (existing) {
         json& q = (*existing)["quantity"];
         q = q.is_number_integer() ? json(q.get<long long>() + copies) : json(q.get<double>() + static_cast<double>(copies));
+        if (owned_in > 0) write_owned(*existing, (*existing).value("owned", 0LL) + owned_in);
         (*existing)["updated"] = now;
     } else {
         auto str_or_empty = [&](const char* key) { return body.contains(key) ? body[key] : json(""); };
@@ -295,6 +315,7 @@ static std::optional<Result> add_one(json& collection, const json& body, long lo
         if (foil) fresh["foil"] = true;
         if (!language.empty()) fresh["language"] = language;
         if (!number.empty()) fresh["number"] = number;
+        if (owned_in > 0) write_owned(fresh, owned_in);
         collection["cards"].push_back(fresh);
     }
     collection["updated"] = now;
@@ -346,8 +367,11 @@ Result Store::update_card(const std::string& collection_id, const std::string& c
     json quantity = field(body, "quantity");
     json condition = field(body, "condition");
     json uid = field(body, "uid");
-    if (quantity.is_null() && condition.is_null() && uid.is_null()) return error(400, "quantity and/or condition is required");
+    json owned = field(body, "owned");
+    if (quantity.is_null() && condition.is_null() && uid.is_null() && owned.is_null())
+        return error(400, "quantity and/or condition is required");
     if (!uid.is_null() && !uid.is_string()) return error(400, "uid must be a string");
+    if (!owned.is_null() && whole_copies(owned) < 0) return error(400, "owned must be a whole number of at least 0");
     if (!quantity.is_null() && !quantity.is_number()) return error(400, "quantity must be a number");
     if (!condition.is_null() && !(condition.is_string() && valid_condition(condition.get<std::string>())))
         return error(400, std::string("condition must be one of ") + kValidConditionsRepr);
@@ -357,6 +381,7 @@ Result Store::update_card(const std::string& collection_id, const std::string& c
     json* collection = find_collection(db, collection_id);
     if (!collection) return error(404, "not found");
 
+    if (!owned.is_null() && !is_deck(*collection)) return error(400, "only a deck keeps track of the cards you have");
     if (!quantity.is_null() && quantity.get<double>() > 0) {
         const json list_kind = collection->contains("kind") ? (*collection)["kind"] : json("collection");
         const ListLimits limits = limits_for(list_kind);
@@ -387,11 +412,45 @@ Result Store::update_card(const std::string& collection_id, const std::string& c
             if (!quantity.is_null()) c["quantity"] = quantity;
             if (!condition.is_null()) c["condition"] = condition;
             if (!uid.is_null()) c["uid"] = uid;
+            // (what is had never exceeds what is needed, so lowering the quantity lowers it too)
+            if (!owned.is_null()) write_owned(c, whole_copies(owned));
+            else if (!quantity.is_null() && c.contains("owned")) write_owned(c, c["owned"].get<long long>());
             c["updated"] = now;
             (*collection)["updated"] = now;
         }
     }
     save_locked(db);
+    return {200, *collection};
+}
+
+Result Store::set_owned(const std::string& collection_id, const json& body) {
+    json owned = field(body, "owned");
+    if (!owned.is_object()) return error(400, "owned must be an object of card id to copies");
+    for (auto it = owned.begin(); it != owned.end(); ++it)
+        if (whole_copies(it.value()) < 0) return error(400, "owned must be a whole number of at least 0");
+
+    std::lock_guard<std::mutex> lock(mu_);
+    json db = load_locked();
+    json* collection = find_collection(db, collection_id);
+    if (!collection) return error(404, "not found");
+    if (!is_deck(*collection)) return error(400, "only a deck keeps track of the cards you have");
+    const long long now = now_ms_();
+    bool changed = false;
+    for (auto& c : (*collection)["cards"]) {
+        auto it = owned.find(c.value("id", ""));
+        if (it == owned.end()) continue;
+        const long long before = c.contains("owned") && c["owned"].is_number_integer() ? c["owned"].get<long long>() : 0;
+        write_owned(c, whole_copies(it.value()));
+        const long long after = c.contains("owned") ? c["owned"].get<long long>() : 0;
+        if (before != after) {
+            c["updated"] = now;
+            changed = true;
+        }
+    }
+    if (changed) {
+        (*collection)["updated"] = now;
+        save_locked(db);
+    }
     return {200, *collection};
 }
 

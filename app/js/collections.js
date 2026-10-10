@@ -12,6 +12,7 @@ import { IS_WEB } from './env.js';
 import { initImportExport } from './importExport.js';
 import { getSettings } from './settings.js';
 import { backfillUids, collectionValue, formatUsd, loadPrices, pricesEnabled, unitPrice } from './prices.js';
+import { deckTotals, missingOf, ownedFromCollections, ownedOf } from './deckOwnership.js';
 import { DEFAULT_KIND, KINDS, countLabel, kindOf, kindWords, limitsOf, listsOfKind } from './listKinds.js';
 import { SORTS, activeFilterCount, emptyFilter, facetValues, filterCards, isCustomView } from './cardFilter.js';
 
@@ -70,6 +71,12 @@ const els = {
   filterMin: document.getElementById('filter-min-price'),
   filterMax: document.getElementById('filter-max-price'),
   filterClear: document.getElementById('filter-clear-btn'),
+  filterOwned: document.getElementById('filter-owned'),
+  filterOwnedField: document.getElementById('filter-owned-field'),
+  ownCheckBtn: document.getElementById('own-check-btn'),
+  cardDetailOwnedBlock: document.getElementById('card-detail-owned-block'),
+  cardDetailOwned: document.getElementById('card-detail-owned'),
+  cardDetailOwnedStepper: document.getElementById('card-detail-owned-stepper'),
   fab: document.getElementById('fab-add-card'),
   deleteCollectionBtn: document.getElementById('delete-collection-btn'),
 
@@ -182,7 +189,7 @@ function renderCollectionGrid() {
       </button>
       ${dots}
       <h3>${escapeHtml(c.name)}</h3>
-      <p class="card-count">${c.cards.length} card${c.cards.length === 1 ? '' : 's'}${valueSuffix(c.cards)}</p>
+      <p class="card-count">${c.cards.length} card${c.cards.length === 1 ? '' : 's'}${kindOf(c) === 'deck' && c.cards.length ? ` · have ${deckTotals(c.cards).owned} of ${deckTotals(c.cards).needed}` : ''}${valueSuffix(c.cards)}</p>
     `;
     btn.addEventListener('click', () => openCollection(c.id));
     btn.querySelector('[data-action="delete-collection"]').addEventListener('click', (e) => {
@@ -410,7 +417,11 @@ function renderCardList(filter) {
   const maxCards = limitsOf(kindOf(activeCollection)).cards;
   // a deck says how full it is ("12 of 150 cards")
   const totalText = maxCards <= 1000 ? `${total} of ${maxCards} cards` : `${total} card${total === 1 ? '' : 's'}`;
-  els.detailCount.textContent = `${totalText}${narrowed ? ` · ${cards.length} match${cards.length === 1 ? '' : 'es'}` : ''}${valueSuffix(activeCollection.cards)}`;
+  const isDeckList = kindOf(activeCollection) === 'deck';
+  const totals = isDeckList ? deckTotals(activeCollection.cards) : null;
+  const haveText = totals && total > 0 ? ` · have ${totals.owned} of ${totals.needed}` : '';
+  els.detailCount.textContent = `${totalText}${haveText}${narrowed ? ` · ${cards.length} match${cards.length === 1 ? '' : 'es'}` : ''}${valueSuffix(activeCollection.cards)}`;
+  els.ownCheckBtn.classList.toggle('hidden', !isDeckList);
   els.cardList.innerHTML = '';
   els.detailEmpty.classList.toggle('hidden', total > 0);
   els.noMatches.classList.toggle('hidden', total === 0 || cards.length > 0);
@@ -430,6 +441,7 @@ function renderCardList(filter) {
           <span class="condition-badge" title="${escapeHtml(condition)}">${CONDITION_ABBR[condition] || condition}</span>
           ${card.foil === true ? '<span class="foil-badge" title="Foil">FOIL</span>' : ''}
           ${priceBadge(card)}
+          ${isDeckList ? ownPill(card) : ''}
         </p>
       </div>
       <div class="card-qty">
@@ -438,6 +450,8 @@ function renderCardList(filter) {
         <button class="qty-btn" data-action="inc" aria-label="Increase quantity"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
       </div>
     `;
+    const pill = row.querySelector('[data-action="toggle-owned"]');
+    if (pill) pill.addEventListener('click', (e) => { e.stopPropagation(); toggleOwned(card); });
     row.querySelector('[data-action="dec"]').addEventListener('click', (e) => { e.stopPropagation(); changeQty(card, -1); });
     row.querySelector('[data-action="inc"]').addEventListener('click', (e) => { e.stopPropagation(); changeQty(card, 1); });
     row.querySelectorAll('[data-action="open-detail"]').forEach((el) => {
@@ -446,6 +460,51 @@ function renderCardList(filter) {
     els.cardList.appendChild(row);
   });
 }
+
+// "2/4" in a deck row: how many of the copies the deck needs the person has; tapping it marks all or none of them
+function ownPill(card) {
+  const have = ownedOf(card);
+  const state = have >= card.quantity ? 'full' : have > 0 ? 'part' : 'none';
+  const label = state === 'full' ? 'Have all' : state === 'none' ? 'Missing' : `Have ${have}/${card.quantity}`;
+  return `<button class="own-pill own-pill--${state}" data-action="toggle-owned" title="Tap to mark all or none as owned">${label}</button>`;
+}
+
+async function setOwned(card, owned) {
+  try {
+    activeCollection = await api.setCardOwned(activeCollection.id, card.id, owned);
+  } catch (err) {
+    showToast(err.message || 'Could not save that', 3500);
+    return false;
+  }
+  renderCardList(els.detailSearch.value);
+  syncActiveCollectionIntoList();
+  return true;
+}
+
+function toggleOwned(card) {
+  return setOwned(card, ownedOf(card) >= card.quantity ? 0 : card.quantity);
+}
+
+// "Check my collections": marks the deck's cards that the person's collections already hold (never lowers a card
+// they have marked themselves)
+async function checkOwnedFromCollections() {
+  if (!activeCollection || kindOf(activeCollection) !== 'deck') return;
+  const found = ownedFromCollections(activeCollection.cards, collections);
+  const owned = {};
+  for (const card of activeCollection.cards) owned[card.id] = Math.max(ownedOf(card), found[card.id] || 0);
+  const before = deckTotals(activeCollection.cards).owned;
+  try {
+    activeCollection = await api.setDeckOwned(activeCollection.id, owned);
+  } catch (err) {
+    showToast(err.message || 'Could not check your collections', 3500);
+    return;
+  }
+  const t = deckTotals(activeCollection.cards);
+  renderCardList(els.detailSearch.value);
+  syncActiveCollectionIntoList();
+  showToast(t.owned === before ? `Nothing new found: you have ${t.owned} of ${t.needed}` : `Marked ${t.owned - before} more as owned: you have ${t.owned} of ${t.needed}`, 3500);
+}
+els.ownCheckBtn.addEventListener('click', checkOwnedFromCollections);
 
 async function changeQty(card, delta) {
   const newQty = card.quantity + delta;
@@ -501,6 +560,8 @@ function updateFilterControls() {
   fillSelect(els.filterSet, 'All sets', facets.sets, cardFilter.set);
   fillSelect(els.filterRarity, 'All rarities', facets.rarities, cardFilter.rarity);
   fillSelect(els.filterCondition, 'All conditions', facets.conditions, cardFilter.condition);
+  els.filterOwnedField.classList.toggle('hidden', kindOf(activeCollection) !== 'deck');
+  els.filterOwned.value = cardFilter.ownership || '';
   const count = activeFilterCount(cardFilter);
   els.filterBadge.textContent = String(count);
   els.filterBadge.classList.toggle('hidden', count === 0);
@@ -514,6 +575,7 @@ function readFilterControls() {
     set: els.filterSet.value,
     rarity: els.filterRarity.value,
     condition: els.filterCondition.value,
+    ownership: els.filterOwned.value,
     minPrice: els.filterMin.value,
     maxPrice: els.filterMax.value,
   };
@@ -525,7 +587,7 @@ els.filterToggle.addEventListener('click', () => {
   els.filterPanel.classList.toggle('hidden', !opening);
   els.filterToggle.setAttribute('aria-expanded', String(opening));
 });
-[els.filterSort, els.filterGame, els.filterSet, els.filterRarity, els.filterCondition].forEach((el) => el.addEventListener('change', readFilterControls));
+[els.filterSort, els.filterGame, els.filterSet, els.filterRarity, els.filterCondition, els.filterOwned].forEach((el) => el.addEventListener('change', readFilterControls));
 [els.filterMin, els.filterMax].forEach((el) => el.addEventListener('input', () => {
   clearTimeout(detailSearchDebounce);
   detailSearchDebounce = setTimeout(readFilterControls, 200);
@@ -560,12 +622,31 @@ function openCardDetail(card) {
   updateCardDetailPrice();
   setSegmentedValue(els.cardDetailCondition, card.condition || DEFAULT_CONDITION);
   els.cardDetailQty.textContent = card.quantity;
+  showCardDetailOwned(card);
   els.cardDetailModal.classList.remove('hidden');
 }
 function closeCardDetail() {
   detailCard = null;
   els.cardDetailModal.classList.add('hidden');
 }
+// the "copies you have" stepper of a deck card's detail sheet
+function showCardDetailOwned(card) {
+  const isDeckCard = !!activeCollection && kindOf(activeCollection) === 'deck';
+  els.cardDetailOwnedBlock.classList.toggle('hidden', !isDeckCard);
+  if (isDeckCard) els.cardDetailOwned.textContent = `${ownedOf(card)} of ${card.quantity}`;
+}
+els.cardDetailOwnedStepper.querySelectorAll('[data-action]').forEach((btn) => {
+  btn.addEventListener('click', async () => {
+    if (!detailCard || !activeCollection) return;
+    const delta = btn.dataset.action === 'owned-inc' ? 1 : -1;
+    const wanted = Math.min(detailCard.quantity, Math.max(0, ownedOf(detailCard) + delta));
+    if (wanted === ownedOf(detailCard)) return;
+    if (await setOwned(detailCard, wanted)) {
+      detailCard = activeCollection.cards.find((c) => c.id === detailCard.id) || detailCard;
+      showCardDetailOwned(detailCard);
+    }
+  });
+});
 els.cardDetailClose.addEventListener('click', closeCardDetail);
 els.cardDetailModal.addEventListener('click', (e) => { if (e.target === els.cardDetailModal) closeCardDetail(); });
 
@@ -596,7 +677,7 @@ els.cardDetailCondition.querySelectorAll('button').forEach((btn) => {
   });
 });
 
-els.cardDetailModal.querySelectorAll('.card-qty [data-action]').forEach((btn) => {
+els.cardDetailModal.querySelectorAll('.card-qty [data-action="inc"], .card-qty [data-action="dec"]').forEach((btn) => {
   btn.addEventListener('click', async () => {
     if (!detailCard || !activeCollection) return;
     const delta = btn.dataset.action === 'inc' ? 1 : -1;
@@ -616,6 +697,7 @@ els.cardDetailModal.querySelectorAll('.card-qty [data-action]').forEach((btn) =>
     detailCard = activeCollection.cards.find((c) => c.id === detailCard.id) || null;
     if (detailCard) {
       els.cardDetailQty.textContent = detailCard.quantity;
+      showCardDetailOwned(detailCard);
       updateCardDetailPrice();
     }
   });

@@ -191,3 +191,56 @@ test('limits: lists per kind, different cards, copies of one card (same rules an
   assert.equal(store.handle('POST', `/collections/${ids.tradelist}/cards/bulk`, { cards: many }).status, 201);
   assert.equal(add(ids.tradelist, 'The 10001st').body.error, 'A tradelist can hold at most 10,000 different cards');
 });
+
+test('decks keep how many copies of each card the person has', () => {
+  const { store } = make();
+  const deck = store.handle('POST', '/collections', { name: 'Burn', kind: 'deck' }).body.id;
+  const binder = store.handle('POST', '/collections', { name: 'Binder' }).body.id;
+  const add = (id, name, quantity, extra = {}) => store.handle('POST', `/collections/${id}/cards`, { name, game: 'mtg', set: 'M10', quantity, ...extra });
+  const bolt = add(deck, 'Bolt', 4).body.cards[0].id;
+  const ring = add(deck, 'Sol Ring', 1).body.cards[1].id;
+  const row = (list, id) => store.handle('GET', `/collections/${list}`).body.cards.find((c) => c.id === id);
+  const patch = (list, id, body) => store.handle('PATCH', `/collections/${list}/cards/${id}`, body);
+  assert.equal('owned' in row(deck, bolt), false, 'nothing had until said');
+
+  assert.equal(patch(deck, bolt, { owned: 3 }).status, 200);
+  assert.equal(row(deck, bolt).owned, 3);
+  patch(deck, bolt, { owned: 99 });
+  assert.equal(row(deck, bolt).owned, 4, 'never more than needed');
+  patch(deck, bolt, { quantity: 2 });
+  assert.equal(row(deck, bolt).owned, 2, 'lowering what is needed lowers what is had');
+  patch(deck, bolt, { owned: 0 });
+  assert.equal('owned' in row(deck, bolt), false, 'zero is not written down');
+  for (const bad of [-1, 1.5, 'two']) {
+    assert.equal(patch(deck, bolt, { owned: bad }).body.error, 'owned must be a whole number of at least 0');
+  }
+  const inBinder = add(binder, 'Bolt', 2).body.cards[0].id;
+  assert.equal(patch(binder, inBinder, { owned: 1 }).body.error, 'only a deck keeps track of the cards you have');
+
+  const post = (list, body) => store.handle('POST', `/collections/${list}/owned`, body);
+  const many = post(deck, { owned: { [bolt]: 9, [ring]: 1, nope: 5 } });
+  assert.equal(many.status, 200);
+  assert.deepEqual([row(deck, bolt).owned, row(deck, ring).owned], [2, 1]);
+  const stamp = store.handle('GET', `/collections/${deck}`).body.updated;
+  post(deck, { owned: { [bolt]: 2 } });
+  assert.equal(store.handle('GET', `/collections/${deck}`).body.updated, stamp, 'no change, no new stamp');
+  post(deck, { owned: { [bolt]: 0, [ring]: 0 } });
+  assert.equal('owned' in row(deck, ring), false);
+  assert.equal(post(deck, {}).status, 400);
+  assert.equal(post(deck, { owned: [] }).status, 400);
+  assert.equal(post(deck, { owned: { [bolt]: -2 } }).status, 400);
+  assert.equal(post(binder, { owned: { [inBinder]: 1 } }).status, 400);
+  assert.equal(post('zzz', { owned: {} }).status, 404);
+
+  const bulk = store.handle('POST', `/collections/${deck}/cards/bulk`, { cards: [
+    { name: 'Shock', game: 'mtg', set: 'M10', quantity: 3, owned: 2 },
+    { name: 'Shock', game: 'mtg', set: 'M10', quantity: 3, owned: 9 },
+  ] }).body;
+  const shock = bulk.cards.at(-1);
+  assert.deepEqual([shock.quantity, shock.owned], [6, 6], 'stacking adds up, never over what is needed');
+  const intoBinder = store.handle('POST', `/collections/${binder}/cards/bulk`, { cards: [{ name: 'Shock', game: 'mtg', set: 'M10', owned: 2 }] }).body;
+  assert.equal('owned' in intoBinder.cards.at(-1), false, 'left out of anything but a deck');
+
+  const synced = store.syncState().body.collections.find((c) => c.id === deck);
+  assert.equal(synced.cards.find((c) => c.name === 'Shock').owned, 6, 'travels with the card in sync');
+});

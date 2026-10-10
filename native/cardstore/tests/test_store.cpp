@@ -398,5 +398,83 @@ int main() {
         CHECK_EQ(big.update_card("b1", "c1", {{"quantity", 0}}).status, 200);  // removing is always allowed
     }
 
+    // ---- decks: which cards the person has (`owned`)
+    {
+        cardtest::TempDir t5;
+        long long clock = 5000;
+        int n = 0;
+        cardstore::Store st(t5.path() / "db.json", [&] { return "D" + std::to_string(++n); }, [&] { return clock += 10; });
+        auto deck = st.create_collection({{"name", "Burn"}, {"kind", "deck"}}).body["id"].get<std::string>();
+        auto plain = st.create_collection({{"name", "Binder"}}).body["id"].get<std::string>();
+        auto want = st.create_collection({{"name", "Wants"}, {"kind", "wishlist"}}).body["id"].get<std::string>();
+        auto card = [](const std::string& name, long long qty) { return json{{"name", name}, {"game", "mtg"}, {"set", "M10"}, {"quantity", qty}}; };
+        auto bolt = st.add_card(deck, card("Bolt", 4)).body["cards"][0]["id"].get<std::string>();
+        auto ring = st.add_card(deck, card("Sol Ring", 1)).body["cards"][1]["id"].get<std::string>();
+        auto row = [&](const std::string& list, const std::string& id) {
+            auto got = st.get_collection(list);
+            for (auto& c : got.body["cards"]) if (c["id"] == id) return c;
+            return json();
+        };
+        CHECK(!row(deck, bolt).contains("owned"));  // nothing had until said
+
+        // one card
+        CHECK_EQ(st.update_card(deck, bolt, {{"owned", 3}}).status, 200);
+        CHECK_EQ(row(deck, bolt)["owned"], json(3));
+        CHECK_EQ(st.update_card(deck, bolt, {{"owned", 99}}).status, 200);
+        CHECK_EQ(row(deck, bolt)["owned"], json(4));  // never more than needed
+        CHECK_EQ(st.update_card(deck, bolt, {{"quantity", 2}}).status, 200);
+        CHECK_EQ(row(deck, bolt)["owned"], json(2));  // lowering what is needed lowers what is had
+        CHECK_EQ(st.update_card(deck, bolt, {{"owned", 0}}).status, 200);
+        CHECK(!row(deck, bolt).contains("owned"));    // zero is not written down
+        CHECK_EQ(st.update_card(deck, bolt, {{"owned", -1}}).body["error"], json("owned must be a whole number of at least 0"));
+        CHECK_EQ(st.update_card(deck, bolt, {{"owned", 1.5}}).status, 400);
+        CHECK_EQ(st.update_card(deck, bolt, {{"owned", "two"}}).status, 400);
+        CHECK_EQ(st.update_card(deck, bolt, {{"owned", 2}, {"quantity", 6}}).status, 200);
+        CHECK_EQ(row(deck, bolt)["owned"], json(2));
+        CHECK_EQ(row(deck, bolt)["quantity"], json(6));
+
+        // only decks
+        auto in_binder = st.add_card(plain, card("Bolt", 2)).body["cards"][0]["id"].get<std::string>();
+        auto refused = st.update_card(plain, in_binder, {{"owned", 1}});
+        CHECK_EQ(refused.status, 400);
+        CHECK_EQ(refused.body["error"], json("only a deck keeps track of the cards you have"));
+        CHECK_EQ(st.update_card(want, "x", {{"owned", 1}}).status, 400);
+
+        // many at once: unknown ids are ignored, values are kept to what is needed, one stamp for what changed
+        const long long before = st.get_collection(deck).body["updated"].get<long long>();
+        auto many = st.set_owned(deck, {{"owned", {{bolt, 9}, {ring, 1}, {"nope", 5}}}});
+        CHECK_EQ(many.status, 200);
+        CHECK_EQ(row(deck, bolt)["owned"], json(6));
+        CHECK_EQ(row(deck, ring)["owned"], json(1));
+        CHECK(many.body["updated"].get<long long>() > before);
+        const long long after = st.get_collection(deck).body["updated"].get<long long>();
+        st.set_owned(deck, {{"owned", {{bolt, 6}}}});  // no change: nothing is stamped
+        CHECK_EQ(st.get_collection(deck).body["updated"].get<long long>(), after);
+        CHECK_EQ(st.set_owned(deck, {{"owned", {{bolt, 0}, {ring, 0}}}}).status, 200);
+        CHECK(!row(deck, bolt).contains("owned"));
+        CHECK_EQ(st.set_owned(deck, json::object()).status, 400);
+        CHECK_EQ(st.set_owned(deck, {{"owned", json::array()}}).status, 400);
+        CHECK_EQ(st.set_owned(deck, {{"owned", {{bolt, -2}}}}).status, 400);
+        CHECK_EQ(st.set_owned(plain, {{"owned", {{in_binder, 1}}}}).status, 400);
+        CHECK_EQ(st.set_owned("zzz", {{"owned", json::object()}}).status, 404);
+
+        // an import into a deck can say what is had; elsewhere it is left out; stacking adds up (never over what is needed)
+        auto imported = st.add_cards(deck, {{"cards", json::array({json{{"name", "Shock"}, {"game", "mtg"}, {"set", "M10"}, {"quantity", 3}, {"owned", 2}},
+                                                                    json{{"name", "Shock"}, {"game", "mtg"}, {"set", "M10"}, {"quantity", 3}, {"owned", 9}}})}});
+        CHECK_EQ(imported.status, 201);
+        auto shock = imported.body["cards"].back();
+        CHECK_EQ(shock["quantity"], json(6));
+        CHECK_EQ(shock["owned"], json(6));
+        auto into_binder = st.add_cards(plain, {{"cards", json::array({json{{"name", "Shock"}, {"game", "mtg"}, {"set", "M10"}, {"owned", 2}}})}});
+        CHECK(!into_binder.body["cards"].back().contains("owned"));
+
+        // it travels through sync with the card
+        auto doc = st.sync_state().body["collections"][0];
+        CHECK(doc["kind"] == "deck");
+        bool seen = false;
+        for (auto& c : doc["cards"]) if (c["name"] == "Shock") seen = c["owned"] == json(6);
+        CHECK(seen);
+    }
+
     return cardtest::finish("cardstore");
 }
