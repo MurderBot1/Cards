@@ -11,7 +11,8 @@ import { showToast } from './ui.js';
 import { IS_WEB } from './env.js';
 import { initImportExport } from './importExport.js';
 import { getSettings } from './settings.js';
-import { backfillUids, collectionValue, formatUsd, loadPrices, pricesEnabled, unitPrice } from './prices.js';
+import { backfillUids, collectionValue, loadPrices, pricesEnabled, unitPrice } from './prices.js';
+import { formatPrice, priceCurrency, toLocalPrice } from './currency.js';
 import { deckTotals, missingOf, ownedFromCollections, ownedOf } from './deckOwnership.js';
 import { DEFAULT_KIND, KINDS, countLabel, kindOf, kindWords, limitsOf, listsOfKind } from './listKinds.js';
 import { SORTS, activeFilterCount, emptyFilter, facetValues, filterCards, isCustomView } from './cardFilter.js';
@@ -72,6 +73,7 @@ const els = {
   filterMax: document.getElementById('filter-max-price'),
   filterClear: document.getElementById('filter-clear-btn'),
   filterOwned: document.getElementById('filter-owned'),
+  filterPriceLabel: document.getElementById('filter-price-label'),
   filterOwnedField: document.getElementById('filter-owned-field'),
   ownCheckBtn: document.getElementById('own-check-btn'),
   moveBtn: document.getElementById('card-detail-move-btn'),
@@ -227,12 +229,12 @@ function valueSuffix(cards) {
   if (!pricesEnabled()) return '';
   const value = collectionValue(cards);
   if (value.priced === 0) return '';
-  return ` · ${formatUsd(value.total)}${value.unpriced ? '+' : ''}`;
+  return ` · ${formatPrice(value.total)}${value.unpriced ? '+' : ''}`;
 }
 
 function priceBadge(card) {
   const price = unitPrice(card);
-  return price === null ? '' : `<span class="card-price" title="Market price, each">${formatUsd(price)}</span>`;
+  return price === null ? '' : `<span class="card-price" title="Market price, each">${formatPrice(price)}</span>`;
 }
 
 // Looks up prices for the open collection (filling in catalog ids for older cards first) and redraws it.
@@ -272,8 +274,17 @@ function updateCardDetailPrice() {
   }
   const price = unitPrice(detailCard);
   els.cardDetailPrice.textContent =
-    price === null ? '' : `${formatUsd(price)} each · ${formatUsd(price * detailCard.quantity)} total`;
+    price === null ? '' : `${formatPrice(price)} each · ${formatPrice(price * detailCard.quantity)} total`;
 }
+
+// the currency being shown changed (a pick in Settings, or rates just arrived): redraw whatever shows a price
+window.addEventListener('binder:currency-changed', () => {
+  renderCollectionGrid();
+  if (activeCollection) {
+    renderCardList(els.detailSearch.value);
+    updateCardDetailPrice();
+  }
+});
 
 // sync.js changed what's stored on this device (another device's edits arrived): show it
 export async function reloadCollections() {
@@ -420,7 +431,7 @@ function renderCardList(filter) {
   const token = ++cardListRenderToken;
   const q = filter.trim().toLowerCase();
   const narrowed = q !== '' || activeFilterCount(cardFilter) > 0;
-  const cards = filterCards(activeCollection.cards, q, cardFilter, unitPrice, DEFAULT_CONDITION);
+  const cards = filterCards(activeCollection.cards, q, cardFilter, localUnitPrice, DEFAULT_CONDITION);
   if (token !== cardListRenderToken) return; // a newer render already queued
   const total = activeCollection.cards.length;
   const maxCards = limitsOf(kindOf(activeCollection)).cards;
@@ -468,6 +479,12 @@ function renderCardList(filter) {
     });
     els.cardList.appendChild(row);
   });
+}
+
+// the price of one copy in the currency being shown (what the price filter and sorting compare), or null
+function localUnitPrice(card) {
+  const usd = unitPrice(card);
+  return usd === null ? null : toLocalPrice(usd);
 }
 
 // "2/4" in a deck row: how many of the copies the deck needs the person has; tapping it marks all or none of them
@@ -569,6 +586,7 @@ function updateFilterControls() {
   fillSelect(els.filterSet, 'All sets', facets.sets, cardFilter.set);
   fillSelect(els.filterRarity, 'All rarities', facets.rarities, cardFilter.rarity);
   fillSelect(els.filterCondition, 'All conditions', facets.conditions, cardFilter.condition);
+  els.filterPriceLabel.textContent = `Price each (${priceCurrency()})`;
   els.filterOwnedField.classList.toggle('hidden', kindOf(activeCollection) !== 'deck');
   els.filterOwned.value = cardFilter.ownership || '';
   const count = activeFilterCount(cardFilter);

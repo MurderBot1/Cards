@@ -11,6 +11,7 @@ import { initUpdates, launchUpdateCheck } from './updates.js';
 import { showToast } from './ui.js';
 import { initSetupScreen } from './setup.js';
 import { IS_WEB } from './env.js';
+import { initCurrencySetting } from './currency.js';
 
 const TAB_TITLES = { shop: 'Shop', collection: 'Collection', settings: 'Account' };
 
@@ -72,6 +73,7 @@ async function boot() {
     initSetupScreen();  // not awaited: it polls in the background and covers the app while setup work runs
   }
   await initSettings();
+  initCurrencySetting();  // (the exchange rates are read in the background)
   await initCollections(onCollectionNavigate);
   initSync();
   if (!IS_WEB) initUpdates({ onToast: showToast });

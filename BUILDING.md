@@ -276,6 +276,16 @@ from the person's collections (same game and name, any printing; only collection
 refusal changes nothing. It answers `{ source, target }`. An emptied row leaves a tombstone so other devices drop it too, and
 a deck row's `owned` is kept to what it still needs. The card sheet's "Move to another list…" button uses it.
 
+## Prices in your own currency
+
+Prices come in US dollars (`prices.js`); `app/js/currency.js` shows them in the person's currency. Which one: the pick in
+Settings → Prices, else a guess from the device's language region (`en-GB`) or, when the language names no region, its
+time zone. No location is asked for and nothing is sent. Rates (dollars to each currency) come from Frankfurter
+(`api.frankfurter.dev`, the European Central Bank's rates, free, no key) with `open.er-api.com` as a second source, read by
+the page itself and kept in `localStorage` for 12 hours (an old rate still serves offline). With no rate at all, prices stay
+in dollars. The price filter and price sorting work in the shown currency. Nothing about this touches the Worker or the
+stored data: cards and collections stay as they were.
+
 ## Updates
 
 The app checks the project's GitHub releases on startup (and from "Check for updates" on the Account tab) and offers the
