@@ -1259,3 +1259,25 @@ html.is-web [data-app-only] { display: none !important; }
 .curve-table table { border-collapse: collapse; margin-top: 6px; font-variant-numeric: tabular-nums; }
 .curve-table th, .curve-table td { padding: 3px 10px 3px 0; text-align: left; font-weight: 400; }
 .curve-table thead th, .curve-table tr:first-child th { color: var(--text); font-weight: 600; }
+
+/* ---- deck legality (js/deckLegality.js, js/legalityView.js) ---- */
+.deck-curve + .deck-curve { margin-top: -6px; }
+#legality-result { margin-top: 10px; }
+.legal-verdict { font-size: 0.9rem; font-weight: 600; margin: 0 0 6px; }
+.legal-verdict--legal { color: var(--text); }
+.legal-verdict--illegal { color: var(--danger); }
+.legal-verdict--unchecked { color: var(--text-dim); }
+.legal-problems, .legal-notes { margin: 0 0 6px; padding-left: 18px; font-size: 0.8rem; line-height: 1.45; }
+.legal-problems li { color: var(--text); margin-bottom: 3px; }
+.legal-notes li { color: var(--text-dim); }
+.legal-badge {
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.legal-badge--n, .legal-badge--b { color: var(--danger); }
+.legal-badge--r { color: var(--gold); }

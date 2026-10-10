@@ -16,6 +16,8 @@ import { formatPrice, priceCurrency, toLocalPrice } from './currency.js';
 import { cardInfo } from './cardInfo.js';
 import { manaCurve } from './manaCurve.js';
 import { curveHtml } from './curveView.js';
+import { FORMATS, cardStatus, checkFormat, formatByKey, statusWord } from './deckLegality.js';
+import { legalityHtml } from './legalityView.js';
 import { deckTotals, missingOf, ownedFromCollections, ownedOf } from './deckOwnership.js';
 import { DEFAULT_KIND, KINDS, countLabel, kindOf, kindWords, limitsOf, listsOfKind } from './listKinds.js';
 import { SORTS, activeFilterCount, emptyFilter, facetValues, filterCards, isCustomView } from './cardFilter.js';
@@ -82,6 +84,11 @@ const els = {
   curveBox: document.getElementById('deck-curve'),
   curveToggle: document.getElementById('deck-curve-toggle'),
   curvePanel: document.getElementById('deck-curve-panel'),
+  legalBox: document.getElementById('deck-legality'),
+  legalToggle: document.getElementById('deck-legality-toggle'),
+  legalPanel: document.getElementById('deck-legality-panel'),
+  legalFormat: document.getElementById('legality-format'),
+  legalResult: document.getElementById('legality-result'),
   moveBtn: document.getElementById('card-detail-move-btn'),
   moveModal: document.getElementById('modal-move-card'),
   moveTitle: document.getElementById('move-card-title'),
@@ -413,7 +420,8 @@ async function openCollection(id) {
   els.detailSearch.value = '';
   resetFilters();
   els.curveToggle.setAttribute('aria-expanded', 'false');
-  curveAsked = '';
+  els.legalToggle.setAttribute('aria-expanded', 'false');
+  infoAsked = '';
   renderCardList('');
   const count = activeCollection.cards.length;
   if (onNavigate) {
@@ -451,6 +459,7 @@ function renderCardList(filter) {
   els.detailCount.textContent = `${totalText}${haveText}${narrowed ? ` · ${cards.length} match${cards.length === 1 ? '' : 'es'}` : ''}${valueSuffix(activeCollection.cards)}`;
   els.ownCheckBtn.classList.toggle('hidden', !isDeckList);
   updateCurve();
+  updateLegality();
   els.cardList.innerHTML = '';
   els.detailEmpty.classList.toggle('hidden', total > 0);
   els.noMatches.classList.toggle('hidden', total === 0 || cards.length > 0);
@@ -471,6 +480,7 @@ function renderCardList(filter) {
           ${card.foil === true ? '<span class="foil-badge" title="Foil">FOIL</span>' : ''}
           ${priceBadge(card)}
           ${isDeckList ? ownPill(card) : ''}
+          ${isDeckList ? legalBadge(card) : ''}
         </p>
       </div>
       <div class="card-qty">
@@ -490,39 +500,89 @@ function renderCardList(filter) {
   });
 }
 
-// ---- a deck's mana curve (manaCurve.js): drawn when the panel is open, from what Scryfall says (cardInfo.js) ----
-let curveLoading = false;
-let curveAsked = '';  // which cards were last asked about, so a look-up that finds nothing (offline) isn't repeated in a loop
+// ---- what Scryfall says about a deck's Magic cards (cardInfo.js): drawn in the mana curve and legality panels ----
+let infoLoading = false;
+let infoAsked = '';  // which cards were last asked about, so a look-up that finds nothing (offline) isn't repeated in a loop
 
-function updateCurve() {
-  const deckWithMagic = !!activeCollection && kindOf(activeCollection) === 'deck' && activeCollection.cards.some((c) => c.game === 'mtg');
-  els.curveBox.classList.toggle('hidden', !deckWithMagic);
-  if (!deckWithMagic) return;
-  const open = els.curveToggle.getAttribute('aria-expanded') === 'true';
-  els.curvePanel.classList.toggle('hidden', !open);
-  if (!open) return;
-  const draw = () => {
-    els.curvePanel.innerHTML = curveHtml(manaCurve(activeCollection.cards, (card) => cardInfo.get(card)), { loading: curveLoading });
-  };
+// Starts the look-up of what the open panels need, once for a given set of cards; redraws the panels when it is done.
+function askCardInfo() {
   const wanted = cardInfo.needed(activeCollection.cards).map(([key]) => key).sort().join('|');
-  if (wanted && wanted !== curveAsked && !curveLoading) {
-    curveAsked = wanted;
-    curveLoading = true;
+  if (wanted && wanted !== infoAsked && !infoLoading) {
+    infoAsked = wanted;
+    infoLoading = true;
     const deckId = activeCollection.id;
     cardInfo.load(activeCollection.cards).finally(() => {
-      curveLoading = false;
-      if (activeCollection && activeCollection.id === deckId) updateCurve();
+      infoLoading = false;
+      if (activeCollection && activeCollection.id === deckId) {
+        updateCurve();
+        updateLegality();
+        renderCardList(els.detailSearch.value);
+      }
     });
   }
-  draw();
+}
+
+const isOpen = (toggle) => toggle.getAttribute('aria-expanded') === 'true';
+const deckWithMagic = () => !!activeCollection && kindOf(activeCollection) === 'deck' && activeCollection.cards.some((c) => c.game === 'mtg');
+
+// a deck's mana curve (manaCurve.js)
+function updateCurve() {
+  const show = deckWithMagic();
+  els.curveBox.classList.toggle('hidden', !show);
+  if (!show) return;
+  els.curvePanel.classList.toggle('hidden', !isOpen(els.curveToggle));
+  if (!isOpen(els.curveToggle)) return;
+  askCardInfo();
+  els.curvePanel.innerHTML = curveHtml(manaCurve(activeCollection.cards, (card) => cardInfo.get(card)), { loading: infoLoading });
 }
 els.curveToggle.addEventListener('click', () => {
-  const open = els.curveToggle.getAttribute('aria-expanded') !== 'true';
-  els.curveToggle.setAttribute('aria-expanded', String(open));
-  curveAsked = '';
+  els.curveToggle.setAttribute('aria-expanded', String(!isOpen(els.curveToggle)));
+  infoAsked = '';
   updateCurve();
 });
-window.addEventListener('binder:cardinfo-changed', () => { if (activeCollection) updateCurve(); });
+
+// a deck's legality in a format (deckLegality.js), with a badge on each card that isn't plainly legal there
+const FORMAT_KEY = 'binder_deck_format';
+let legalFormatKey = FORMATS[0].key;
+try {
+  const saved = localStorage.getItem(FORMAT_KEY);
+  if (formatByKey(saved)) legalFormatKey = saved;
+} catch (e) { /* no storage: the first format */ }
+els.legalFormat.innerHTML = FORMATS.map((f) => `<option value="${f.key}">${f.label}</option>`).join('');
+els.legalFormat.value = legalFormatKey;
+
+function updateLegality() {
+  const show = deckWithMagic();
+  els.legalBox.classList.toggle('hidden', !show);
+  if (!show) return;
+  const open = isOpen(els.legalToggle);
+  els.legalPanel.classList.toggle('hidden', !open);
+  if (!open) return;
+  askCardInfo();
+  const result = checkFormat(formatByKey(legalFormatKey), activeCollection.cards, (card) => cardInfo.get(card));
+  els.legalResult.innerHTML = legalityHtml(result, { loading: infoLoading });
+}
+
+// "Banned" / "Not legal" / "Restricted" for a deck card in the picked format (only while the legality panel is open)
+function legalBadge(card) {
+  if (!isOpen(els.legalToggle) || card.game !== 'mtg') return '';
+  const status = cardStatus(cardInfo.get(card), legalFormatKey);
+  const word = statusWord(status);
+  return word ? `<span class="legal-badge legal-badge--${status}" title="${word} in ${formatByKey(legalFormatKey).label}">${word}</span>` : '';
+}
+els.legalToggle.addEventListener('click', () => {
+  els.legalToggle.setAttribute('aria-expanded', String(!isOpen(els.legalToggle)));
+  infoAsked = '';
+  updateLegality();
+  renderCardList(els.detailSearch.value);
+});
+els.legalFormat.addEventListener('change', () => {
+  legalFormatKey = els.legalFormat.value;
+  try { localStorage.setItem(FORMAT_KEY, legalFormatKey); } catch (e) { /* not remembered */ }
+  updateLegality();
+  renderCardList(els.detailSearch.value);
+});
+window.addEventListener('binder:cardinfo-changed', () => { if (activeCollection) { updateCurve(); updateLegality(); } });
 
 // the price of one copy in the currency being shown (what the price filter and sorting compare), or null
 function localUnitPrice(card) {
