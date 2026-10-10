@@ -169,19 +169,26 @@ export const api = {
   },
 
   // `kind`: 'collection' (default), 'deck', 'tradelist' or 'wishlist'
-  async createCollection(name, kind = 'collection') {
+  // `deck`: for a deck, { game, format } chosen when it is made (see deckFormats.js)
+  async createCollection(name, kind = 'collection', deck = null) {
     if (USE_MOCK) {
       await delay();
       const db = loadMockDb();
       const collection = { id: uid(), name, cards: [] };
       if (kind !== 'collection') collection.kind = kind;
+      if (deck) Object.assign(collection, { game: deck.game, format: deck.format });
       db.collections.push(collection);
       saveMockDb(db);
       return collection;
     }
     // BACKEND: POST /api/collections {name} -> collection. Collections hold
     // cards from any game — each card carries its own `game` field instead.
-    return request('/collections', { method: 'POST', body: JSON.stringify({ name, kind }) });
+    return request('/collections', { method: 'POST', body: JSON.stringify(deck ? { name, kind, game: deck.game, format: deck.format } : { name, kind }) });
+  },
+
+  // Changes the game and format of a deck -> the updated deck
+  async setDeckFormat(collectionId, game, format) {
+    return request(`/collections/${collectionId}`, { method: 'PATCH', body: JSON.stringify({ game, format }) });
   },
 
   async deleteCollection(collectionId) {

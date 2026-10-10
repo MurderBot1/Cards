@@ -9,6 +9,7 @@
  */
 import { limitsOf, tooManyCardsMessage, tooManyCopiesMessage, tooManyListsMessage } from './listKinds.js';
 import { ownedOf } from './deckOwnership.js';
+import { deckFormatProblem, isDeckFormat } from './deckFormats.js';
 
 const DB_KEY = 'binder_web_db_v1';
 const CONDITIONS = ['Near Mint', 'Lightly Played', 'Moderately Played', 'Heavily Played', 'Damaged'];
@@ -106,6 +107,14 @@ export class WebStore {
     if (!name) return error(400, 'name is required');
     const kind = body ? body.kind : undefined;
     if (kind !== undefined && kind !== null && !KINDS.includes(kind)) return error(400, `kind must be one of ${KINDS_REPR}`);
+    const game = body ? body.game : undefined;
+    const format = body ? body.format : undefined;
+    const given = (v) => v !== undefined && v !== null;
+    if (given(game) || given(format)) {
+      if (kind !== 'deck') return error(400, 'only a deck has a game and a format');
+      const problem = deckFormatProblem(game, format);
+      if (problem) return error(400, problem);
+    }
     const db = this.load();
     const madeKind = KINDS.includes(kind) ? kind : 'collection';
     const maxLists = limitsOf(madeKind).lists;
@@ -114,9 +123,28 @@ export class WebStore {
     }
     const collection = { id: this.makeId(), name, cards: [], updated: this.nowMs() };
     if (isSpecialKind(kind)) collection.kind = kind;
+    if (given(game)) {
+      collection.game = game;
+      collection.format = format;
+    }
     db.collections.push(collection);
     this.save(db);
     return { status: 201, body: collection };
+  }
+
+  // Changes the game and format of a deck: { game, format }, both required
+  updateCollection(id, body) {
+    const problem = deckFormatProblem(body ? body.game : undefined, body ? body.format : undefined, { required: true });
+    if (problem) return error(400, problem);
+    const db = this.load();
+    const collection = db.collections.find((c) => c.id === id);
+    if (!collection) return error(404, 'not found');
+    if (!isDeck(collection)) return error(400, 'only a deck has a game and a format');
+    collection.game = body.game;
+    collection.format = body.format;
+    collection.updated = this.nowMs();
+    this.save(db);
+    return { status: 200, body: collection };
   }
 
   getCollection(id) {
@@ -302,6 +330,7 @@ export class WebStore {
       });
       const doc = { id: c.id || '', name: c.name || '', updated: newest, cards, tomb: isObject(c.tomb) ? c.tomb : {} };
       if (isSpecialKind(c.kind)) doc.kind = c.kind;
+      if (isDeck(c) && isDeckFormat(c.game, c.format)) { doc.game = c.game; doc.format = c.format; }
       return doc;
     });
     const deleted = isObject(db.deleted)
@@ -349,6 +378,7 @@ export class WebStore {
       const merged = { id, name: doc.name, cards: doc.cards, updated: stampOf(doc) };
       if (isObject(doc.tomb)) merged.tomb = doc.tomb;
       if (isSpecialKind(doc.kind)) merged.kind = doc.kind;
+      if (merged.kind === 'deck' && isDeckFormat(doc.game, doc.format)) { merged.game = doc.game; merged.format = doc.format; }
       if (local) db.collections[db.collections.indexOf(local)] = merged;
       else db.collections.push(merged);
       delete db.deleted[id];
@@ -459,6 +489,7 @@ export class WebStore {
         if (method === 'POST') return this.createCollection(body);
       } else if (!sub) {
         if (method === 'GET') return this.getCollection(id);
+        if (method === 'PATCH') return this.updateCollection(id, body);
         if (method === 'DELETE') return this.deleteCollection(id);
       } else if (sub === 'cards') {
         if (!cardId && method === 'POST') return this.addCard(id, body);

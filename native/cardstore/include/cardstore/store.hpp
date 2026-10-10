@@ -32,7 +32,10 @@ public:
 
     Result list_collections();
     Result create_collection(const nlohmann::json& body);
+    // body for a deck may carry { game: "mtg"|"pokemon"|"yugioh", format } (a format of that game); both or neither.
     Result get_collection(const std::string& collection_id);
+    // Changes the game and format of a deck: body { game, format }, both required.
+    Result update_collection(const std::string& collection_id, const nlohmann::json& body);
     Result delete_collection(const std::string& collection_id);
 
     // body: { name, game, set?, rarity?, image?, condition?, uid?|id?, quantity? (copies to add, default 1), foil? (bool),

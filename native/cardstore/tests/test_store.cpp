@@ -71,6 +71,64 @@ int main() {
     for (auto& id : kind_ids) store.delete_collection(id);
     CHECK_EQ(store.list_collections().body.size(), static_cast<size_t>(1));
 
+    // ---- a deck's game and format
+    {
+        auto deck = store.create_collection({{"name", "Burn"}, {"kind", "deck"}, {"game", "mtg"}, {"format", "modern"}});
+        CHECK_EQ(deck.status, 201);
+        const std::string deck_id = deck.body["id"].get<std::string>();
+        CHECK_EQ(deck.body["game"], json("mtg"));
+        CHECK_EQ(deck.body["format"], json("modern"));
+        CHECK_EQ(store.get_collection(deck_id).body["format"], json("modern"));
+        auto pokemon = store.create_collection({{"name", "Charizard"}, {"kind", "deck"}, {"game", "pokemon"}, {"format", "expanded"}});
+        CHECK_EQ(pokemon.status, 201);
+        auto yugioh = store.create_collection({{"name", "Blue-Eyes"}, {"kind", "deck"}, {"game", "yugioh"}, {"format", "speed"}});
+        CHECK_EQ(yugioh.status, 201);
+        auto none = store.create_collection({{"name", "Old style"}, {"kind", "deck"}});  // no game or format is still fine
+        CHECK_EQ(none.status, 201);
+        CHECK(!none.body.contains("game") && !none.body.contains("format"));
+        // refused: a format of another game, an unknown game or format, one without the other, anything on a non-deck
+        CHECK_EQ(store.create_collection({{"name", "X"}, {"kind", "deck"}, {"game", "pokemon"}, {"format", "modern"}}).status, 400);
+        CHECK_EQ(store.create_collection({{"name", "X"}, {"kind", "deck"}, {"game", "digimon"}, {"format", "modern"}}).status, 400);
+        CHECK_EQ(store.create_collection({{"name", "X"}, {"kind", "deck"}, {"game", "mtg"}}).status, 400);
+        CHECK_EQ(store.create_collection({{"name", "X"}, {"kind", "deck"}, {"format", "modern"}}).status, 400);
+        auto on_binder = store.create_collection({{"name", "X"}, {"game", "mtg"}, {"format", "modern"}});
+        CHECK_EQ(on_binder.status, 400);
+        CHECK_EQ(on_binder.body["error"], json("only a deck has a game and a format"));
+        CHECK_EQ(store.list_collections().body.size(), static_cast<size_t>(5));  // id1 and the four decks; refused ones left no trace
+
+        // changing them
+        auto changed = store.update_collection(deck_id, {{"game", "mtg"}, {"format", "commander"}});
+        CHECK_EQ(changed.status, 200);
+        CHECK_EQ(changed.body["format"], json("commander"));
+        CHECK_EQ(store.get_collection(deck_id).body["format"], json("commander"));
+        auto old_id = none.body["id"].get<std::string>();
+        CHECK_EQ(store.update_collection(old_id, {{"game", "yugioh"}, {"format", "advanced"}}).status, 200);  // an older deck can be given one
+        CHECK_EQ(store.get_collection(old_id).body["game"], json("yugioh"));
+        CHECK_EQ(store.update_collection(deck_id, {{"game", "mtg"}}).status, 400);
+        CHECK_EQ(store.update_collection(deck_id, {{"game", "pokemon"}, {"format", "commander"}}).status, 400);
+        CHECK_EQ(store.update_collection(deck_id, json::object()).status, 400);
+        CHECK_EQ(store.update_collection("nope", {{"game", "mtg"}, {"format", "modern"}}).status, 404);
+        CHECK_EQ(store.update_collection("id1", {{"game", "mtg"}, {"format", "modern"}}).status, 400);  // not a deck
+        CHECK_EQ(store.get_collection(deck_id).body["format"], json("commander"));  // refused changes left it alone
+
+        // they travel through sync
+        bool seen = false;
+        const json state_now = store.sync_state().body;
+        for (auto& c : state_now["collections"])
+            if (c["id"] == deck_id) { CHECK_EQ(c["game"], json("mtg")); CHECK_EQ(c["format"], json("commander")); seen = true; }
+        CHECK(seen);
+        json doc = {{"id", deck_id}, {"name", "Burn"}, {"kind", "deck"}, {"game", "mtg"}, {"format", "pauper"}, {"updated", 9999999999999LL}, {"cards", json::array()}};
+        auto applied = store.sync_apply({{"collections", json::array({doc})}, {"expect", {{deck_id, store.get_collection(deck_id).body["updated"]}}}});
+        CHECK_EQ(applied.body["applied"].size(), static_cast<size_t>(1));
+        CHECK_EQ(store.get_collection(deck_id).body["format"], json("pauper"));
+        json bad_doc = {{"id", "from-phone2"}, {"name", "Odd"}, {"kind", "deck"}, {"game", "pokemon"}, {"format", "modern"}, {"updated", 9999999999999LL}, {"cards", json::array()}};
+        store.sync_apply({{"collections", json::array({bad_doc})}, {"expect", json::object()}});
+        CHECK(!store.get_collection("from-phone2").body.contains("game"));  // a mismatched pair is not kept
+        for (auto& made : {deck.body, pokemon.body, yugioh.body, none.body}) store.delete_collection(made["id"].get<std::string>());
+        store.delete_collection("from-phone2");
+        CHECK_EQ(store.list_collections().body.size(), static_cast<size_t>(1));
+    }
+
     // ---- adding cards: validation
     const std::string cid = "id1";
     CHECK_EQ(store.add_card(cid, {{"game", "mtg"}}).status, 400);                      // no name

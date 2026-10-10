@@ -18,7 +18,7 @@ const WORDS = {
   deck: {
     tab: 'Decks', singular: 'deck', plural: 'decks',
     placeholder: 'e.g. Mono-Red Burn',
-    hint: 'A deck lists the cards you want to play, from any game.',
+    hint: 'A deck lists the cards you want to play. Pick its game, then its format.',
     emptyTitle: 'No decks yet', emptyText: 'Build a deck from cards in the database.',
     listEmpty: 'This deck is empty', listEmptyText: 'Tap the + button to add cards to the deck.',
   },

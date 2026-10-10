@@ -86,6 +86,12 @@ void register_routes(cardhttp::Server& server, ApiContext& ctx) {
         return respond(store.create_collection(body));
     });
     server.route("GET", "/api/collections/<id>", [&](const Request& req) { return respond(store.get_collection(req.params.at("id"))); });
+    server.route("PATCH", "/api/collections/<id>", [&](const Request& req) {
+        json body;
+        Response failure;
+        if (!parse_object(req, body, failure)) return failure;
+        return respond(store.update_collection(req.params.at("id"), body));
+    });
     server.route("DELETE", "/api/collections/<id>", [&](const Request& req) { return respond(store.delete_collection(req.params.at("id"))); });
 
     // ---- cards within a collection -----------------------------------------

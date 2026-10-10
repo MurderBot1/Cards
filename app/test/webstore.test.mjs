@@ -299,3 +299,42 @@ test('moving copies of a card to another list (same rules and messages as the na
   assert.equal(move(deck, list(deck).cards[0].id, { to: b, quantity: 30 }).status, 200);
   assert.deepEqual([list(deck).cards[0].quantity, list(deck).cards[0].owned], [70, 70], 'what is had is kept to what is still needed');
 });
+
+test("a deck's game and format: chosen when made, changed later, kept through sync (same rules as the native store)", () => {
+  const { store } = make();
+  const create = (body) => store.handle('POST', '/collections', body);
+  const deck = create({ name: 'Burn', kind: 'deck', game: 'mtg', format: 'modern' });
+  assert.deepEqual([deck.status, deck.body.game, deck.body.format], [201, 'mtg', 'modern']);
+  assert.equal(create({ name: 'Charizard', kind: 'deck', game: 'pokemon', format: 'expanded' }).status, 201);
+  assert.equal(create({ name: 'Blue-Eyes', kind: 'deck', game: 'yugioh', format: 'speed' }).status, 201);
+  const old = create({ name: 'Old style', kind: 'deck' });
+  assert.equal('game' in old.body || 'format' in old.body, false, 'a deck with neither is still fine');
+  for (const body of [
+    { game: 'pokemon', format: 'modern' }, { game: 'digimon', format: 'modern' }, { game: 'mtg' }, { format: 'modern' },
+  ]) assert.equal(create({ name: 'X', kind: 'deck', ...body }).status, 400, JSON.stringify(body));
+  const plain = create({ name: 'X', game: 'mtg', format: 'modern' });
+  assert.deepEqual([plain.status, plain.body.error], [400, 'only a deck has a game and a format']);
+  assert.equal(store.handle('GET', '/collections').body.length, 4, 'refused ones were not made');
+
+  const patch = (id, body) => store.handle('PATCH', `/collections/${id}`, body);
+  const changed = patch(deck.body.id, { game: 'mtg', format: 'commander' });
+  assert.deepEqual([changed.status, changed.body.format], [200, 'commander']);
+  assert.ok(changed.body.updated >= deck.body.updated);
+  assert.equal(patch(old.body.id, { game: 'yugioh', format: 'advanced' }).body.game, 'yugioh', 'an older deck can be given one');
+  assert.equal(patch(deck.body.id, { game: 'mtg' }).status, 400);
+  assert.equal(patch(deck.body.id, { game: 'pokemon', format: 'commander' }).status, 400);
+  assert.equal(patch(deck.body.id, {}).body.error, 'game and format are required');
+  assert.equal(patch('nope', { game: 'mtg', format: 'modern' }).status, 404);
+  const binder = create({ name: 'Binder' });
+  assert.equal(patch(binder.body.id, { game: 'mtg', format: 'modern' }).status, 400, 'not a deck');
+  assert.equal(store.handle('GET', `/collections/${deck.body.id}`).body.format, 'commander', 'refused changes left it alone');
+
+  const state = store.syncState().body.collections;
+  const synced = state.find((c) => c.id === deck.body.id);
+  assert.deepEqual([synced.game, synced.format], ['mtg', 'commander']);
+  const applied = store.handle('POST', '/sync/apply', { collections: [{ ...synced, format: 'pauper', updated: 9e12 }], expect: { [synced.id]: synced.updated } }).body;
+  assert.deepEqual(applied.applied, [synced.id]);
+  assert.equal(store.handle('GET', `/collections/${synced.id}`).body.format, 'pauper');
+  store.handle('POST', '/sync/apply', { collections: [{ id: 'odd', name: 'Odd', kind: 'deck', game: 'pokemon', format: 'modern', updated: 9e12, cards: [] }], expect: {} });
+  assert.equal('game' in store.handle('GET', '/collections/odd').body, false, 'a mismatched pair is not kept');
+});

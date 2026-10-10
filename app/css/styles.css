@@ -1288,3 +1288,7 @@ html.is-web [data-app-only] { display: none !important; }
 .share-more .link-btn { margin: 0; }
 .link-btn--danger { color: var(--danger); }
 #share-link { font-size: 0.85rem; }
+
+/* a deck's game and format, under the toolbar */
+.deck-format-btn { display: block; margin: 0 0 8px; padding: 2px 0; text-align: left; }
+#new-deck-fields .segmented { margin-bottom: 12px; }

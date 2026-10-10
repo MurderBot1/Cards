@@ -124,6 +124,7 @@
           </div>
           <button class="btn btn-secondary filter-clear" id="filter-clear-btn" type="button">Clear filters</button>
         </div>
+        <button class="link-btn link-btn--inline deck-format-btn hidden" id="deck-format-btn" type="button"></button>
         <p class="list-count" id="collection-detail-count">0 cards</p>
         <div class="deck-curve hidden" id="deck-curve">
           <button class="link-btn link-btn--inline" id="deck-curve-toggle" type="button" aria-expanded="false" aria-controls="deck-curve-panel">Mana curve</button>
@@ -288,9 +289,21 @@
   <div class="sheet">
     <div class="sheet-handle"></div>
     <h2 class="sheet-title" id="new-collection-title">New collection</h2>
-    <label class="field-label" for="new-collection-name">Name</label>
-    <input class="field-input" id="new-collection-name" type="text" placeholder="e.g. Modern Deck Staples" maxlength="40">
+    <div id="new-collection-name-block">
+      <label class="field-label" for="new-collection-name">Name</label>
+      <input class="field-input" id="new-collection-name" type="text" placeholder="e.g. Modern Deck Staples" maxlength="40">
+    </div>
     <p class="field-hint" id="new-collection-hint">You can add Magic, Pok&eacute;mon, and Yu-Gi-Oh! cards to any collection.</p>
+    <div id="new-deck-fields" class="hidden">
+      <p class="field-label" id="new-deck-game-label">Game</p>
+      <div class="segmented segmented--game" id="new-deck-game" role="tablist" aria-labelledby="new-deck-game-label">
+        <button data-value="mtg" role="tab"><span class="game-dot game-dot--mtg"></span>Magic</button>
+        <button data-value="pokemon" role="tab"><span class="game-dot game-dot--pokemon"></span>Pok&eacute;mon</button>
+        <button data-value="yugioh" role="tab"><span class="game-dot game-dot--yugioh"></span>Yu-Gi-Oh!</button>
+      </div>
+      <label class="field-label" for="new-deck-format">Format</label>
+      <select class="field-input" id="new-deck-format" disabled></select>
+    </div>
     <div class="sheet-actions">
       <button class="btn btn-secondary" id="new-collection-cancel">Cancel</button>
       <button class="btn btn-primary" id="new-collection-create" disabled>Create collection</button>
