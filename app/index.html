@@ -126,6 +126,14 @@
           <button class="link-btn link-btn--inline" id="deck-curve-toggle" type="button" aria-expanded="false" aria-controls="deck-curve-panel">Mana curve</button>
           <div class="deck-curve-panel hidden" id="deck-curve-panel"></div>
         </div>
+        <div class="deck-curve hidden" id="deck-legality">
+          <button class="link-btn link-btn--inline" id="deck-legality-toggle" type="button" aria-expanded="false" aria-controls="deck-legality-panel">Legality</button>
+          <div class="deck-curve-panel hidden" id="deck-legality-panel">
+            <label class="field-label" for="legality-format">Format</label>
+            <select class="field-input" id="legality-format"></select>
+            <div id="legality-result" aria-live="polite"></div>
+          </div>
+        </div>
         <div class="card-list" id="collection-card-list"><!-- cards injected --></div>
         <div class="empty-state hidden" id="collection-no-matches">
           <h2>No cards match</h2>

@@ -296,6 +296,18 @@ mana values or colors, and nothing here is synced: `app/js/cardInfo.js` looks th
 for deck legality checks. The chart's colors are the data-viz palette's first-in-order hues, validated together in both
 themes with its `validate_palette.js`; the legend and a table view carry the same numbers.
 
+## Deck legality
+
+A deck with Magic cards has a Legality panel: pick a format (Standard, Pioneer, Modern, Legacy, Vintage, Pauper, Commander,
+Brawl) and it says whether the deck is legal there, and why not (banned or not-legal cards, too few cards, too many
+copies), and each card that isn't plainly legal gets a Banned / Not legal / Restricted badge. Card legality is Scryfall's,
+from the same device-only look-up as the mana curve (`app/js/cardInfo.js`); the rules are in `app/js/deckLegality.js`: 60 cards
+at least and 4 copies for the constructed formats, exactly 100 cards and singleton for Commander, exactly 60 and singleton for
+Brawl; basic lands and the few "any number" cards are exempt, and a Vintage-restricted card is limited to one. Copies add up
+across printings of the same name. Sideboards aren't tracked (the whole list is checked as a main deck) and neither are a
+Commander deck's commander and color identity; the panel says so. Cards not looked up yet (offline) are reported as
+unchecked, never as legal.
+
 ## Updates
 
 The app checks the project's GitHub releases on startup (and from "Check for updates" on the Account tab) and offers the
