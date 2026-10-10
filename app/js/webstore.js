@@ -8,6 +8,7 @@
  *   handle('GET', '/collections') -> { status: 200, body: [...] }
  */
 import { limitsOf, tooManyCardsMessage, tooManyCopiesMessage, tooManyListsMessage } from './listKinds.js';
+import { ownedOf } from './deckOwnership.js';
 
 const DB_KEY = 'binder_web_db_v1';
 const CONDITIONS = ['Near Mint', 'Lightly Played', 'Moderately Played', 'Heavily Played', 'Damaged'];
@@ -20,6 +21,15 @@ const GAMES_REPR = "('mtg', 'pokemon', 'yugioh')";
 const KINDS = ['collection', 'deck', 'tradelist', 'wishlist'];
 const KINDS_REPR = "('collection', 'deck', 'tradelist', 'wishlist')";
 const isSpecialKind = (k) => KINDS.includes(k) && k !== 'collection';
+const isDeck = (list) => !!list && list.kind === 'deck';
+// a whole number of copies from 0, else -1
+const wholeCopies = (v) => (typeof v === 'number' && Number.isInteger(v) && v >= 0 ? v : -1);
+// writes how many copies of a deck card the person has: only when there is something to say, never more than needed
+function writeOwned(card, owned) {
+  const kept = ownedOf({ quantity: card.quantity, owned });
+  if (kept > 0) card.owned = kept;
+  else delete card.owned;
+}
 
 const defaultSettings = () => ({ theme: 'dark', fontSize: 'medium', requestRate: 'medium', minImageQuality: 'medium' });
 const emptyDb = () => ({ collections: [], settings: defaultSettings() });
@@ -169,8 +179,11 @@ export class WebStore {
       }
       if (!existing && collection.cards.length >= limits.cards) return error(400, tooManyCardsMessage(listKind));
     }
+    // `owned` (a deck's "I have these", e.g. from a re-imported export): kept for decks, quietly left out elsewhere
+    const ownedIn = isDeck(collection) ? wholeCopies(body.owned) : -1;
     if (existing) {
       existing.quantity += copies;
+      if (ownedIn > 0) writeOwned(existing, (existing.owned || 0) + ownedIn);
       existing.updated = now;
     } else {
       const card = {
@@ -191,6 +204,7 @@ export class WebStore {
       if (foil) card.foil = true;
       if (language) card.language = language;
       if (number) card.number = number;
+      if (ownedIn > 0) writeOwned(card, ownedIn);
       collection.cards.push(card);
     }
     collection.updated = now;
@@ -230,11 +244,12 @@ export class WebStore {
 
   updateCard(collectionId, cardId, body) {
     body = isObject(body) ? body : {};
-    const { quantity, condition, uid } = body;
+    const { quantity, condition, uid, owned } = body;
     const has = (v) => v !== undefined && v !== null;
-    if (!has(quantity) && !has(condition) && !has(uid)) return error(400, 'quantity and/or condition is required');
+    if (!has(quantity) && !has(condition) && !has(uid) && !has(owned)) return error(400, 'quantity and/or condition is required');
     if (has(uid) && typeof uid !== 'string') return error(400, 'uid must be a string');
     if (has(quantity) && !isNumber(quantity)) return error(400, 'quantity must be a number');
+    if (has(owned) && wholeCopies(owned) < 0) return error(400, 'owned must be a whole number of at least 0');
     if (has(condition) && !(typeof condition === 'string' && CONDITIONS.includes(condition))) {
       return error(400, `condition must be one of ${CONDITIONS_REPR}`);
     }
@@ -242,6 +257,7 @@ export class WebStore {
     const collection = db.collections.find((c) => c.id === collectionId);
     if (!collection) return error(404, 'not found');
 
+    if (has(owned) && !isDeck(collection)) return error(400, 'only a deck keeps track of the cards you have');
     if (has(quantity) && quantity > 0) {
       const listKind = KINDS.includes(collection.kind) ? collection.kind : 'collection';
       const perCard = limitsOf(listKind).perCard;
@@ -263,6 +279,9 @@ export class WebStore {
         if (has(quantity)) c.quantity = quantity;
         if (has(condition)) c.condition = condition;
         if (has(uid)) c.uid = uid;
+        // (what is had never exceeds what is needed, so lowering the quantity lowers it too)
+        if (has(owned)) writeOwned(c, owned);
+        else if (has(quantity) && c.owned) writeOwned(c, c.owned);
         c.updated = now;
         collection.updated = now;
       }
@@ -339,6 +358,33 @@ export class WebStore {
     return { status: 200, body: { applied, skipped } };
   }
 
+  // Sets how many copies of each card of a deck the person has, in one go: body { owned: { card id: copies } }.
+  setOwned(collectionId, body) {
+    const owned = isObject(body) ? body.owned : undefined;
+    if (!isObject(owned)) return error(400, 'owned must be an object of card id to copies');
+    if (Object.values(owned).some((v) => wholeCopies(v) < 0)) return error(400, 'owned must be a whole number of at least 0');
+    const db = this.load();
+    const collection = db.collections.find((c) => c.id === collectionId);
+    if (!collection) return error(404, 'not found');
+    if (!isDeck(collection)) return error(400, 'only a deck keeps track of the cards you have');
+    const now = this.nowMs();
+    let changed = false;
+    for (const c of collection.cards) {
+      if (!Object.prototype.hasOwnProperty.call(owned, c.id)) continue;
+      const before = c.owned || 0;
+      writeOwned(c, owned[c.id]);
+      if ((c.owned || 0) !== before) {
+        c.updated = now;
+        changed = true;
+      }
+    }
+    if (changed) {
+      collection.updated = now;
+      this.save(db);
+    }
+    return { status: 200, body: collection };
+  }
+
   getSettings() {
     return { status: 200, body: this.load().settings };
   }
@@ -367,6 +413,8 @@ export class WebStore {
         if (!cardId && method === 'POST') return this.addCard(id, body);
         if (cardId === 'bulk' && method === 'POST') return this.addCards(id, body);
         if (cardId && method === 'PATCH') return this.updateCard(id, cardId, body);
+      } else if (sub === 'owned' && method === 'POST') {
+        return this.setOwned(id, body);
       }
     } else if (root === 'sync') {
       if (id === 'state' && method === 'GET') return this.syncState();

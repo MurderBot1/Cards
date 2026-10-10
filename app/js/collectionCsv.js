@@ -10,6 +10,7 @@
  * Everything here is pure; matching rows to real cards (Scryfall) is in importMatch.js.
  */
 import { parseCsv, toCsv } from './csv.js';
+import { ownedOf } from './deckOwnership.js';
 
 export const CONDITIONS = ['Near Mint', 'Lightly Played', 'Moderately Played', 'Heavily Played', 'Damaged'];
 
@@ -34,6 +35,7 @@ const FIELD_NAMES = {
   binderId: ['binderid'],
   game: ['game', 'tcg', 'category'],
   image: ['imageurl', 'image'],
+  copiesOwned: ['copiesowned'],  // (Binder's own: how many copies of a deck card the person has; other apps' "Owned" is the count)
 };
 
 /** For each field, the index of the column that holds it (or -1): { name: 0, quantity: 1, ... }. */
@@ -138,7 +140,7 @@ function looksLikeCodes(values) {
 /**
  * Reads a collection CSV. Resolves to:
  *   { ok: true, format, columns, rows: [{ line, name, quantity, game, setCode, setName, number, condition, language,
- *     foil, rarity, scryfallId, binderId, image }], skipped, assumedCondition, hasGame }
+ *     foil, rarity, scryfallId, binderId, image, owned }], skipped, assumedCondition, hasGame }
  *   { ok: false, error }
  * `format` is the app the file looks like (or null); `skipped` counts rows with no name or a zero count; each row's
  * `game` is null when the file doesn't say (the caller chooses); `assumedCondition` counts rows whose condition cell was
@@ -199,6 +201,7 @@ export function parseCollectionCsv(text) {
       scryfallId: cell(raw, 'scryfallId').toLowerCase(),
       binderId: cell(raw, 'binderId'),
       image: cell(raw, 'image'),
+      owned: parseCount(cell(raw, 'copiesOwned')) || 0,
     });
   });
   if (rows.length === 0) return { ok: false, error: 'There are no cards in that file.' };
@@ -209,7 +212,7 @@ export function parseCollectionCsv(text) {
 
 export const EXPORT_HEADER = [
   'Count', 'Name', 'Game', 'Set Code', 'Collector Number', 'Rarity', 'Condition', 'Foil', 'Language', 'Binder ID',
-  'Scryfall ID', 'Image URL', 'Collection',
+  'Scryfall ID', 'Image URL', 'Collection', 'Copies Owned',
 ];
 
 /**
@@ -219,6 +222,7 @@ export const EXPORT_HEADER = [
  */
 export function exportCollectionCsv(collection) {
   const rows = [EXPORT_HEADER];
+  const isDeck = collection.kind === 'deck';  // (only a deck says how many copies of a card the person has)
   for (const card of collection.cards || []) {
     const uid = typeof card.uid === 'string' ? card.uid : '';
     rows.push([
@@ -235,6 +239,7 @@ export function exportCollectionCsv(collection) {
       card.game === 'mtg' && uid.startsWith('mtg-') ? uid.slice(4) : '',
       card.image || '',
       collection.name || '',
+      isDeck ? ownedOf(card) : '',
     ]);
   }
   return toCsv(rows);

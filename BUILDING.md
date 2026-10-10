@@ -259,6 +259,15 @@ live in three places that must agree: `native/cardstore/src/store.cpp` (`limits_
 used by the website's store) and `cloudflare/src/sync.js` (`LIMITS`; the Worker checks the cards in a list it is sent,
 not how many lists a person has). A list that already holds more than its limit can be read and lowered but not added to.
 
+### Which cards of a deck you have
+
+A deck card can say how many copies the person has: `owned`, a whole number from 1 up to the card's `quantity` (absent
+means none; zero is never written). It is set per card (`PATCH .../cards/<id>` with `owned`) or for many at once
+(`POST /api/collections/<id>/owned` with `{ owned: { <card id>: <copies> } }`), is refused on anything but a deck, is kept
+to what the deck needs when the quantity is lowered, travels through sync with the card, and is exported as a
+`Copies Owned` column (read back by an import into a deck). The deck screen's "check my collections" button fills it
+from the person's collections (same game and name, any printing; only collections count) and never lowers a card.
+
 ## Updates
 
 The app checks the project's GitHub releases on startup (and from "Check for updates" on the Account tab) and offers the

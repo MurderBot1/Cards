@@ -41,7 +41,11 @@ public:
     Result add_card(const std::string& collection_id, const nlohmann::json& body);
     // Adds many at once (one read and one write of the file): body { cards: [card body as above] }, all or nothing.
     Result add_cards(const std::string& collection_id, const nlohmann::json& body);
+    // body: { quantity?, condition?, uid?, owned? }. `owned` (decks only) is how many copies of the card the person has.
     Result update_card(const std::string& collection_id, const std::string& card_id, const nlohmann::json& body);
+    // Sets how many copies of each card of a deck the person has, in one write: body { owned: { card id: copies } }.
+    // Copies are whole numbers from 0, kept at no more than the deck needs; ids that aren't in the deck are ignored.
+    Result set_owned(const std::string& collection_id, const nlohmann::json& body);
 
     // ---- sync (see cloudflare/src/sync.js for the other half) ---------------------------------------------------
     // Every collection and card carries `updated` (ms) and removals are remembered (a collection's `tomb` map of

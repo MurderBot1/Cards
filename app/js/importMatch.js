@@ -136,6 +136,7 @@ export function buildCards(rows, matches, defaultGame = 'mtg') {
     if (uid) card.uid = uid;
     if (row.foil) card.foil = true;
     if (row.language) card.language = row.language;
+    if (row.owned > 0) card.owned = row.owned;  // (a deck keeps it; any other list leaves it out)
     return card;
   });
 }

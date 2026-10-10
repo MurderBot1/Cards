@@ -1188,3 +1188,19 @@ html.is-web [data-app-only] { display: none !important; }
 /* ---- kinds of list: collections, decks, tradelist, wishlist (js/listKinds.js) ---- */
 .list-kinds { margin-bottom: 12px; }
 .list-kinds button { font-size: 0.82rem; }
+
+/* ---- decks: which cards the person has (js/deckOwnership.js) ---- */
+.own-pill {
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.own-pill--full { color: #fff; border-color: transparent; background: var(--success, #2e9e6b); }
+.own-pill--part { color: var(--gold, #c98a1b); border-color: currentColor; }
+.own-pill--none { color: var(--danger, #d4564e); border-color: currentColor; }

@@ -88,3 +88,18 @@ test('counting active filters and spotting a custom view', () => {
   assert.equal(isCustomView({ ...emptyFilter(), sort: 'name-asc' }), true, 'sorting alone counts');
   assert.equal(isCustomView({ ...emptyFilter(), set: 'M11' }), true);
 });
+
+test('deck cards by what the person has: missing or complete', () => {
+  const deck = [
+    { id: 'a', name: 'Bolt', game: 'mtg', set: 'M11', quantity: 4, owned: 4 },
+    { id: 'b', name: 'Ring', game: 'mtg', set: 'CMR', quantity: 1 },
+    { id: 'c', name: 'Shock', game: 'mtg', set: 'M11', quantity: 3, owned: 1 },
+  ];
+  const ids = (ownership) => filterCards(deck, '', { ...emptyFilter(), ownership }).map((c) => c.id).join('');
+  assert.equal(ids(''), 'abc');
+  assert.equal(ids('missing'), 'bc');
+  assert.equal(ids('complete'), 'a');
+  assert.equal(ids('nonsense'), 'abc', 'an unknown value filters nothing');
+  assert.equal(activeFilterCount({ ...emptyFilter(), ownership: 'missing' }), 1);
+  assert.equal(activeFilterCount({ ...emptyFilter(), ownership: 'nonsense' }), 0);
+});

@@ -76,7 +76,7 @@ test('Moxfield: the edition is a code', () => {
   assert.equal(r.format, 'Moxfield');
   assert.equal(r.rows.length, 2);
   assert.equal(r.skipped, 1, 'a zero count is skipped');
-  assert.deepEqual(r.rows[0], { line: 2, name: 'Lightning Bolt', quantity: 2, game: null, setCode: 'M11', setName: '', number: '146', condition: 'Near Mint', language: '', foil: false, rarity: '', scryfallId: '', binderId: '', image: '' });
+  assert.deepEqual(r.rows[0], { line: 2, name: 'Lightning Bolt', quantity: 2, game: null, setCode: 'M11', setName: '', number: '146', condition: 'Near Mint', language: '', foil: false, rarity: '', scryfallId: '', binderId: '', image: '', owned: 0 });
   assert.deepEqual([r.rows[1].condition, r.rows[1].foil, r.rows[1].language, r.rows[1].setCode], ['Lightly Played', true, 'Japanese', 'CMR']);
 });
 
@@ -130,8 +130,8 @@ test('exporting a collection keeps everything Binder knows and reads back the sa
   ] };
   const text = exportCollectionCsv(collection);
   const table = parseCsv(text);
-  assert.deepEqual(table[0], ['Count', 'Name', 'Game', 'Set Code', 'Collector Number', 'Rarity', 'Condition', 'Foil', 'Language', 'Binder ID', 'Scryfall ID', 'Image URL', 'Collection']);
-  assert.deepEqual(table[1], ['4', 'Lightning Bolt', 'mtg', 'M11', '146', 'Common', 'Near Mint', '', 'English', 'mtg-aaaa-bbbb', 'aaaa-bbbb', 'http://x/y.jpg', 'Modern, "staples"']);
+  assert.deepEqual(table[0], ['Count', 'Name', 'Game', 'Set Code', 'Collector Number', 'Rarity', 'Condition', 'Foil', 'Language', 'Binder ID', 'Scryfall ID', 'Image URL', 'Collection', 'Copies Owned']);
+  assert.deepEqual(table[1], ['4', 'Lightning Bolt', 'mtg', 'M11', '146', 'Common', 'Near Mint', '', 'English', 'mtg-aaaa-bbbb', 'aaaa-bbbb', 'http://x/y.jpg', 'Modern, "staples"', '']);
   assert.deepEqual([table[2][7], table[2][8], table[2][6]], ['foil', 'Japanese', 'Lightly Played']);
   assert.equal(table[1][8], 'English', 'no language stored means English');
   assert.equal(table[3][10], '', 'a Scryfall id only for Magic cards');
@@ -142,6 +142,22 @@ test('exporting a collection keeps everything Binder knows and reads back the sa
   assert.deepEqual([back.rows[0].game, back.rows[0].binderId, back.rows[0].scryfallId, back.rows[0].number], ['mtg', 'mtg-aaaa-bbbb', 'aaaa-bbbb', '146']);
   assert.deepEqual([back.rows[1].foil, back.rows[1].condition, back.rows[2].game], [true, 'Lightly Played', 'pokemon']);
   assert.equal(exportCollectionCsv({ name: 'Empty', cards: [] }).trim(), table[0].join(','));
+});
+
+test('a deck exports and re-reads how many copies of each card the person has', () => {
+  const deck = { name: 'Burn', kind: 'deck', cards: [
+    { id: 'a', name: 'Lightning Bolt', game: 'mtg', set: 'M11', quantity: 4, owned: 3 },
+    { id: 'b', name: 'Sol Ring', game: 'mtg', set: 'CMR', quantity: 1 },
+    { id: 'c', name: 'Shock', game: 'mtg', set: 'M11', quantity: 2, owned: 9 },
+  ] };
+  const table = parseCsv(exportCollectionCsv(deck));
+  assert.deepEqual(table.slice(1).map((r) => r[13]), ['3', '0', '2'], 'never more than needed');
+  const back = parseCollectionCsv(exportCollectionCsv(deck));
+  assert.deepEqual(back.rows.map((r) => r.owned), [3, 0, 2]);
+  assert.equal(parseCsv(exportCollectionCsv({ ...deck, kind: undefined }))[1][13], '', 'only a deck says');
+  // another app's "Owned" column is still the count of copies, not this
+  const other = parseCollectionCsv('Name,Owned\nBolt,3\n');
+  assert.deepEqual([other.rows[0].quantity, other.rows[0].owned], [3, 0]);
 });
 
 test('file names for exports', () => {
