@@ -1158,3 +1158,29 @@ html.is-web [data-app-only] { display: none !important; }
   color: #fff;
   background: linear-gradient(135deg, var(--foil-1), var(--foil-2));
 }
+
+/* ---- filter and sort panel (js/cardFilter.js) ---- */
+#filter-toggle-btn { position: relative; }
+.filter-badge {
+  position: absolute; top: -5px; right: -5px;
+  min-width: 18px; height: 18px; padding: 0 4px;
+  border-radius: 9px;
+  font-size: 0.7rem; font-weight: 700; line-height: 18px; text-align: center;
+  color: #fff;
+  background: linear-gradient(135deg, var(--foil-1), var(--foil-2));
+}
+.filter-panel {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0 10px;
+  align-items: end;
+  margin-bottom: 12px;
+  padding: 4px 12px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.filter-field { display: block; min-width: 0; }
+.filter-price { display: flex; align-items: center; gap: 6px; color: var(--text-dim); }
+.filter-price .field-input { min-width: 0; }
+.filter-clear { margin-top: 14px; }
