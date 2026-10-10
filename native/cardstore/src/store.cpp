@@ -38,6 +38,28 @@ bool valid_kind(const json& k) {
 }
 bool is_special_kind(const json& k) { return valid_kind(k) && k != "collection"; }
 
+// The game a deck is for and the format it is built for (app/js/deckFormats.js and cloudflare/src/sync.js hold the same
+// lists). A format belongs to one game.
+bool valid_deck_format(const json& game, const json& format) {
+    if (!valid_game(game) || !format.is_string()) return false;
+    const std::string g = game.get<std::string>(), f = format.get<std::string>();
+    if (g == "mtg") {
+        for (const char* k : {"standard", "pioneer", "modern", "legacy", "vintage", "pauper", "commander", "brawl"})
+            if (f == k) return true;
+        return false;
+    }
+    if (g == "pokemon") return f == "standard" || f == "expanded" || f == "unlimited";
+    return f == "advanced" || f == "traditional" || f == "speed";  // yugioh
+}
+// Checks the `game` and `format` of a request for a deck: both given and matching, both left out, or an error message.
+// `required` (changing them) wants both.
+std::string deck_format_problem(const json& game, const json& format, bool required) {
+    if (game.is_null() && format.is_null()) return required ? "game and format are required" : "";
+    if (!valid_game(game)) return "game must be one of ('mtg', 'pokemon', 'yugioh')";
+    if (!valid_deck_format(game, format)) return "format must be one of the formats of that game";
+    return "";
+}
+
 // How much a list may hold, by kind. -1 means no limit. "Different cards" are rows (a card in another condition,
 // set, finish or language is its own row). The page and the Worker keep the same numbers (app/js/listKinds.js,
 // cloudflare/src/sync.js).
@@ -175,6 +197,13 @@ Result Store::create_collection(const json& body) {
     if (name.empty()) return error(400, "name is required");
     json kind = field(body, "kind");
     if (!kind.is_null() && !valid_kind(kind)) return error(400, std::string("kind must be one of ") + kValidKindsRepr);
+    json game = field(body, "game");
+    json format = field(body, "format");
+    if (!game.is_null() || !format.is_null()) {
+        if (kind != "deck") return error(400, "only a deck has a game and a format");
+        std::string problem = deck_format_problem(game, format, false);
+        if (!problem.empty()) return error(400, problem);
+    }
 
     std::lock_guard<std::mutex> lock(mu_);
     json db = load_locked();
@@ -193,9 +222,30 @@ Result Store::create_collection(const json& body) {
     }
     json collection = {{"id", make_id_()}, {"name", name}, {"cards", json::array()}, {"updated", now_ms_()}};
     if (is_special_kind(kind)) collection["kind"] = kind;
+    if (!game.is_null()) {
+        collection["game"] = game;
+        collection["format"] = format;
+    }
     db["collections"].push_back(collection);
     save_locked(db);
     return {201, collection};
+}
+
+Result Store::update_collection(const std::string& id, const json& body) {
+    json game = field(body, "game");
+    json format = field(body, "format");
+    std::string problem = deck_format_problem(game, format, true);
+    if (!problem.empty()) return error(400, problem);
+    std::lock_guard<std::mutex> lock(mu_);
+    json db = load_locked();
+    json* collection = find_collection(db, id);
+    if (!collection) return error(404, "not found");
+    if (!is_deck(*collection)) return error(400, "only a deck has a game and a format");
+    (*collection)["game"] = game;
+    (*collection)["format"] = format;
+    (*collection)["updated"] = now_ms_();
+    save_locked(db);
+    return {200, *collection};
 }
 
 Result Store::get_collection(const std::string& id) {
@@ -523,6 +573,10 @@ Result Store::sync_state() {
                     {"cards", json::array()},
                     {"tomb", c.contains("tomb") && c["tomb"].is_object() ? c["tomb"] : json::object()}};
         if (c.contains("kind") && is_special_kind(c["kind"])) doc["kind"] = c["kind"];
+        if (is_deck(c) && c.contains("game") && c.contains("format") && valid_deck_format(c["game"], c["format"])) {
+            doc["game"] = c["game"];
+            doc["format"] = c["format"];
+        }
         long long newest = stamp_of(c);
         for (auto card : c["cards"]) {
             card["updated"] = stamp_of(card);
@@ -586,6 +640,11 @@ Result Store::sync_apply(const json& body) {
         json merged = {{"id", id}, {"name", doc["name"]}, {"cards", doc["cards"]}, {"updated", stamp_of(doc)}};
         if (doc.contains("tomb") && doc["tomb"].is_object()) merged["tomb"] = doc["tomb"];
         if (doc.contains("kind") && is_special_kind(doc["kind"])) merged["kind"] = doc["kind"];
+        if (merged.value("kind", "") == "deck" && doc.contains("game") && doc.contains("format") &&
+            valid_deck_format(doc["game"], doc["format"])) {
+            merged["game"] = doc["game"];
+            merged["format"] = doc["format"];
+        }
         if (local) {
             *local = merged;
         } else {

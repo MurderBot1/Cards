@@ -3,7 +3,7 @@
 // which the app writes back locally. See native/cardstore (sync_state / sync_apply) for the device side.
 //
 // A collection travels as a "doc":
-//   { id, name, kind?: 'deck' | 'tradelist' | 'wishlist', updated, cards: [{id, uid?, name, game, set, rarity, image, condition, quantity, foil?, language?, number?, owned?, updated}], tomb: {cardId: ms} }
+//   { id, name, kind?: 'deck' | 'tradelist' | 'wishlist', game?, format? (decks), updated, cards: [{id, uid?, name, game, set, rarity, image, condition, quantity, foil?, language?, number?, owned?, updated}], tomb: {cardId: ms} }
 // or, once deleted, { id, deleted: ms }. Times are the device's clock in milliseconds. Merging is last-writer-wins
 // per card; removals are kept as tombstones so they win over older copies instead of being resurrected.
 import { fail, json, readJson, sessionUser } from './lib.js';
@@ -16,6 +16,14 @@ const CONDITIONS = new Set(['Near Mint', 'Lightly Played', 'Moderately Played', 
 const GAMES = new Set(['mtg', 'pokemon', 'yugioh']);
 // What a list is. Only the three that aren't plain collections are written down.
 const KINDS = new Set(['deck', 'tradelist', 'wishlist']);
+
+// The game a deck is for and its format (a format belongs to one game); the app and the native store hold the same lists.
+export const DECK_FORMATS = {
+  mtg: ['standard', 'pioneer', 'modern', 'legacy', 'vintage', 'pauper', 'commander', 'brawl'],
+  pokemon: ['standard', 'expanded', 'unlimited'],
+  yugioh: ['advanced', 'traditional', 'speed'],
+};
+const isDeckFormat = (game, format) => Object.hasOwn(DECK_FORMATS, game) && DECK_FORMATS[game].includes(format);
 
 // What a list may hold, by kind (null: no limit). The app enforces the same numbers while a person edits; this is the
 // backstop for anything that talks to the Worker directly. A "different card" is a row of the list. The copies of one
@@ -88,6 +96,10 @@ export function cleanDoc(raw) {
   }
   const doc = { id: raw.id, name: text(raw.name, 200) };
   if (KINDS.has(raw.kind)) doc.kind = raw.kind;
+  if (raw.kind === 'deck' && isDeckFormat(raw.game, raw.format)) {  // a deck's game and format, only as a matching pair
+    doc.game = raw.game;
+    doc.format = raw.format;
+  }
   doc.updated = isTime(raw.updated) ? raw.updated : 1;
   doc.cards = cards;
   doc.tomb = tomb;
@@ -126,6 +138,12 @@ export function mergeDocs(a, b) {
   const merged = { id: a.id, name: newest.name };
   const kind = a.kind || b.kind;  // a list never changes kind, so whichever copy knows it
   if (kind) merged.kind = kind;
+  // the newer copy's game and format; a copy that has none doesn't wipe out one that does
+  const picked = [newest, newest === a ? b : a].find((d) => d.game && d.format);
+  if (picked) {
+    merged.game = picked.game;
+    merged.format = picked.format;
+  }
   merged.updated = updated;
   merged.cards = cards;
   merged.tomb = tomb;

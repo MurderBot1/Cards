@@ -27,7 +27,7 @@ by a [D1](https://developers.cloudflare.com/d1/) database. Both are on Cloudflar
 
 **Sync** (`src/sync.js`): the app sends the collections that changed on that device; the service merges them with the
 account's copy and answers with the merged result plus anything other devices changed since the app's `cursor`. A collection
-is a doc `{id, name, updated, cards: [...], tomb: {cardId: ms}}` (or `{id, deleted: ms}` once deleted); every card has
+is a doc `{id, name, kind?, game?, format? (a deck's game and format, kept only as a matching pair), updated, cards: [...], tomb: {cardId: ms}}` (or `{id, deleted: ms}` once deleted); every card has
 `updated` (the device's clock, in ms). The newest edit of a card wins, and a removal (a `tomb` entry) beats an older copy
 of the card, so nothing is resurrected. Two devices adding different cards both keep them; two devices changing the *same*
 card at about the same time keep the later change (clock differences between devices can swing that). A deleted collection

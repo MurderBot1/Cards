@@ -112,3 +112,33 @@ test('how many copies of a deck card the person has is kept: a whole number from
   assert.equal(mergeDocs(a, b).cards[0].owned, 3);
   assert.equal(mergeDocs(b, a).cards[0].owned, 3);
 });
+
+test('a deck keeps its game and format, only as a matching pair, and only on a deck', () => {
+  const deck = (over) => cleanDoc(doc({ kind: 'deck', ...over }));
+  assert.deepEqual([deck({ game: 'mtg', format: 'modern' }).game, deck({ game: 'mtg', format: 'modern' }).format], ['mtg', 'modern']);
+  assert.equal(deck({ game: 'pokemon', format: 'expanded' }).format, 'expanded');
+  assert.equal(deck({ game: 'yugioh', format: 'speed' }).format, 'speed');
+  for (const bad of [
+    { game: 'pokemon', format: 'modern' }, { game: 'mtg', format: 'expanded' }, { game: 'digimon', format: 'modern' },
+    { game: 'mtg' }, { format: 'modern' }, { game: 5, format: 'modern' }, { game: '__proto__', format: 'x' }, {},
+  ]) {
+    const clean = deck(bad);
+    assert.equal('game' in clean || 'format' in clean, false, JSON.stringify(bad));
+  }
+  const notDeck = cleanDoc(doc({ kind: 'wishlist', game: 'mtg', format: 'modern' }));
+  assert.equal('game' in notDeck || 'format' in notDeck, false, 'only a deck has them');
+  assert.equal('game' in cleanDoc(doc({ game: 'mtg', format: 'modern' })), false);
+});
+
+test('merging decks: the newer game and format win; one that has none does not wipe the other', () => {
+  const older = cleanDoc(doc({ kind: 'deck', game: 'mtg', format: 'modern', updated: 100, cards: [card('a')] }));
+  const newer = cleanDoc(doc({ kind: 'deck', game: 'mtg', format: 'commander', updated: 200, cards: [card('b', { updated: 200 })] }));
+  assert.equal(mergeDocs(older, newer).format, 'commander');
+  assert.equal(mergeDocs(newer, older).format, 'commander', 'whichever way round');
+  const bare = cleanDoc(doc({ kind: 'deck', updated: 300, cards: [card('c', { updated: 300 })] }));  // an older client that never sent one
+  const kept = mergeDocs(newer, bare);
+  assert.deepEqual([kept.game, kept.format], ['mtg', 'commander']);
+  assert.deepEqual(mergeDocs(bare, newer), kept);
+  assert.equal('game' in mergeDocs(bare, cleanDoc(doc({ kind: 'deck', updated: 400 }))), false);
+  assert.equal(JSON.stringify(mergeDocs(newer, newer)), JSON.stringify(newer), 'merging with itself changes nothing');
+});

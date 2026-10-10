@@ -19,6 +19,7 @@ import { formatPrice, priceCurrency, toLocalPrice } from './currency.js';
 import { cardInfo } from './cardInfo.js';
 import { manaCurve } from './manaCurve.js';
 import { curveHtml } from './curveView.js';
+import { deckFormatOf, deckFormatText, formatsOf, gameOfCards } from './deckFormats.js';
 import { FORMATS, cardStatus, checkFormat, formatByKey, statusWord } from './deckLegality.js';
 import { legalityHtml } from './legalityView.js';
 import { deckTotals, missingOf, ownedFromCollections, ownedOf } from './deckOwnership.js';
@@ -121,6 +122,11 @@ const els = {
 
   newModal: document.getElementById('modal-new-collection'),
   newName: document.getElementById('new-collection-name'),
+  newNameBlock: document.getElementById('new-collection-name-block'),
+  newDeckFields: document.getElementById('new-deck-fields'),
+  newDeckGame: document.getElementById('new-deck-game'),
+  newDeckFormat: document.getElementById('new-deck-format'),
+  deckFormatBtn: document.getElementById('deck-format-btn'),
   newCreateBtn: document.getElementById('new-collection-create'),
   newCancelBtn: document.getElementById('new-collection-cancel'),
 
@@ -343,35 +349,87 @@ export async function reloadCollections() {
 window.addEventListener('binder:collections-changed', () => { reloadCollections().catch(() => {}); });
 
 // -----------------------------------------------------------------
-// new collection modal (name only — games are chosen per card)
+// new collection modal (a name; a deck also asks for its game, then its format). The same sheet changes the game and
+// format of a deck that is already made (`editingDeck`).
 // -----------------------------------------------------------------
+let deckPick = { game: '', format: '' };
+let editingDeck = null;
+
+function showDeckPick() {
+  setGamePicker(els.newDeckGame, deckPick.game);
+  const formats = formatsOf(deckPick.game);
+  els.newDeckFormat.innerHTML = deckPick.game
+    ? `<option value="">Choose a format</option>${formats.map((f) => `<option value="${f.key}">${f.label}</option>`).join('')}`
+    : '<option value="">Choose a game first</option>';
+  els.newDeckFormat.disabled = !deckPick.game;
+  els.newDeckFormat.value = deckPick.format;
+}
 function openNewCollectionModal() {
   const words = kindWords(activeKind);
+  editingDeck = null;
   els.newTitle.textContent = `New ${words.singular}`;
   els.newName.placeholder = words.placeholder;
   els.newHint.textContent = words.hint;
+  els.newHint.classList.remove('hidden');
+  els.newNameBlock.classList.remove('hidden');
   els.newCreateBtn.textContent = `Create ${words.singular}`;
   els.newName.value = '';
+  els.newDeckFields.classList.toggle('hidden', activeKind !== 'deck');
+  if (activeKind === 'deck') {
+    deckPick = { game: '', format: '' };
+    showDeckPick();
+  }
   updateCreateBtnState();
   els.newModal.classList.remove('hidden');
-  setTimeout(() => els.newName.focus(), 50);
+  if (activeKind !== 'deck') setTimeout(() => els.newName.focus(), 50);
+}
+// change the game and format of the open deck (a deck made before they were asked for starts from a guess at the game)
+function openDeckFormatModal() {
+  if (!activeCollection || kindOf(activeCollection) !== 'deck') return;
+  editingDeck = activeCollection;
+  const have = deckFormatOf(activeCollection);
+  deckPick = have ? { ...have } : { game: gameOfCards(activeCollection.cards), format: '' };
+  els.newTitle.textContent = 'Game and format';
+  els.newHint.classList.add('hidden');
+  els.newNameBlock.classList.add('hidden');
+  els.newCreateBtn.textContent = 'Save';
+  els.newDeckFields.classList.remove('hidden');
+  showDeckPick();
+  updateCreateBtnState();
+  els.newModal.classList.remove('hidden');
 }
 function closeNewCollectionModal() {
   els.newModal.classList.add('hidden');
+  editingDeck = null;
 }
 function updateCreateBtnState() {
-  els.newCreateBtn.disabled = !els.newName.value.trim();
+  const deckFields = !els.newDeckFields.classList.contains('hidden');
+  const needsName = !editingDeck;
+  els.newCreateBtn.disabled = (needsName && !els.newName.value.trim()) || (deckFields && !(deckPick.game && deckPick.format));
 }
+wireGamePicker(els.newDeckGame, (value) => {
+  if (value !== deckPick.game) deckPick = { game: value, format: '' };  // a format belongs to one game
+  showDeckPick();
+  updateCreateBtnState();
+});
+els.newDeckFormat.addEventListener('change', () => {
+  deckPick.format = els.newDeckFormat.value;
+  updateCreateBtnState();
+});
 
 els.newName.addEventListener('input', updateCreateBtnState);
 els.newCancelBtn.addEventListener('click', closeNewCollectionModal);
 els.newModal.addEventListener('click', (e) => { if (e.target === els.newModal) closeNewCollectionModal(); });
 els.newCreateBtn.addEventListener('click', async () => {
+  if (editingDeck) {
+    await saveDeckFormat();
+    return;
+  }
   const name = els.newName.value.trim();
   if (!name) return;
   els.newCreateBtn.disabled = true;
   try {
-    const collection = await api.createCollection(name, activeKind);
+    const collection = await api.createCollection(name, activeKind, activeKind === 'deck' ? { ...deckPick } : null);
     collections.push(collection);
     renderCollectionGrid();
     closeNewCollectionModal();
@@ -382,6 +440,47 @@ els.newCreateBtn.addEventListener('click', async () => {
     closeNewCollectionModal();
   }
 });
+
+async function saveDeckFormat() {
+  const deck = editingDeck;
+  els.newCreateBtn.disabled = true;
+  try {
+    const updated = await api.setDeckFormat(deck.id, deckPick.game, deckPick.format);
+    const at = collections.findIndex((c) => c.id === updated.id);
+    if (at !== -1) collections[at] = updated;
+    if (activeCollection && activeCollection.id === updated.id) {
+      activeCollection = updated;
+      useDeckFormat(updated);
+      applyDeckGame();
+      renderCardList(els.detailSearch.value);
+      syncActiveCollectionIntoList();
+    }
+    closeNewCollectionModal();
+    showToast(`${deckFormatText(updated)}`);
+  } catch (err) {
+    showToast(err.message || "Couldn't change the game and format", 3500);
+    updateCreateBtnState();
+  }
+}
+els.deckFormatBtn.addEventListener('click', openDeckFormatModal);
+
+// a Magic deck's legality panel starts on the deck's own format
+function useDeckFormat(deck) {
+  const have = deckFormatOf(deck);
+  if (have && have.game === 'mtg') {
+    legalFormatKey = have.format;
+    els.legalFormat.value = legalFormatKey;
+  }
+}
+// adding cards to a deck starts on the deck's game
+function applyDeckGame() {
+  const have = activeCollection && kindOf(activeCollection) === 'deck' ? deckFormatOf(activeCollection) : null;
+  if (!have) return;
+  selectedSearchGame = have.game;
+  selectedScanGame = have.game;
+  setGamePicker(els.searchGamePicker, have.game);
+  setGamePicker(els.scanGamePicker, have.game);
+}
 
 // -----------------------------------------------------------------
 // delete collection (with confirmation)
@@ -437,6 +536,8 @@ async function openCollection(id) {
   els.curveToggle.setAttribute('aria-expanded', 'false');
   els.legalToggle.setAttribute('aria-expanded', 'false');
   infoAsked = '';
+  useDeckFormat(activeCollection);
+  applyDeckGame();
   renderCardList('');
   const count = activeCollection.cards.length;
   if (onNavigate) {
@@ -473,6 +574,8 @@ function renderCardList(filter) {
   const haveText = totals && total > 0 ? ` · have ${totals.owned} of ${totals.needed}` : '';
   els.detailCount.textContent = `${totalText}${haveText}${narrowed ? ` · ${cards.length} match${cards.length === 1 ? '' : 'es'}` : ''}${valueSuffix(activeCollection.cards)}`;
   els.ownCheckBtn.classList.toggle('hidden', !isDeckList);
+  els.deckFormatBtn.classList.toggle('hidden', !isDeckList);
+  if (isDeckList) els.deckFormatBtn.textContent = deckFormatText(activeCollection) ? `${deckFormatText(activeCollection)} · change` : 'Set the game and format';
   updateCurve();
   updateLegality();
   els.cardList.innerHTML = '';
@@ -538,7 +641,12 @@ function askCardInfo() {
 }
 
 const isOpen = (toggle) => toggle.getAttribute('aria-expanded') === 'true';
-const deckWithMagic = () => !!activeCollection && kindOf(activeCollection) === 'deck' && activeCollection.cards.some((c) => c.game === 'mtg');
+// a Magic deck: one made for Magic, or (an older deck with no game) one that holds Magic cards
+const deckWithMagic = () => {
+  if (!activeCollection || kindOf(activeCollection) !== 'deck') return false;
+  const have = deckFormatOf(activeCollection);
+  return have ? have.game === 'mtg' : activeCollection.cards.some((c) => c.game === 'mtg');
+};
 
 // a deck's mana curve (manaCurve.js)
 function updateCurve() {

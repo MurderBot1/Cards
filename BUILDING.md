@@ -301,6 +301,19 @@ mana values or colors, and nothing here is synced: `app/js/cardInfo.js` looks th
 for deck legality checks. The chart's colors are the data-viz palette's first-in-order hues, validated together in both
 themes with its `validate_palette.js`; the legend and a table view carry the same numbers.
 
+### A deck's game and format
+
+Making a deck asks for its game (Magic, Pokémon, Yu-Gi-Oh!) and then a format of that game, stored on the deck as `game` and
+`format` (`app/js/deckFormats.js`: Magic Standard, Pioneer, Modern, Legacy, Vintage, Pauper, Commander, Brawl; Pokémon
+Standard, Expanded, Unlimited; Yu-Gi-Oh! Advanced, Traditional, Speed Duel). The API takes them on `POST /api/collections` and
+changes them with `PATCH /api/collections/<id>` (`{game, format}`, both required, decks only); a format must belong to the
+game, and nothing else has them. The lists live in three places that must agree: `native/cardstore/src/store.cpp`
+(`valid_deck_format`), `app/js/deckFormats.js` and `cloudflare/src/sync.js` (`DECK_FORMATS`; the Worker keeps them only as a
+matching pair and the newer copy wins when two devices differ). The deck screen shows "Magic: The Gathering · Modern" (tap it
+to change); adding cards starts on the deck's game and a Magic deck's legality panel starts on its format. Only Magic decks
+are checked for legality, so for the other games the format is a label. A deck made before this has neither: the screen says
+"Set the game and format", starting from the game its cards share. A deck still accepts cards of any game.
+
 ## Deck legality
 
 A deck with Magic cards has a Legality panel: pick a format (Standard, Pioneer, Modern, Legacy, Vintage, Pauper, Commander,
