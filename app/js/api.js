@@ -168,18 +168,20 @@ export const api = {
     return request('/collections');
   },
 
-  async createCollection(name) {
+  // `kind`: 'collection' (default), 'deck', 'tradelist' or 'wishlist'
+  async createCollection(name, kind = 'collection') {
     if (USE_MOCK) {
       await delay();
       const db = loadMockDb();
       const collection = { id: uid(), name, cards: [] };
+      if (kind !== 'collection') collection.kind = kind;
       db.collections.push(collection);
       saveMockDb(db);
       return collection;
     }
     // BACKEND: POST /api/collections {name} -> collection. Collections hold
     // cards from any game — each card carries its own `game` field instead.
-    return request('/collections', { method: 'POST', body: JSON.stringify({ name }) });
+    return request('/collections', { method: 'POST', body: JSON.stringify({ name, kind }) });
   },
 
   async deleteCollection(collectionId) {

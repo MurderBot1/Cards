@@ -72,3 +72,17 @@ test('deleted collections', () => {
   assert.deepEqual(mergeDocs(live, { id: 'c1', deleted: 200 }), live); // edited since: it lives on
   assert.deepEqual(mergeDocs({ id: 'c1', deleted: 100 }, { id: 'c1', deleted: 900 }), { id: 'c1', deleted: 900 });
 });
+
+test('the kind of a list (deck, tradelist, wishlist) survives cleaning and merging; a collection has none', () => {
+  for (const kind of ['deck', 'tradelist', 'wishlist']) assert.equal(cleanDoc(doc({ kind })).kind, kind);
+  for (const kind of ['collection', 'binder', 5, null, undefined]) {
+    assert.equal('kind' in cleanDoc(doc({ kind })), false, `${String(kind)} is not written down`);
+  }
+  const a = cleanDoc(doc({ kind: 'deck', updated: 100, cards: [card('a')] }));
+  const b = cleanDoc(doc({ updated: 200, cards: [card('b', { updated: 200 })] }));  // an older client that never sent a kind
+  assert.equal(mergeDocs(a, b).kind, 'deck');
+  assert.equal(mergeDocs(b, a).kind, 'deck', 'whichever way round');
+  assert.equal('kind' in mergeDocs(b, cleanDoc(doc({ updated: 300 }))), false);
+  assert.equal(mergeDocs(a, { id: 'c1', deleted: 50 }).kind, 'deck', 'a list that lives on after an older delete keeps its kind');
+  assert.equal(JSON.stringify(mergeDocs(a, a)), JSON.stringify(a), 'merging a list with itself changes nothing');
+});

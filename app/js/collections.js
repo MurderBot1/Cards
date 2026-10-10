@@ -12,6 +12,7 @@ import { IS_WEB } from './env.js';
 import { initImportExport } from './importExport.js';
 import { getSettings } from './settings.js';
 import { backfillUids, collectionValue, formatUsd, loadPrices, pricesEnabled, unitPrice } from './prices.js';
+import { DEFAULT_KIND, KINDS, countLabel, kindOf, kindWords, listsOfKind } from './listKinds.js';
 import { SORTS, activeFilterCount, emptyFilter, facetValues, filterCards, isCustomView } from './cardFilter.js';
 
 const GAME_LABELS = { mtg: 'Magic: The Gathering', pokemon: 'Pokémon', yugioh: 'Yu-Gi-Oh!' };
@@ -25,6 +26,13 @@ const CONDITION_ABBR = {
 };
 
 let collections = [];
+// which kind of list the Collection tab is showing (collections, decks, tradelist or wishlist), kept between launches
+const KIND_KEY = 'binder_list_kind';
+let activeKind = DEFAULT_KIND;
+try {
+  const saved = localStorage.getItem(KIND_KEY);
+  if (KINDS.includes(saved)) activeKind = saved;
+} catch (e) { /* no storage: start on collections */ }
 let activeCollection = null;
 let mediaStream = null;
 let onNavigate = null; // callback set by app.js to update header/tab chrome
@@ -36,6 +44,13 @@ let detailCard = null; // card currently shown in the lightbox
 const els = {
   grid: document.getElementById('collection-grid'),
   emptyList: document.getElementById('collection-empty'),
+  emptyListTitle: document.getElementById('collection-empty-title'),
+  emptyListText: document.getElementById('collection-empty-text'),
+  kindTabs: document.getElementById('list-kind-tabs'),
+  detailEmptyTitle: document.getElementById('collection-detail-empty-title'),
+  detailEmptyText: document.getElementById('collection-detail-empty-text'),
+  newTitle: document.getElementById('new-collection-title'),
+  newHint: document.getElementById('new-collection-hint'),
   listSubview: document.getElementById('subview-collection-list'),
   detailSubview: document.getElementById('subview-collection-detail'),
   countLabel: document.getElementById('collection-count'),
@@ -143,11 +158,16 @@ function wireGamePicker(container, onChange) {
 // rendering: collection list
 // -----------------------------------------------------------------
 function renderCollectionGrid() {
+  const shown = listsOfKind(collections, activeKind);
+  const words = kindWords(activeKind);
   els.grid.innerHTML = '';
-  els.emptyList.classList.toggle('hidden', collections.length > 0);
-  els.countLabel.textContent = `${collections.length} collection${collections.length === 1 ? '' : 's'}`;
+  setSegmentedValue(els.kindTabs, activeKind);
+  els.emptyList.classList.toggle('hidden', shown.length > 0);
+  els.emptyListTitle.textContent = words.emptyTitle;
+  els.emptyListText.textContent = words.emptyText;
+  els.countLabel.textContent = countLabel(activeKind, shown.length);
 
-  collections.forEach((c) => {
+  shown.forEach((c) => {
     const gamesPresent = GAMES.filter((g) => c.cards.some((card) => card.game === g));
     const dots = gamesPresent.length
       ? `<div class="game-dots">${gamesPresent.map((g) => `<span class="game-dot game-dot--${g}" title="${GAME_LABELS[g]}"></span>`).join('')}</div>`
@@ -173,7 +193,7 @@ function renderCollectionGrid() {
 
   const addBtn = document.createElement('button');
   addBtn.className = 'collection-card collection-card--new';
-  addBtn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>New collection</span>`;
+  addBtn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>New ${words.singular}</span>`;
   addBtn.addEventListener('click', () => openNewCollectionModal());
   els.grid.appendChild(addBtn);
 }
@@ -270,6 +290,11 @@ window.addEventListener('binder:collections-changed', () => { reloadCollections(
 // new collection modal (name only — games are chosen per card)
 // -----------------------------------------------------------------
 function openNewCollectionModal() {
+  const words = kindWords(activeKind);
+  els.newTitle.textContent = `New ${words.singular}`;
+  els.newName.placeholder = words.placeholder;
+  els.newHint.textContent = words.hint;
+  els.newCreateBtn.textContent = `Create ${words.singular}`;
   els.newName.value = '';
   updateCreateBtnState();
   els.newModal.classList.remove('hidden');
@@ -289,7 +314,7 @@ els.newCreateBtn.addEventListener('click', async () => {
   const name = els.newName.value.trim();
   if (!name) return;
   els.newCreateBtn.disabled = true;
-  const collection = await api.createCollection(name);
+  const collection = await api.createCollection(name, activeKind);
   collections.push(collection);
   renderCollectionGrid();
   closeNewCollectionModal();
@@ -314,13 +339,15 @@ els.confirmDeleteSubmit.addEventListener('click', async () => {
   if (!deleteTargetId) return;
   const id = deleteTargetId;
   const wasActive = activeCollection && activeCollection.id === id;
+  const deleted = collections.find((c) => c.id === id);
   els.confirmDeleteSubmit.disabled = true;
   try {
     await api.deleteCollection(id);
     collections = collections.filter((c) => c.id !== id);
     if (wasActive) closeCollectionDetail();
     renderCollectionGrid();
-    showToast('Collection deleted');
+    const label = kindWords(kindOf(deleted)).singular;
+    showToast(`${label[0].toUpperCase()}${label.slice(1)} deleted`);
   } finally {
     els.confirmDeleteSubmit.disabled = false;
     closeConfirmDelete();
@@ -340,6 +367,9 @@ async function openCollection(id) {
   els.listSubview.classList.add('hidden');
   els.detailSubview.classList.remove('hidden');
   els.fab.classList.remove('hidden');
+  const words = kindWords(kindOf(activeCollection));
+  els.detailEmptyTitle.textContent = words.listEmpty;
+  els.detailEmptyText.textContent = words.listEmptyText;
   els.detailSearch.value = '';
   resetFilters();
   renderCardList('');
@@ -530,6 +560,14 @@ function setSegmentedValue(group, value) {
     btn.setAttribute('aria-selected', btn.dataset.value === value ? 'true' : 'false');
   });
 }
+
+els.kindTabs.querySelectorAll('button').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    activeKind = btn.dataset.value;
+    try { localStorage.setItem(KIND_KEY, activeKind); } catch (e) { /* not remembered */ }
+    renderCollectionGrid();
+  });
+});
 
 els.cardDetailCondition.querySelectorAll('button').forEach((btn) => {
   btn.addEventListener('click', async () => {
@@ -1238,7 +1276,7 @@ export async function initCollections(navigateCallback) {
   onNavigate = navigateCallback;
   initImportExport({
     getActiveCollection: () => activeCollection,
-    createCollection: async (name) => api.createCollection(name),
+    createCollection: async (name) => api.createCollection(name, activeKind),
     imported: (collection) => {
       const at = collections.findIndex((c) => c.id === collection.id);
       if (at === -1) collections.push(collection);

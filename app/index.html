@@ -44,6 +44,12 @@
 
       <!-- collection list sub-view -->
       <div class="subview" id="subview-collection-list">
+        <div class="segmented list-kinds" id="list-kind-tabs" role="tablist" aria-label="Kind of list">
+          <button data-value="collection" role="tab">Collections</button>
+          <button data-value="deck" role="tab">Decks</button>
+          <button data-value="tradelist" role="tab">Tradelist</button>
+          <button data-value="wishlist" role="tab">Wishlist</button>
+        </div>
         <div class="list-toolbar">
           <p class="list-count" id="collection-count">0 collections</p>
           <button class="link-btn link-btn--inline" id="import-new-collection-btn" type="button">Import from a file</button>
@@ -53,8 +59,8 @@
           <div class="empty-icon">
             <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9h16M9 4v16"/></svg>
           </div>
-          <h2>No collections yet</h2>
-          <p>Start a binder for your MTG, Pok&eacute;mon or Yu-Gi-Oh! cards.</p>
+          <h2 id="collection-empty-title">No collections yet</h2>
+          <p id="collection-empty-text">Start a binder for your MTG, Pok&eacute;mon or Yu-Gi-Oh! cards.</p>
         </div>
       </div>
 
@@ -115,8 +121,8 @@
           <div class="empty-icon">
             <svg viewBox="0 0 24 24"><path d="M12 3l2.5 5.5L20 9l-4 4 1 6-5-3-5 3 1-6-4-4 5.5-.5z"/></svg>
           </div>
-          <h2>This binder is empty</h2>
-          <p>Tap the + button to search the database or scan a card.</p>
+          <h2 id="collection-detail-empty-title">This binder is empty</h2>
+          <p id="collection-detail-empty-text">Tap the + button to search the database or scan a card.</p>
         </div>
       </div>
 
@@ -245,10 +251,10 @@
 <div class="overlay hidden" id="modal-new-collection">
   <div class="sheet">
     <div class="sheet-handle"></div>
-    <h2 class="sheet-title">New collection</h2>
+    <h2 class="sheet-title" id="new-collection-title">New collection</h2>
     <label class="field-label" for="new-collection-name">Name</label>
     <input class="field-input" id="new-collection-name" type="text" placeholder="e.g. Modern Deck Staples" maxlength="40">
-    <p class="field-hint">You can add Magic, Pok&eacute;mon, and Yu-Gi-Oh! cards to any collection.</p>
+    <p class="field-hint" id="new-collection-hint">You can add Magic, Pok&eacute;mon, and Yu-Gi-Oh! cards to any collection.</p>
     <div class="sheet-actions">
       <button class="btn btn-secondary" id="new-collection-cancel">Cancel</button>
       <button class="btn btn-primary" id="new-collection-create" disabled>Create collection</button>
