@@ -26,6 +26,9 @@ struct ApiContext {
     // Downloads and installs newer releases (POST /api/update/*); none = this build can't (Android and iOS install
     // updates through their own bridges), and those routes answer 501.
     Updater* updater = nullptr;
+    // Where POST /api/save-file puts exported files (the user's Downloads folder); empty = this build can't (the page then
+    // saves through the app's own bridge, or the browser).
+    std::filesystem::path save_dir;
 };
 
 // Minimum Laplacian-variance blur score an uploaded scan must clear, per the

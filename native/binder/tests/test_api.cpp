@@ -255,6 +255,25 @@ int main() {
     CHECK_EQ(launched, 1);
     ctx.updater = nullptr;
 
+    // ---- saving an export into the Downloads folder
+    {
+        CHECK_EQ(cli.Post("/api/save-file", json{{"name", "Mine.csv"}, {"content", "a,b\n"}}.dump(), kJson)->status, 501);  // no folder set
+        ctx.save_dir = tmp.path() / "Downloads";
+        auto saved = cli.Post("/api/save-file", json{{"name", "My Binder.csv"}, {"content", "Count,Name\r\n1,Bolt\r\n"}}.dump(), kJson);
+        CHECK_EQ(saved->status, 200);
+        CHECK_EQ(parse(saved)["name"], json("My Binder.csv"));
+        std::ifstream in(tmp.path() / "Downloads" / "My Binder.csv", std::ios::binary);
+        std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        CHECK_EQ(text, std::string("Count,Name\r\n1,Bolt\r\n"));
+        auto again = cli.Post("/api/save-file", json{{"name", "My Binder.csv"}, {"content", "x"}}.dump(), kJson);
+        CHECK_EQ(parse(again)["name"], json("My Binder (2).csv"));  // never replaces a file
+        for (const char* bad : {"../escape.csv", "a/b.csv", "a\\b.csv", ".hidden.csv", "notcsv.txt", ".csv", "", "x:y.csv", "con\x01trol.csv"})
+            CHECK_EQ(cli.Post("/api/save-file", json{{"name", bad}, {"content", "x"}}.dump(), kJson)->status, 400);
+        CHECK_EQ(cli.Post("/api/save-file", json{{"name", "ok.csv"}}.dump(), kJson)->status, 400);  // no content
+        CHECK(!fs::exists(tmp.path() / "escape.csv"));
+        ctx.save_dir.clear();
+    }
+
     // ---- settings
     CHECK_EQ(parse(cli.Get("/api/settings"))["theme"], json("dark"));
     auto settings = parse(cli.Put("/api/settings", "{\"theme\":\"light\",\"minImageQuality\":\"high\"}", kJson));

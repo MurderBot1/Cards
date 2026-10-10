@@ -1,6 +1,7 @@
 package com.bindercardtracker.binder
 
 import android.Manifest
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -9,15 +10,19 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.provider.MediaStore
 import android.view.View
 import android.webkit.JavascriptInterface
 import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.ValueCallback
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.ProgressBar
@@ -47,6 +52,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var loadingOverlay: View
     private val mainHandler = Handler(Looper.getMainLooper())
     private var loadAttempts = 0
+
+    // <input type="file"> in the page (importing a collection): the system's file picker, answered back to the WebView
+    private var filePathCallback: ValueCallback<Array<Uri>>? = null
+    private val pickFile =
+        registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+            filePathCallback?.onReceiveValue(if (uri != null) arrayOf(uri) else null)
+            filePathCallback = null
+        }
 
     private val requestCameraPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* handled lazily by onPermissionRequest below */ }
@@ -166,6 +179,22 @@ class MainActivity : AppCompatActivity() {
         }
 
         webView.webChromeClient = object : WebChromeClient() {
+            override fun onShowFileChooser(
+                view: WebView,
+                callback: ValueCallback<Array<Uri>>,
+                params: FileChooserParams,
+            ): Boolean {
+                filePathCallback?.onReceiveValue(null)
+                filePathCallback = callback
+                return try {
+                    pickFile.launch("*/*")
+                    true
+                } catch (e: Exception) {
+                    filePathCallback = null
+                    false
+                }
+            }
+
             override fun onPermissionRequest(request: PermissionRequest) {
                 runOnUiThread {
                     val hasCamera = ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.CAMERA) ==
@@ -221,6 +250,35 @@ class MainActivity : AppCompatActivity() {
          * returns JSON like the desktop backend's update routes (see ApkUpdater and js/updates.js). */
         @JavascriptInterface
         fun updateStart(url: String, sha256: String): String = updater.start(url, sha256)
+
+        /** Saves an exported CSV to the Downloads folder; returns JSON { ok, where? | error? } (see js/fileSave.js). */
+        @JavascriptInterface
+        fun saveFile(name: String, text: String): String {
+            if (!Regex("^[^/\\\\:*?\"<>|\\u0000-\\u001f.][^/\\\\:*?\"<>|\\u0000-\\u001f]{0,115}\\.csv$", RegexOption.IGNORE_CASE).matches(name)) {
+                return """{"ok":false,"error":"that isn't a name this can save"}"""
+            }
+            return try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val values = ContentValues().apply {
+                        put(MediaStore.Downloads.DISPLAY_NAME, name)
+                        put(MediaStore.Downloads.MIME_TYPE, "text/csv")
+                        put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                    }
+                    val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                        ?: return """{"ok":false,"error":"couldn't create the file"}"""
+                    contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray(Charsets.UTF_8)) }
+                    """{"ok":true,"where":"your Downloads folder"}"""
+                } else {
+                    // before Android 10 there is no permission-free way into Downloads: use the app's own folder
+                    val dir = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: filesDir
+                    dir.mkdirs()
+                    File(dir, name).writeText(text, Charsets.UTF_8)
+                    """{"ok":true,"where":"${dir.absolutePath.replace("\\", "/")}"}"""
+                }
+            } catch (e: Exception) {
+                """{"ok":false,"error":"couldn't save the file"}"""
+            }
+        }
 
         @JavascriptInterface
         fun updateStatus(): String = updater.status()

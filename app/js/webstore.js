@@ -111,49 +111,98 @@ export class WebStore {
     return { status: 200, body: { deleted: true } };
   }
 
-  addCard(collectionId, body) {
+  // Adds one card (or `quantity` copies) to `collection`, stacking onto a matching row. Returns an error response, or
+  // null when it was added. Doesn't load or save.
+  addOne(collection, body, now, probe = false) {
     body = isObject(body) ? body : {};
     const { name, game } = body;
     if (!truthy(name)) return error(400, 'card name is required');
     if (typeof game !== 'string' || !GAMES.includes(game)) return error(400, `game must be one of ${GAMES_REPR}`);
-    const db = this.load();
-    const collection = db.collections.find((c) => c.id === collectionId);
-    if (!collection) return error(404, 'not found');
 
     const conditionIn = body.condition;
     const condition = truthy(conditionIn) ? (typeof conditionIn === 'string' ? conditionIn : '') : DEFAULT_CONDITION;
     if (!CONDITIONS.includes(condition)) return error(400, `condition must be one of ${CONDITIONS_REPR}`);
 
-    // Cards only stack (quantity + 1) when name, set, game AND condition all match. A request with no "set" never
-    // stacks: stored cards always carry one ("" by default), and a missing set is not "".
+    let copies = 1;
+    if (body.quantity !== undefined && body.quantity !== null) {
+      if (!Number.isInteger(body.quantity) || body.quantity < 1 || body.quantity > 100000) {
+        return error(400, 'quantity must be a whole number of at least 1');
+      }
+      copies = body.quantity;
+    }
+
+    // Cards only stack (quantity + n) when name, set, game, condition, finish, language and collector number all match.
+    // A request with no "set" never stacks: stored cards always carry one ("" by default), and a missing set is not "".
     const setIn = body.set === undefined ? null : body.set;
+    const foil = body.foil === true;
+    const language = typeof body.language === 'string' ? body.language : '';
+    const number = typeof body.number === 'string' ? body.number : '';
     const existing = collection.cards.find(
-      (c) => c.name === name && (c.set === undefined ? null : c.set) === setIn && c.game === game && (c.condition ?? DEFAULT_CONDITION) === condition
+      (c) =>
+        c.name === name &&
+        (c.set === undefined ? null : c.set) === setIn &&
+        c.game === game &&
+        (c.condition ?? DEFAULT_CONDITION) === condition &&
+        (c.foil === true) === foil &&
+        (typeof c.language === 'string' ? c.language : '') === language &&
+        (typeof c.number === 'string' ? c.number : '') === number
     );
-    const now = this.nowMs();
     if (existing) {
-      existing.quantity += 1;
+      existing.quantity += copies;
       existing.updated = now;
     } else {
       const card = {
-        id: this.makeId(),
+        id: probe ? '' : this.makeId(),  // (a probe only validates: it must not use up an id)
         name,
         game,
         set: body.set !== undefined ? body.set : '',
         rarity: body.rarity !== undefined ? body.rarity : '',
         image: body.image !== undefined ? body.image : '',
         condition,
-        quantity: 1,
+        quantity: copies,
         updated: now,
       };
       // the catalog id the card was picked from (a search result's "id"): lets prices be looked up exactly
       const catalogId = body.uid !== undefined ? body.uid : body.id;
       if (typeof catalogId === 'string' && catalogId) card.uid = catalogId;
+      // finish, language and collector number are only kept when there is something to say
+      if (foil) card.foil = true;
+      if (language) card.language = language;
+      if (number) card.number = number;
       collection.cards.push(card);
     }
     collection.updated = now;
+    return null;
+  }
+
+  addCard(collectionId, body) {
+    const invalid = this.addOne({ cards: [] }, body, 0, true);
+    if (invalid) return invalid;  // (a bad request is a 400 even for a missing collection)
+    const db = this.load();
+    const collection = db.collections.find((c) => c.id === collectionId);
+    if (!collection) return error(404, 'not found');
+    this.addOne(collection, body, this.nowMs());
     this.save(db);
     return { status: 201, body: collection };
+  }
+
+  // Many cards at once (an import): body { cards: [card, ...] }, all or nothing.
+  addCards(collectionId, body) {
+    if (!isObject(body) || !Array.isArray(body.cards)) return error(400, 'cards must be an array');
+    if (body.cards.length === 0 || body.cards.length > 20000) return error(400, 'send between 1 and 20000 cards');
+    const db = this.load();
+    const collection = db.collections.find((c) => c.id === collectionId);
+    if (!collection) return error(404, 'not found');
+    const now = this.nowMs();
+    const work = clone(collection);
+    for (let i = 0; i < body.cards.length; i++) {
+      if (!isObject(body.cards[i])) return error(400, `card ${i + 1} is not an object`);
+      const bad = this.addOne(work, body.cards[i], now);
+      if (bad) return error(bad.status, `card ${i + 1}: ${bad.body.error}`);
+    }
+    db.collections[db.collections.indexOf(collection)] = work;
+    this.save(db);
+    return { status: 201, body: work };
   }
 
   updateCard(collectionId, cardId, body) {
@@ -284,6 +333,7 @@ export class WebStore {
         if (method === 'DELETE') return this.deleteCollection(id);
       } else if (sub === 'cards') {
         if (!cardId && method === 'POST') return this.addCard(id, body);
+        if (cardId === 'bulk' && method === 'POST') return this.addCards(id, body);
         if (cardId && method === 'PATCH') return this.updateCard(id, cardId, body);
       }
     } else if (root === 'sync') {

@@ -155,6 +155,7 @@ Paths resolve(const Environment& env, const Options& options) {
     p.log_dir = p.user_data_dir / "logs";
     p.data_dir = p.user_data_dir / "data";
     p.db_path = p.user_data_dir / "db.json";
+    p.downloads_dir = env.home.empty() || env.os == "android" ? p.user_data_dir / "exports" : env.home / "Downloads";
     p.startup_log = p.log_dir / "startup.log";
 
     // Frontend: explicit choices first, then the usual install layouts, then

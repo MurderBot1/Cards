@@ -9,6 +9,7 @@
 import { api, CONDITIONS, DEFAULT_CONDITION } from './api.js';
 import { showToast } from './ui.js';
 import { IS_WEB } from './env.js';
+import { initImportExport } from './importExport.js';
 import { getSettings } from './settings.js';
 import { backfillUids, collectionValue, formatUsd, loadPrices, pricesEnabled, unitPrice } from './prices.js';
 
@@ -370,6 +371,7 @@ function renderCardList(filter) {
           <span class="game-dot game-dot--${card.game}" title="${GAME_LABELS[card.game] || ''}"></span>
           ${escapeHtml(card.set || '')} &middot; ${escapeHtml(card.rarity || '')}
           <span class="condition-badge" title="${escapeHtml(condition)}">${CONDITION_ABBR[condition] || condition}</span>
+          ${card.foil === true ? '<span class="foil-badge" title="Foil">FOIL</span>' : ''}
           ${priceBadge(card)}
         </p>
       </div>
@@ -1147,6 +1149,23 @@ els.scanNextBtn.addEventListener('click', () => {
 // -----------------------------------------------------------------
 export async function initCollections(navigateCallback) {
   onNavigate = navigateCallback;
+  initImportExport({
+    getActiveCollection: () => activeCollection,
+    createCollection: async (name) => api.createCollection(name),
+    imported: (collection) => {
+      const at = collections.findIndex((c) => c.id === collection.id);
+      if (at === -1) collections.push(collection);
+      else collections[at] = collection;
+      if (activeCollection && activeCollection.id === collection.id) {
+        activeCollection = collection;
+        renderCardList(els.detailSearch.value);
+        syncActiveCollectionIntoList();
+        refreshPrices(activeCollection);
+      }
+      renderCollectionGrid();
+      loadGridPrices();
+    },
+  });
   await refreshCollections();
 }
 
