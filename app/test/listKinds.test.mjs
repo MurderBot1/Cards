@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  countLabel, kindOf, kindWords, KINDS, limitsOf, listsOfKind, tooManyCardsMessage, tooManyCopiesMessage, tooManyListsMessage,
+  atListLimit, countLabel, kindOf, kindWords, KINDS, limitsOf, listCountText, listsOfKind, tooManyCardsMessage, tooManyCopiesMessage, tooManyListsMessage,
 } from '../js/listKinds.js';
 
 test('a list with no kind, or one we do not know, is a collection', () => {
@@ -41,14 +41,29 @@ test('counting lists', () => {
 test('limits for each kind, and the messages shown when one is hit', () => {
   assert.deepEqual(limitsOf('collection'), { lists: 25, cards: 10000, perCard: 1000 });
   assert.deepEqual(limitsOf('deck'), { lists: 100, cards: 150, perCard: 100 });
-  assert.deepEqual(limitsOf('tradelist'), { lists: null, cards: 10000, perCard: null });
-  assert.deepEqual(limitsOf('wishlist'), { lists: null, cards: 10000, perCard: null });
+  assert.deepEqual(limitsOf('tradelist'), { lists: 1, cards: 10000, perCard: null });
+  assert.deepEqual(limitsOf('wishlist'), { lists: 1, cards: 10000, perCard: null });
   assert.deepEqual(limitsOf('nonsense'), limitsOf('collection'));
   assert.equal(tooManyListsMessage('collection'), 'You can have at most 25 collections');
   assert.equal(tooManyListsMessage('deck'), 'You can have at most 100 decks');
+  assert.equal(tooManyListsMessage('wishlist'), 'You can only have one wishlist');
+  assert.equal(tooManyListsMessage('tradelist'), 'You can only have one tradelist');
   assert.equal(tooManyCardsMessage('deck'), 'A deck can hold at most 150 different cards');
   assert.equal(tooManyCardsMessage('collection'), 'A collection can hold at most 10,000 different cards');
   assert.equal(tooManyCardsMessage('wishlist'), 'A wishlist can hold at most 10,000 different cards');
   assert.equal(tooManyCopiesMessage('collection'), 'A collection can hold at most 1,000 copies of one card');
   assert.equal(tooManyCopiesMessage('deck'), 'A deck can hold at most 100 copies of one card');
+});
+
+test('when no more lists can be made, and how the lists are counted', () => {
+  assert.equal(atListLimit('collection', 24), false);
+  assert.equal(atListLimit('collection', 25), true);
+  assert.equal(atListLimit('wishlist', 0), false);
+  assert.equal(atListLimit('wishlist', 1), true);
+  assert.equal(atListLimit('tradelist', 3), true, 'lists made before the limit existed are over it, and none more can be made');
+  assert.equal(listCountText('collection', 3), '3 of 25 collections');
+  assert.equal(listCountText('deck', 1), '1 of 100 decks');
+  assert.equal(listCountText('wishlist', 1), '1 wishlist');
+  assert.equal(listCountText('wishlist', 0), '0 wishlists');
+  assert.equal(listCountText('tradelist', 3), '3 tradelists', 'more than the limit: just the count');
 });

@@ -22,7 +22,7 @@ import { curveHtml } from './curveView.js';
 import { FORMATS, cardStatus, checkFormat, formatByKey, statusWord } from './deckLegality.js';
 import { legalityHtml } from './legalityView.js';
 import { deckTotals, missingOf, ownedFromCollections, ownedOf } from './deckOwnership.js';
-import { DEFAULT_KIND, KINDS, countLabel, kindOf, kindWords, limitsOf, listsOfKind } from './listKinds.js';
+import { DEFAULT_KIND, KINDS, atListLimit, kindOf, kindWords, limitsOf, listCountText, listsOfKind } from './listKinds.js';
 import { SORTS, activeFilterCount, emptyFilter, facetValues, filterCards, isCustomView } from './cardFilter.js';
 
 const GAME_LABELS = { mtg: 'Magic: The Gathering', pokemon: 'Pokémon', yugioh: 'Yu-Gi-Oh!' };
@@ -211,8 +211,7 @@ function renderCollectionGrid() {
   els.emptyList.classList.toggle('hidden', shown.length > 0);
   els.emptyListTitle.textContent = words.emptyTitle;
   els.emptyListText.textContent = words.emptyText;
-  const maxLists = limitsOf(activeKind).lists;
-  els.countLabel.textContent = maxLists === null ? countLabel(activeKind, shown.length) : `${shown.length} of ${maxLists} ${words.plural}`;
+  els.countLabel.textContent = listCountText(activeKind, shown.length);
 
   shown.forEach((c) => {
     const gamesPresent = GAMES.filter((g) => c.cards.some((card) => card.game === g));
@@ -238,6 +237,7 @@ function renderCollectionGrid() {
     els.grid.appendChild(btn);
   });
 
+  if (atListLimit(activeKind, shown.length)) return;  // no "New" tile when no more can be made
   const addBtn = document.createElement('button');
   addBtn.className = 'collection-card collection-card--new';
   addBtn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>New ${words.singular}</span>`;

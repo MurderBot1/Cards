@@ -157,8 +157,15 @@ test('limits: lists per kind, different cards, copies of one card (same rules an
   assert.deepEqual([create('collection').status, create('collection').body.error], [400, 'You can have at most 25 collections']);
   for (let i = 0; i < 100; i++) { const r = create('deck'); assert.equal(r.status, 201); ids.deck ??= r.body.id; }
   assert.equal(create('deck').body.error, 'You can have at most 100 decks', 'decks are counted apart from collections');
-  for (let i = 0; i < 30; i++) { const w = create('wishlist'); const t = create('tradelist'); assert.deepEqual([w.status, t.status], [201, 201]); ids.wishlist ??= w.body.id; ids.tradelist ??= t.body.id; }
-  assert.equal(store.handle('GET', '/collections').body.length, 25 + 100 + 60);
+  const w = create('wishlist'); const t = create('tradelist');
+  assert.deepEqual([w.status, t.status], [201, 201]);
+  ids.wishlist = w.body.id; ids.tradelist = t.body.id;
+  assert.deepEqual([create('wishlist').status, create('wishlist').body.error], [400, 'You can only have one wishlist']);
+  assert.equal(create('tradelist').body.error, 'You can only have one tradelist');
+  assert.equal(store.handle('GET', '/collections').body.length, 25 + 100 + 2);
+  store.handle('DELETE', `/collections/${ids.wishlist}`);
+  ids.wishlist = create('wishlist').body.id;  // deleting it frees the place
+  assert.ok(ids.wishlist);
   store.handle('DELETE', `/collections/${ids.deck}`);
   assert.equal(create('deck').status, 201, 'deleting one frees a place');
 
