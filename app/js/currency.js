@@ -10,6 +10,8 @@
  * kept on the device for 12 hours (an old rate is still used while offline). With no rate at all, prices stay in dollars.
  */
 
+import { currencyRows, summary } from './currencyPicker.js';
+
 const RATES_KEY = 'binder_fx_v1';
 const CHOICE_KEY = 'binder_currency';
 const FRESH_MS = 12 * 60 * 60 * 1000;
@@ -128,10 +130,13 @@ export function createCurrency({ storage, fetchFn, locale, timeZone, nowMs = Dat
     available: () => (cache ? Object.keys(cache.rates).sort() : CURRENCIES.slice()),
     /** A US dollar amount in the shown currency (a number). */
     toLocal: (usd) => usd * service.rate(),
-    /** A US dollar amount as text in the shown currency ("£7.90", "¥1,150"). */
-    format(usd) {
-      const code = service.code();
-      const amount = usd * service.rate();
+    /** The rate for one currency (units per US dollar), or null when there is none. */
+    rateOf: (code) => (code === 'USD' ? 1 : cache && cache.rates[code] ? cache.rates[code] : null),
+    /** A US dollar amount as text in any currency that has a rate ("£7.90", "¥1,150"), or null when there is none. */
+    formatIn(code, usd) {
+      const rate = service.rateOf(code);
+      if (rate === null) return null;
+      const amount = usd * rate;
       const tag = code === 'USD' ? 'en-US' : locale || 'en-US';
       try {
         return amount.toLocaleString(tag, { style: 'currency', currency: code });
@@ -139,6 +144,10 @@ export function createCurrency({ storage, fetchFn, locale, timeZone, nowMs = Dat
         return `${amount.toFixed(2)} ${code}`;
       }
     },
+    /** A US dollar amount as text in the shown currency. */
+    format: (usd) => service.formatIn(service.code(), usd),
+    /** When the rates were read (ms), or 0 when there are none. */
+    updatedAt: () => (cache ? cache.at : 0),
     /** True when the rates are old enough to ask again. */
     stale: () => !cache || nowMs() - cache.at > FRESH_MS,
     /** Reads the rates if they are stale; never throws (offline keeps what there is). Resolves to true when they changed. */
@@ -182,26 +191,76 @@ export const formatPrice = (usd) => currency.format(usd);
 export const toLocalPrice = (usd) => currency.toLocal(usd);
 export const priceCurrency = () => currency.code();
 
-// The Settings picker: "Automatic (GBP)", then every currency by name. Reads the rates in the background.
+// The Settings picker: a card showing the currency in use (tap it to choose another). Reads the rates in the background.
 export function initCurrencySetting() {
-  const select = document.getElementById('currency-setting');
-  if (!select) return;
+  const card = document.getElementById('currency-setting');
+  if (!card) return;
+  const locale = typeof navigator !== 'undefined' ? (navigator.languages && navigator.languages[0]) || navigator.language : 'en-US';
   const names = (() => { try { return new Intl.DisplayNames(undefined, { type: 'currency' }); } catch (e) { return null; } })();
-  const nameOf = (code) => { try { return (names && names.of(code)) || code; } catch (e) { return code; } };
-  const fill = () => {
-    select.innerHTML = '';
-    const add = (value, text) => {
-      const opt = document.createElement('option');
-      opt.value = value;
-      opt.textContent = text;
-      select.appendChild(opt);
-    };
-    add('auto', `Automatic (${currency.wanted()})`);
-    for (const code of currency.available().sort((a, b) => nameOf(a).localeCompare(nameOf(b)))) add(code, `${nameOf(code)} (${code})`);
-    select.value = currency.choice();
+  const $ = (id) => document.getElementById(id);
+  const sheet = $('modal-currency');
+  const list = $('currency-list');
+  const search = $('currency-search');
+
+  const showCard = () => {
+    const now = summary(currency, { names, locale, now: Date.now() });
+    $('currency-badge').textContent = now.symbol;
+    $('currency-title').textContent = now.title;
+    $('currency-sub').textContent = now.subtitle;
+    $('currency-rates').textContent = now.rates;
   };
-  fill();
-  select.addEventListener('change', () => currency.setChoice(select.value));
-  window.addEventListener('binder:currency-changed', fill);
+  const showList = () => {
+    const rows = currencyRows(currency, search.value, { names, locale });
+    list.innerHTML = '';
+    for (const row of rows) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `currency-row${row.selected ? ' is-selected' : ''}`;
+      btn.setAttribute('role', 'option');
+      btn.setAttribute('aria-selected', String(row.selected));
+      btn.dataset.value = row.value;
+      const badge = document.createElement('span');
+      badge.className = 'currency-badge';
+      badge.textContent = row.symbol;
+      const text = document.createElement('span');
+      text.className = 'currency-row-text';
+      const title = document.createElement('span');
+      title.className = 'currency-row-title';
+      title.textContent = row.title;
+      const detail = document.createElement('span');
+      detail.className = 'currency-row-detail';
+      detail.textContent = row.detail;
+      text.append(title, detail);
+      const sample = document.createElement('span');
+      sample.className = 'currency-row-sample';
+      sample.textContent = row.sample;
+      const tick = document.createElement('span');
+      tick.className = 'currency-tick';
+      tick.textContent = row.selected ? '\u2713' : '';
+      btn.append(badge, text, sample, tick);
+      btn.addEventListener('click', () => {
+        currency.setChoice(row.value);
+        close();
+      });
+      list.appendChild(btn);
+    }
+    $('currency-empty').classList.toggle('hidden', rows.length > 0);
+  };
+  const open = () => {
+    search.value = '';
+    showList();
+    sheet.classList.remove('hidden');
+    const chosen = list.querySelector('.is-selected');
+    if (chosen) chosen.scrollIntoView({ block: 'center' });
+    currency.refresh();
+  };
+  const close = () => sheet.classList.add('hidden');
+
+  card.addEventListener('click', open);
+  $('currency-close').addEventListener('click', close);
+  sheet.addEventListener('click', (e) => { if (e.target === sheet) close(); });
+  search.addEventListener('input', showList);
+  window.addEventListener('binder:currency-changed', () => { showCard(); if (!sheet.classList.contains('hidden')) showList(); });
+  showCard();
   currency.refresh();
 }

@@ -291,6 +291,11 @@ the page itself and kept in `localStorage` for 12 hours (an old rate still serve
 in dollars. The price filter and price sorting work in the shown currency. Nothing about this touches the Worker or the
 stored data: cards and collections stay as they were.
 
+The picker in Settings → Prices is a card showing the currency in use (symbol, name and code, whether it is automatic or
+the person's choice, what US$10 comes to and how old the rates are). Tapping it opens a sheet with a search box and every
+currency that has a rate, by name, each with its symbol and the same US$10 sample, "Automatic" first and a tick on the
+current pick. What it shows is plain data from `app/js/currencyPicker.js` (tested on its own); `currency.js` draws it.
+
 ## A deck's mana curve
 
 A deck with Magic cards has a "Mana curve" panel: copies of its spells by mana value (0 to 7 or more), stacked by color
