@@ -286,6 +286,16 @@ the page itself and kept in `localStorage` for 12 hours (an old rate still serve
 in dollars. The price filter and price sorting work in the shown currency. Nothing about this touches the Worker or the
 stored data: cards and collections stay as they were.
 
+## A deck's mana curve
+
+A deck with Magic cards has a "Mana curve" panel: copies of its spells by mana value (0 to 7 or more), stacked by color
+(white, blue, black, red, green, multicolor, colorless; lands aren't on a curve and are counted apart). Cards don't store
+mana values or colors, and nothing here is synced: `app/js/cardInfo.js` looks them up at Scryfall when the panel is opened
+(by the card's catalog id, else name and set; up to 75 per request, the same path an import uses) and keeps the answers in
+`localStorage` for two weeks (a card that wasn't found, one day). The same look-up also keeps each card's legality by format,
+for deck legality checks. The chart's colors are the data-viz palette's first-in-order hues, validated together in both
+themes with its `validate_palette.js`; the legend and a table view carry the same numbers.
+
 ## Updates
 
 The app checks the project's GitHub releases on startup (and from "Check for updates" on the Account tab) and offers the

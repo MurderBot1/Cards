@@ -13,6 +13,9 @@ import { initImportExport } from './importExport.js';
 import { getSettings } from './settings.js';
 import { backfillUids, collectionValue, loadPrices, pricesEnabled, unitPrice } from './prices.js';
 import { formatPrice, priceCurrency, toLocalPrice } from './currency.js';
+import { cardInfo } from './cardInfo.js';
+import { manaCurve } from './manaCurve.js';
+import { curveHtml } from './curveView.js';
 import { deckTotals, missingOf, ownedFromCollections, ownedOf } from './deckOwnership.js';
 import { DEFAULT_KIND, KINDS, countLabel, kindOf, kindWords, limitsOf, listsOfKind } from './listKinds.js';
 import { SORTS, activeFilterCount, emptyFilter, facetValues, filterCards, isCustomView } from './cardFilter.js';
@@ -76,6 +79,9 @@ const els = {
   filterPriceLabel: document.getElementById('filter-price-label'),
   filterOwnedField: document.getElementById('filter-owned-field'),
   ownCheckBtn: document.getElementById('own-check-btn'),
+  curveBox: document.getElementById('deck-curve'),
+  curveToggle: document.getElementById('deck-curve-toggle'),
+  curvePanel: document.getElementById('deck-curve-panel'),
   moveBtn: document.getElementById('card-detail-move-btn'),
   moveModal: document.getElementById('modal-move-card'),
   moveTitle: document.getElementById('move-card-title'),
@@ -406,6 +412,8 @@ async function openCollection(id) {
   els.detailEmptyText.textContent = words.listEmptyText;
   els.detailSearch.value = '';
   resetFilters();
+  els.curveToggle.setAttribute('aria-expanded', 'false');
+  curveAsked = '';
   renderCardList('');
   const count = activeCollection.cards.length;
   if (onNavigate) {
@@ -442,6 +450,7 @@ function renderCardList(filter) {
   const haveText = totals && total > 0 ? ` · have ${totals.owned} of ${totals.needed}` : '';
   els.detailCount.textContent = `${totalText}${haveText}${narrowed ? ` · ${cards.length} match${cards.length === 1 ? '' : 'es'}` : ''}${valueSuffix(activeCollection.cards)}`;
   els.ownCheckBtn.classList.toggle('hidden', !isDeckList);
+  updateCurve();
   els.cardList.innerHTML = '';
   els.detailEmpty.classList.toggle('hidden', total > 0);
   els.noMatches.classList.toggle('hidden', total === 0 || cards.length > 0);
@@ -480,6 +489,40 @@ function renderCardList(filter) {
     els.cardList.appendChild(row);
   });
 }
+
+// ---- a deck's mana curve (manaCurve.js): drawn when the panel is open, from what Scryfall says (cardInfo.js) ----
+let curveLoading = false;
+let curveAsked = '';  // which cards were last asked about, so a look-up that finds nothing (offline) isn't repeated in a loop
+
+function updateCurve() {
+  const deckWithMagic = !!activeCollection && kindOf(activeCollection) === 'deck' && activeCollection.cards.some((c) => c.game === 'mtg');
+  els.curveBox.classList.toggle('hidden', !deckWithMagic);
+  if (!deckWithMagic) return;
+  const open = els.curveToggle.getAttribute('aria-expanded') === 'true';
+  els.curvePanel.classList.toggle('hidden', !open);
+  if (!open) return;
+  const draw = () => {
+    els.curvePanel.innerHTML = curveHtml(manaCurve(activeCollection.cards, (card) => cardInfo.get(card)), { loading: curveLoading });
+  };
+  const wanted = cardInfo.needed(activeCollection.cards).map(([key]) => key).sort().join('|');
+  if (wanted && wanted !== curveAsked && !curveLoading) {
+    curveAsked = wanted;
+    curveLoading = true;
+    const deckId = activeCollection.id;
+    cardInfo.load(activeCollection.cards).finally(() => {
+      curveLoading = false;
+      if (activeCollection && activeCollection.id === deckId) updateCurve();
+    });
+  }
+  draw();
+}
+els.curveToggle.addEventListener('click', () => {
+  const open = els.curveToggle.getAttribute('aria-expanded') !== 'true';
+  els.curveToggle.setAttribute('aria-expanded', String(open));
+  curveAsked = '';
+  updateCurve();
+});
+window.addEventListener('binder:cardinfo-changed', () => { if (activeCollection) updateCurve(); });
 
 // the price of one copy in the currency being shown (what the price filter and sorting compare), or null
 function localUnitPrice(card) {
