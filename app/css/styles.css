@@ -1131,3 +1131,30 @@ svg {
 
 /* The website (js/env.js) has no camera features, no catalog download and no app updates */
 html.is-web [data-app-only] { display: none !important; }
+
+/* ---- import / export (js/importExport.js) ---- */
+.icon-btn--tool {
+  width: 42px; height: 42px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius-md);
+  flex-shrink: 0;
+}
+.icon-btn--tool:hover { background: var(--surface-3); }
+.icon-btn--tool svg { width: 18px; height: 18px; }
+.link-btn--inline { display: inline-block; margin: 0; }
+.import-paste { margin-top: 10px; font-size: 0.85rem; color: var(--text-dim); }
+.import-paste summary { cursor: pointer; padding: 4px 0; }
+.import-paste textarea { margin-top: 6px; font-family: var(--font-mono); font-size: 0.78rem; resize: vertical; }
+#import-summary { margin-top: 12px; white-space: pre-line; }
+.foil-badge {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #fff;
+  background: linear-gradient(135deg, var(--foil-1), var(--foil-2));
+}

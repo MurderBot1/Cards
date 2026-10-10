@@ -19,6 +19,17 @@ test('cleanDoc accepts good docs and rejects bad ones', () => {
   assert.equal(cleanDoc({ id: 'x', name: 'n', cards: [] }).updated, 1);
 });
 
+test('finish, language and collector number survive, and only when they say something', () => {
+  const clean = cleanDoc({ id: 'x', name: 'n', updated: 7, cards: [
+    { id: 'a', name: 'Bolt', game: 'mtg', quantity: 1, foil: true, language: 'Japanese', number: '146' },
+    { id: 'b', name: 'Bolt', game: 'mtg', quantity: 1, foil: false, language: '', number: 5 },
+    { id: 'c', name: 'Bolt', game: 'mtg', quantity: 1, foil: 'yes' },
+  ] });
+  assert.deepEqual([clean.cards[0].foil, clean.cards[0].language, clean.cards[0].number], [true, 'Japanese', '146']);
+  assert.equal('foil' in clean.cards[1] || 'language' in clean.cards[1] || 'number' in clean.cards[1], false);
+  assert.equal('foil' in clean.cards[2], false, 'only a real true counts');
+});
+
 test('cards added on two devices are both kept', () => {
   const a = doc({ cards: [card('a1')], updated: 110 });
   const b = doc({ cards: [card('b1')], updated: 120 });

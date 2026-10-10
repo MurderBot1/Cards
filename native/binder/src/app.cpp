@@ -45,7 +45,9 @@ struct App::Impl {
           store(options.paths.db_path),
           engine(make_engine(options)),
           api_log(options.paths.log_dir / "api.log"),
-          ctx{store, *engine, options.auth, options.paths.frontend_dir, setup.get()} {}
+          ctx{store, *engine, options.auth, options.paths.frontend_dir, setup.get()} {
+        ctx.save_dir = options.paths.downloads_dir;
+    }
 
     static void say(const AppOptions& o, const std::string& message) {
         if (o.log) o.log(message);

@@ -75,6 +75,55 @@ int main() {
     CHECK_EQ(again.body["cards"].size(), static_cast<size_t>(5));
     CHECK_EQ(again.body["cards"][4]["set"], json(""));
 
+    // ---- finish, language, collector number and quantity
+    {
+        auto c = store.create_collection({{"name", "Extras"}}).body["id"].get<std::string>();
+        json foil_bolt = {{"name", "Bolt"}, {"game", "mtg"}, {"set", "M10"}, {"foil", true}, {"language", "Japanese"}, {"number", "146"}, {"quantity", 3}};
+        auto r = store.add_card(c, foil_bolt);
+        auto k = r.body["cards"][0];
+        CHECK_EQ(k["quantity"], json(3));
+        CHECK_EQ(k["foil"], json(true));
+        CHECK_EQ(k["language"], json("Japanese"));
+        CHECK_EQ(k["number"], json("146"));
+        CHECK_EQ(store.add_card(c, foil_bolt).body["cards"][0]["quantity"], json(6));  // identical: stacks, adding the copies
+        json plain = foil_bolt;
+        plain.erase("foil");
+        CHECK_EQ(store.add_card(c, plain).body["cards"].size(), static_cast<size_t>(2));    // not foil: its own row
+        CHECK(!store.get_collection(c).body["cards"][1].contains("foil"));                   // (nothing stored for "no")
+        json other_number = foil_bolt;
+        other_number["number"] = "147";
+        CHECK_EQ(store.add_card(c, other_number).body["cards"].size(), static_cast<size_t>(3));
+        json english = foil_bolt;
+        english.erase("language");
+        CHECK_EQ(store.add_card(c, english).body["cards"].size(), static_cast<size_t>(4));
+        CHECK_EQ(store.add_card(c, {{"name", "X"}, {"game", "mtg"}, {"set", "A"}, {"quantity", 0}}).status, 400);
+        CHECK_EQ(store.add_card(c, {{"name", "X"}, {"game", "mtg"}, {"set", "A"}, {"quantity", 1.5}}).status, 400);
+        store.delete_collection(c);
+    }
+
+    // ---- bulk add
+    {
+        auto c = store.create_collection({{"name", "Bulk"}}).body["id"].get<std::string>();
+        CHECK_EQ(store.add_cards(c, json::array()).status, 400);
+        CHECK_EQ(store.add_cards(c, {{"cards", json::array()}}).status, 400);
+        CHECK_EQ(store.add_cards("nope", {{"cards", json::array({{{"name", "A"}, {"game", "mtg"}}})}}).status, 404);
+        json cards = json::array({{{"name", "A"}, {"game", "mtg"}, {"set", "S"}, {"quantity", 2}},
+                                  {{"name", "B"}, {"game", "pokemon"}, {"set", "S"}},
+                                  {{"name", "A"}, {"game", "mtg"}, {"set", "S"}}});  // stacks onto the first
+        auto r = store.add_cards(c, {{"cards", cards}});
+        CHECK_EQ(r.status, 201);
+        CHECK_EQ(r.body["cards"].size(), static_cast<size_t>(2));
+        CHECK_EQ(r.body["cards"][0]["quantity"], json(3));
+        // one bad row and nothing at all is added
+        json mixed = json::array({{{"name", "C"}, {"game", "mtg"}, {"set", "S"}}, {{"name", "D"}, {"game", "digimon"}}});
+        auto bad = store.add_cards(c, {{"cards", mixed}});
+        CHECK_EQ(bad.status, 400);
+        CHECK(bad.body["error"].get<std::string>().rfind("card 2: game must be one of", 0) == 0);
+        CHECK_EQ(store.get_collection(c).body["cards"].size(), static_cast<size_t>(2));
+        CHECK_EQ(store.add_cards(c, {{"cards", json::array({5})}}).status, 400);
+        store.delete_collection(c);
+    }
+
     // ---- updating cards
     const std::string bolt_id = second.body["cards"][0]["id"].get<std::string>();
     CHECK_EQ(store.update_card(cid, bolt_id, json::object()).status, 400);

@@ -35,7 +35,12 @@ public:
     Result get_collection(const std::string& collection_id);
     Result delete_collection(const std::string& collection_id);
 
+    // body: { name, game, set?, rarity?, image?, condition?, uid?|id?, quantity? (copies to add, default 1), foil? (bool),
+    // language?, number? (collector number) }. Stacks onto a row with the same name, set, game, condition, finish,
+    // language and number.
     Result add_card(const std::string& collection_id, const nlohmann::json& body);
+    // Adds many at once (one read and one write of the file): body { cards: [card body as above] }, all or nothing.
+    Result add_cards(const std::string& collection_id, const nlohmann::json& body);
     Result update_card(const std::string& collection_id, const std::string& card_id, const nlohmann::json& body);
 
     // ---- sync (see cloudflare/src/sync.js for the other half) ---------------------------------------------------

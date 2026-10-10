@@ -219,6 +219,30 @@ at `app/`), so `https://binder.<account>.workers.dev/` is a website version of B
 Previewing it locally: `cd cloudflare && npm install && npx wrangler dev --local`, then open `http://127.0.0.1:8787/?web=1`. The
 Worker deploys from `main` like any other change (nothing about it is in a release: it is not an app).
 
+## Importing and exporting collections
+
+Each collection has an **Import** and an **Export** button (and the collection list has "Import from a file", which makes a new
+collection from the file). Both are CSV.
+
+- **Import** (`app/js/collectionCsv.js`, `importMatch.js`, `importExport.js`) reads Moxfield, Deckbox, ManaBox, TCGplayer app,
+  Archidekt, Delver Lens and Binder exports, and most other CSVs with a card name column. It reads the header row and works out
+  what each column is from its name (Count / Quantity / Qty, Edition / Set / Set Code, Foil / Finish / Printing, ...), tells a
+  set *code* from a set *name* by what the column holds, and maps every app's condition wording ("Good (Lightly Played)",
+  `lightly_played`, `NM`) onto the five conditions. Choose a file or paste the text. Magic cards are then looked up at Scryfall
+  by the most exact thing the file gives (Scryfall id, then set and collector number, then name and set, then the name), which
+  gives each its catalog id, rarity and picture, so prices work. Rows that can't be found are still imported as written, and
+  other games are imported as written too. Identical cards stack, as when adding by search.
+- **Export** writes Binder's own CSV: `Count, Name, Game, Set Code, Collector Number, Rarity, Condition, Foil, Language,
+  Binder ID, Scryfall ID, Image URL, Collection`. Binder ID is the catalog id (the Scryfall id for Magic), which lets a
+  re-import find the exact card again. Where the file goes depends on where it runs (`app/js/fileSave.js`): a browser download on
+  the website, the Downloads folder on desktop (`POST /api/save-file`) and Android (`BinderAndroid.saveFile`), the share sheet
+  on iOS (`binderSave`).
+- Cards now carry `foil`, `language` (English is the default and isn't stored) and `number` (collector number) as well; they are
+  part of what stacks, are synced, and a foil copy is valued at the foil price.
+- The apps' column lists were collected from community posts and each app's help pages, not from an official spec; if an
+  export from one of them doesn't import, send the file's first line and it is a one-line addition to the header table in
+  `collectionCsv.js`.
+
 ## Updates
 
 The app checks the project's GitHub releases on startup (and from "Check for updates" on the Account tab) and offers the

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <fstream>
+#include <optional>
 #include <random>
 #include <sstream>
 #include <stdexcept>
@@ -155,57 +156,125 @@ Result Store::delete_collection(const std::string& id) {
     return {200, json{{"deleted", true}}};
 }
 
-Result Store::add_card(const std::string& collection_id, const json& body) {
+namespace {
+
+// A card's optional string fields (set code, language, collector number) as the stacking rule compares them.
+std::string opt_text(const json& v, const char* key) {
+    auto it = v.find(key);
+    return it != v.end() && it->is_string() ? it->get<std::string>() : "";
+}
+bool is_foil(const json& v) {
+    auto it = v.find("foil");
+    return it != v.end() && it->is_boolean() && it->get<bool>();
+}
+
+}  // namespace
+
+// Adds one card (or `quantity` copies) to `collection`, stacking onto a matching row. Returns an error to send back,
+// or nothing when it was added. Doesn't load or save: add_card and add_cards do that around it.
+static std::optional<Result> add_one(json& collection, const json& body, long long now,
+                                     const std::function<std::string()>& make_id) {
     json name = field(body, "name");
     json game = field(body, "game");
     if (!truthy(name)) return error(400, "card name is required");
     if (!valid_game(game)) return error(400, std::string("game must be one of ") + kValidGamesRepr);
-
-    std::lock_guard<std::mutex> lock(mu_);
-    json db = load_locked();
-    json* collection = find_collection(db, collection_id);
-    if (!collection) return error(404, "not found");
 
     json condition_v = field(body, "condition");
     std::string condition = truthy(condition_v) && condition_v.is_string() ? condition_v.get<std::string>()
                                                                           : (truthy(condition_v) ? "" : kDefaultCondition);
     if (!valid_condition(condition)) return error(400, std::string("condition must be one of ") + kValidConditionsRepr);
 
+    // How many copies this adds: `quantity` (a whole number of at least 1) when given, else one.
+    long long copies = 1;
+    json quantity_v = field(body, "quantity");
+    if (!quantity_v.is_null()) {
+        if (!quantity_v.is_number_integer() || quantity_v.get<long long>() < 1 || quantity_v.get<long long>() > 100000)
+            return error(400, "quantity must be a whole number of at least 1");
+        copies = quantity_v.get<long long>();
+    }
+
     // Cards only auto-stack (quantity++) when name/set/game AND condition all
     // match: a Near Mint copy and a Heavily Played copy of the same print are
-    // separate rows. (A request with no "set" never stacks — stored cards
-    // always carry one, "" by default, and null != "" — same as before.)
+    // separate rows. Finish (foil), language and collector number must match too. (A request with no "set" never
+    // stacks: stored cards always carry one, "" by default, and null != "" — same as before.)
     json set_v = field(body, "set");
+    const bool foil = is_foil(body);
+    const std::string language = opt_text(body, "language");
+    const std::string number = opt_text(body, "number");
     json* existing = nullptr;
-    for (auto& c : (*collection)["cards"]) {
+    for (auto& c : collection["cards"]) {
         if (c.value("name", json()) == name && c.value("set", json()) == set_v && c.value("game", json()) == game &&
-            c.value("condition", json(kDefaultCondition)) == condition) {
+            c.value("condition", json(kDefaultCondition)) == condition && is_foil(c) == foil &&
+            opt_text(c, "language") == language && opt_text(c, "number") == number) {
             existing = &c;
             break;
         }
     }
-    const long long now = now_ms_();
     if (existing) {
         json& q = (*existing)["quantity"];
-        q = q.is_number_integer() ? json(q.get<long long>() + 1) : json(q.get<double>() + 1);
+        q = q.is_number_integer() ? json(q.get<long long>() + copies) : json(q.get<double>() + static_cast<double>(copies));
         (*existing)["updated"] = now;
     } else {
         auto str_or_empty = [&](const char* key) { return body.contains(key) ? body[key] : json(""); };
-        json fresh = {{"id", make_id_()},
+        json fresh = {{"id", make_id()},
                       {"name", name},
                       {"game", game},
                       {"set", str_or_empty("set")},
                       {"rarity", str_or_empty("rarity")},
                       {"image", str_or_empty("image")},
                       {"condition", condition},
-                      {"quantity", 1},
+                      {"quantity", copies},
                       {"updated", now}};
         // The catalog id the card was picked from (a search or scan result's "id"): lets prices be looked up exactly.
         json catalog_id = body.contains("uid") ? body["uid"] : field(body, "id");
         if (catalog_id.is_string() && !catalog_id.get<std::string>().empty()) fresh["uid"] = catalog_id;
-        (*collection)["cards"].push_back(fresh);
+        // Finish, language and collector number are only kept when there is something to say.
+        if (foil) fresh["foil"] = true;
+        if (!language.empty()) fresh["language"] = language;
+        if (!number.empty()) fresh["number"] = number;
+        collection["cards"].push_back(fresh);
     }
-    (*collection)["updated"] = now;
+    collection["updated"] = now;
+    return std::nullopt;
+}
+
+Result Store::add_card(const std::string& collection_id, const json& body) {
+    // (validated before the collection is looked up, as ever: a bad request is a 400 even for a missing collection)
+    json probe = json::object({{"cards", json::array()}});
+    if (auto bad = add_one(probe, body, 0, [] { return std::string("probe"); })) return *bad;
+
+    std::lock_guard<std::mutex> lock(mu_);
+    json db = load_locked();
+    json* collection = find_collection(db, collection_id);
+    if (!collection) return error(404, "not found");
+    if (auto bad = add_one(*collection, body, now_ms_(), make_id_)) return *bad;
+    save_locked(db);
+    return {201, *collection};
+}
+
+Result Store::add_cards(const std::string& collection_id, const json& body) {
+    if (!body.is_object() || !body.contains("cards") || !body["cards"].is_array()) return error(400, "cards must be an array");
+    const json& cards = body["cards"];
+    if (cards.empty() || cards.size() > 20000) return error(400, "send between 1 and 20000 cards");
+
+    std::lock_guard<std::mutex> lock(mu_);
+    json db = load_locked();
+    json* collection = find_collection(db, collection_id);
+    if (!collection) return error(404, "not found");
+    const long long now = now_ms_();
+    // all or nothing: one bad row and nothing is added (the page checks its rows first, so this is a backstop)
+    json work = *collection;
+    size_t row = 0;
+    for (const auto& card : cards) {
+        ++row;
+        if (!card.is_object()) return error(400, "card " + std::to_string(row) + " is not an object");
+        if (auto bad = add_one(work, card, now, make_id_)) {
+            json message = bad->body;
+            message["error"] = "card " + std::to_string(row) + ": " + message["error"].get<std::string>();
+            return {bad->status, message};
+        }
+    }
+    *collection = work;
     save_locked(db);
     return {201, *collection};
 }

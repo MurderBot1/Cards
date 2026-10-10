@@ -4,6 +4,7 @@
 #include <cstdlib>
 
 #include "open_url.hpp"
+#include "save_file.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -94,6 +95,13 @@ void register_routes(cardhttp::Server& server, ApiContext& ctx) {
         if (!parse_object(req, body, failure)) return failure;
         return respond(store.add_card(req.params.at("id"), body));
     });
+    // many cards in one request (an import): { cards: [card, ...] } -> the updated collection, all or nothing
+    server.route("POST", "/api/collections/<id>/cards/bulk", [&](const Request& req) {
+        json body;
+        Response failure;
+        if (!parse_object(req, body, failure)) return failure;
+        return respond(store.add_cards(req.params.at("id"), body));
+    });
     server.route("PATCH", "/api/collections/<id>/cards/<card_id>", [&](const Request& req) {
         json body;
         Response failure;
@@ -147,6 +155,22 @@ void register_routes(cardhttp::Server& server, ApiContext& ctx) {
         std::string problem;
         if (!ctx.updater->install(problem)) return error(409, problem);
         return Response::json(200, json{{"installing", true}}.dump());
+    });
+
+    // ---- exports: the page posts the CSV text of a collection and it is saved in the Downloads folder -------------------
+    server.route("POST", "/api/save-file", [&ctx](const Request& req) {
+        if (ctx.save_dir.empty()) return error(501, "this build can't save files itself");
+        json body;
+        Response failure;
+        if (!parse_object(req, body, failure)) return failure;
+        std::string name = body.contains("name") && body["name"].is_string() ? body["name"].get<std::string>() : "";
+        if (!body.contains("content") || !body["content"].is_string()) return error(400, "content is required");
+        const std::string& content = body["content"].get_ref<const std::string&>();
+        if (!is_safe_export_name(name)) return error(400, "name must be a .csv file name");
+        if (content.size() > 64u * 1024u * 1024u) return error(413, "that file is too big");
+        auto saved = save_export(ctx.save_dir, name, content);
+        if (!saved.ok) return error(500, saved.error);
+        return Response::json(200, json{{"path", saved.path.u8string()}, {"name", saved.path.filename().u8string()}}.dump());
     });
 
     // ---- settings ----------------------------------------------------------

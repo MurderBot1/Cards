@@ -3,7 +3,7 @@
 // which the app writes back locally. See native/cardstore (sync_state / sync_apply) for the device side.
 //
 // A collection travels as a "doc":
-//   { id, name, updated, cards: [{id, uid?, name, game, set, rarity, image, condition, quantity, updated}], tomb: {cardId: ms} }
+//   { id, name, updated, cards: [{id, uid?, name, game, set, rarity, image, condition, quantity, foil?, language?, number?, updated}], tomb: {cardId: ms} }
 // or, once deleted, { id, deleted: ms }. Times are the device's clock in milliseconds. Merging is last-writer-wins
 // per card; removals are kept as tombstones so they win over older copies instead of being resurrected.
 import { fail, json, readJson, sessionUser } from './lib.js';
@@ -36,6 +36,10 @@ function cleanCard(raw) {
     updated: isTime(raw.updated) ? raw.updated : 1,
   };
   if (typeof raw.uid === 'string' && raw.uid && raw.uid.length <= 200) card.uid = raw.uid;
+  // finish, language and collector number: only present when there is something to say
+  if (raw.foil === true) card.foil = true;
+  if (typeof raw.language === 'string' && raw.language) card.language = raw.language.slice(0, 40);
+  if (typeof raw.number === 'string' && raw.number) card.number = raw.number.slice(0, 40);
   return card;
 }
 

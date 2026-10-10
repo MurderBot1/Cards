@@ -33,6 +33,7 @@ export function priceKey(card) {
 // The price of one copy, or null when we don't have one.
 export function unitPrice(card) {
   const entry = cache[priceKey(card)];
+  if (card.foil === true && entry && typeof entry.usdFoil === 'number') return entry.usdFoil;  // a foil copy: the foil price
   return entry && typeof entry.usd === 'number' ? entry.usd : null;
 }
 

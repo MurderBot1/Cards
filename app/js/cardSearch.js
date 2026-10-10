@@ -36,6 +36,7 @@ export function scryfallResult(card) {
     id: `mtg-${card.id}`,
     name: card.name,
     set: String(card.set || '').toUpperCase(),
+    number: String(card.collector_number || ''),
     rarity: titleCase(card.rarity),
     image: images.small || images.normal || '',
     game: 'mtg',
@@ -48,6 +49,7 @@ export function pokemonResult(card) {
     id: `pkm-${card.id}`,
     name: card.name,
     set: String(set.ptcgoCode || set.id || '').toUpperCase(),
+    number: String(card.number || ''),
     rarity: card.rarity || '',
     image: (card.images && (card.images.small || card.images.large)) || '',
     game: 'pokemon',
@@ -61,6 +63,7 @@ export function yugiohResult(card) {
     id: `ygo-${card.id}`,
     name: card.name,
     set: String(printing.set_code || '').split('-')[0],
+    number: '',
     rarity: printing.set_rarity || '',
     image: image.image_url_small || image.image_url || '',
     game: 'yugioh',
@@ -98,7 +101,7 @@ async function searchPokemon(fetchFn, query, limit, offset) {
   const aligned = offset % limit === 0;
   const pageSize = aligned ? limit : Math.min(250, offset + limit);
   const page = aligned ? offset / limit + 1 : 1;
-  const url = `https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(terms.join(' '))}&orderBy=name&pageSize=${pageSize}&page=${page}&select=id,name,set,rarity,images`;
+  const url = `https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(terms.join(' '))}&orderBy=name&pageSize=${pageSize}&page=${page}&select=id,name,number,set,rarity,images`;
   const data = await getJson(fetchFn, url);
   const cards = (data && Array.isArray(data.data) ? data.data : []).map(pokemonResult);
   return aligned ? cards : cards.slice(offset, offset + limit);

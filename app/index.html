@@ -46,6 +46,7 @@
       <div class="subview" id="subview-collection-list">
         <div class="list-toolbar">
           <p class="list-count" id="collection-count">0 collections</p>
+          <button class="link-btn link-btn--inline" id="import-new-collection-btn" type="button">Import from a file</button>
         </div>
         <div class="collection-grid" id="collection-grid"><!-- collection cards injected --></div>
         <div class="empty-state hidden" id="collection-empty">
@@ -64,6 +65,12 @@
             <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
             <input type="search" id="collection-search-input" placeholder="Search this collection&hellip;">
           </div>
+          <button class="icon-btn icon-btn--tool" id="import-collection-btn" aria-label="Import cards from a file" title="Import cards from a file">
+            <svg viewBox="0 0 24 24"><path d="M12 15V4M8 8l4-4 4 4M4 15v4a1 1 0 001 1h14a1 1 0 001-1v-4"/></svg>
+          </button>
+          <button class="icon-btn icon-btn--tool" id="export-collection-btn" aria-label="Export this collection as CSV" title="Export this collection as CSV">
+            <svg viewBox="0 0 24 24"><path d="M12 4v11M8 11l4 4 4-4M4 15v4a1 1 0 001 1h14a1 1 0 001-1v-4"/></svg>
+          </button>
           <button class="icon-btn icon-btn--danger" id="delete-collection-btn" aria-label="Delete collection">
             <svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>
           </button>
@@ -211,6 +218,40 @@
     <div class="sheet-actions">
       <button class="btn btn-secondary" id="new-collection-cancel">Cancel</button>
       <button class="btn btn-primary" id="new-collection-create" disabled>Create collection</button>
+    </div>
+  </div>
+</div>
+
+<!-- import cards from a CSV file (importExport.js) -->
+<div class="overlay hidden" id="modal-import">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <h2 class="sheet-title" id="import-title">Import cards</h2>
+    <p class="field-hint">Moxfield, Deckbox, ManaBox, TCGplayer, Archidekt, Delver Lens and Binder&rsquo;s own export (CSV).</p>
+    <label class="field-label" for="import-file">File</label>
+    <input class="field-input" id="import-file" type="file" accept=".csv,.txt,text/csv,text/plain">
+    <details class="import-paste">
+      <summary>or paste the CSV text</summary>
+      <textarea class="field-input" id="import-text" rows="5" placeholder="Count,Name,Set Code,&hellip;"></textarea>
+    </details>
+    <div id="import-new-group" class="hidden">
+      <label class="field-label" for="import-new-name">New collection</label>
+      <input class="field-input" id="import-new-name" type="text" maxlength="40" placeholder="Name">
+    </div>
+    <div id="import-game-group" class="hidden">
+      <label class="field-label">This file doesn&rsquo;t say which game its cards are from</label>
+      <div class="segmented" id="import-game" role="tablist" aria-label="Game">
+        <button data-value="mtg" role="tab" aria-selected="true">Magic</button>
+        <button data-value="pokemon" role="tab" aria-selected="false">Pok&eacute;mon</button>
+        <button data-value="yugioh" role="tab" aria-selected="false">Yu-Gi-Oh!</button>
+      </div>
+    </div>
+    <p class="field-hint" id="import-summary"></p>
+    <p class="field-hint field-hint--error hidden" id="import-error"></p>
+    <progress class="setup-bar hidden" id="import-bar" max="1" value="0"></progress>
+    <div class="sheet-actions">
+      <button class="btn btn-secondary" id="import-cancel">Cancel</button>
+      <button class="btn btn-primary" id="import-go" disabled>Import</button>
     </div>
   </div>
 </div>

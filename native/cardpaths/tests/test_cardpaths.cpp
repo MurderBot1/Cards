@@ -38,6 +38,11 @@ int main() {
         CHECK_EQ(p.data_dir, p.user_data_dir / "data");
         CHECK_EQ(p.db_path, p.user_data_dir / "db.json");
         CHECK_EQ(p.startup_log, p.user_data_dir / "logs" / "startup.log");
+        CHECK_EQ(p.downloads_dir, home / "Downloads");  // exports go to the Downloads folder
+    }
+    {
+        auto p = cardpaths::resolve(make_env("android", home, nowhere), {});
+        CHECK_EQ(p.downloads_dir, p.user_data_dir / "exports");  // (Android saves through its own bridge; this is a fallback)
     }
     {
         auto p = cardpaths::resolve(make_env("linux", home, nowhere, {{"XDG_DATA_HOME", "/xdg"}}), {});

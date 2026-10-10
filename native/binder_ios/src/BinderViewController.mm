@@ -9,6 +9,7 @@ static const NSInteger kMaxLoadRetries = 40;       // ~10 s at 250 ms apart: the
 static const NSTimeInterval kRetryDelay = 0.25;
 static NSString* const kReleasesPrefix = @"https://github.com/MurderBot1/Cards/releases/";
 static NSString* const kOpenHandlerName = @"binderOpen";
+static NSString* const kSaveHandlerName = @"binderSave";   // { name, text }: an exported file, offered through the share sheet
 
 @interface BinderViewController () <WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler>
 @property(nonatomic, strong) WKWebView* webView;
@@ -31,6 +32,7 @@ static NSString* const kOpenHandlerName = @"binderOpen";
     config.allowsInlineMediaPlayback = YES;                       // the scan preview plays inside the page
     config.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone;
     [config.userContentController addScriptMessageHandler:self name:kOpenHandlerName];
+    [config.userContentController addScriptMessageHandler:self name:kSaveHandlerName];
 
     self.webView = [[WKWebView alloc] initWithFrame:self.view.bounds configuration:config];
     self.webView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
@@ -182,7 +184,28 @@ static NSString* const kOpenHandlerName = @"binderOpen";
 #pragma mark - WKScriptMessageHandler
 
 // js/updates.js asks to open a download: this project's GitHub release pages and files only, handed to Safari.
+// A collection's CSV export from the page: written to a temporary file and handed to the share sheet, from which it can
+// be saved to Files, AirDropped, mailed and so on.
+- (void)saveExport:(NSDictionary*)body {
+    NSString* name = body[@"name"];
+    NSString* text = body[@"text"];
+    if (![name isKindOfClass:[NSString class]] || ![text isKindOfClass:[NSString class]]) return;
+    if (name.length == 0 || name.length > 120 || ![name.lowercaseString hasSuffix:@".csv"] || [name hasPrefix:@"."]) return;
+    if ([name rangeOfCharacterFromSet:[NSCharacterSet characterSetWithCharactersInString:@"/\\:*?\"<>|"]].location != NSNotFound) return;
+    NSURL* file = [[NSURL fileURLWithPath:NSTemporaryDirectory()] URLByAppendingPathComponent:name];
+    NSError* error = nil;
+    if (![text writeToURL:file atomically:YES encoding:NSUTF8StringEncoding error:&error]) return;
+    UIActivityViewController* share = [[UIActivityViewController alloc] initWithActivityItems:@[ file ] applicationActivities:nil];
+    share.popoverPresentationController.sourceView = self.view;  // (iPad shows it as a popover)
+    share.popoverPresentationController.sourceRect = CGRectMake(self.view.bounds.size.width / 2, self.view.bounds.size.height / 2, 1, 1);
+    [self presentViewController:share animated:YES completion:nil];
+}
+
 - (void)userContentController:(WKUserContentController*)controller didReceiveScriptMessage:(WKScriptMessage*)message {
+    if ([message.name isEqualToString:kSaveHandlerName]) {
+        if ([message.body isKindOfClass:[NSDictionary class]]) [self saveExport:(NSDictionary*)message.body];
+        return;
+    }
     if (![message.name isEqualToString:kOpenHandlerName] || ![message.body isKindOfClass:[NSString class]]) return;
     NSString* urlString = (NSString*)message.body;
     if (![urlString hasPrefix:kReleasesPrefix] || urlString.length > 400) return;

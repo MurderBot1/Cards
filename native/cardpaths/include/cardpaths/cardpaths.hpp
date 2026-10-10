@@ -35,6 +35,7 @@ struct Paths {
     std::filesystem::path log_dir;   // <user_data>/logs
     std::filesystem::path data_dir;  // <user_data>/data: cards.sqlite3, card-vectors.cvi, cardnet's .onnx models
     std::filesystem::path db_path;   // <user_data>/db.json
+    std::filesystem::path downloads_dir;  // where exported files go: ~/Downloads (or <user_data>/exports when there is no home)
     std::filesystem::path startup_log;
     std::filesystem::path frontend_dir;  // first candidate containing index.html, else the first candidate
     bool frontend_found = false;

@@ -226,6 +226,11 @@ export const api = {
     return request(`/collections/${collectionId}/cards`, { method: 'POST', body: JSON.stringify(card) });
   },
 
+  // Many cards at once (an import): [{ name, game, set, ..., quantity }] -> the updated collection. All or nothing.
+  async addCardsToCollection(collectionId, cards) {
+    return request(`/collections/${collectionId}/cards/bulk`, { method: 'POST', body: JSON.stringify({ cards }) });
+  },
+
   async updateCardQuantity(collectionId, cardId, quantity) {
     if (USE_MOCK) {
       await delay(60);

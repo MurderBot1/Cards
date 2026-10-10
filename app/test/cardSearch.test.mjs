@@ -13,13 +13,13 @@ test('the website is told from the app by the address it is served from', () => 
 });
 
 test("results look like the local backend's", () => {
-  assert.deepEqual(scryfallResult({ id: 'abc', name: 'Bolt', set: 'm11', rarity: 'common', image_uris: { small: 's.jpg', normal: 'n.jpg' } }),
-    { id: 'mtg-abc', name: 'Bolt', set: 'M11', rarity: 'Common', image: 's.jpg', game: 'mtg' });
+  assert.deepEqual(scryfallResult({ id: 'abc', name: 'Bolt', set: 'm11', collector_number: '146', rarity: 'common', image_uris: { small: 's.jpg', normal: 'n.jpg' } }),
+    { id: 'mtg-abc', name: 'Bolt', set: 'M11', number: '146', rarity: 'Common', image: 's.jpg', game: 'mtg' });
   assert.equal(scryfallResult({ id: 'x', name: 'Two-faced', set: 'isd', rarity: 'rare', card_faces: [{ image_uris: { normal: 'front.jpg' } }, {}] }).image, 'front.jpg');
-  assert.deepEqual(pokemonResult({ id: 'base1-4', name: 'Charizard', set: { id: 'base1', ptcgoCode: 'BS' }, rarity: 'Rare Holo', images: { small: 'c.png' } }),
-    { id: 'pkm-base1-4', name: 'Charizard', set: 'BS', rarity: 'Rare Holo', image: 'c.png', game: 'pokemon' });
+  assert.deepEqual(pokemonResult({ id: 'base1-4', name: 'Charizard', number: '4', set: { id: 'base1', ptcgoCode: 'BS' }, rarity: 'Rare Holo', images: { small: 'c.png' } }),
+    { id: 'pkm-base1-4', name: 'Charizard', set: 'BS', number: '4', rarity: 'Rare Holo', image: 'c.png', game: 'pokemon' });
   assert.deepEqual(yugiohResult({ id: 46986414, name: 'Dark Magician', card_sets: [{ set_code: 'LOB-EN005', set_rarity: 'Ultra Rare' }], card_images: [{ image_url_small: 'd.jpg' }] }),
-    { id: 'ygo-46986414', name: 'Dark Magician', set: 'LOB', rarity: 'Ultra Rare', image: 'd.jpg', game: 'yugioh' });
+    { id: 'ygo-46986414', name: 'Dark Magician', set: 'LOB', number: '', rarity: 'Ultra Rare', image: 'd.jpg', game: 'yugioh' });
   assert.equal(yugiohResult({ id: 1, name: 'No Sets' }).set, '');
 });
 
