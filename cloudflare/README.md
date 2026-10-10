@@ -10,6 +10,10 @@ by a [D1](https://developers.cloudflare.com/d1/) database. Both are on Cloudflar
 | `GET /api/auth/me` | `Authorization: Bearer <token>` | `200 {username, expires_at}` or `401` |
 | `POST /api/auth/logout` | `Authorization: Bearer <token>` | `200 {ok: true}` |
 | `POST /api/sync` | `{cursor, collections: [doc], deleted: [{id, at}]}` + token | `200 {cursor, more, collections: [doc]}` |
+| `GET /api/share` | token | `200 {shares: [{id, token, url}]}` (the lists this account shares) |
+| `POST /api/share` | `{id, renew?}` + token | `200 {id, token, url}`; `404` until the list has been synced |
+| `POST /api/share/revoke` | `{id}` + token | `200 {ok: true}` |
+| `GET /s/<token>` | none | the read-only page for a shared list (HTML), `404` once revoked |
 
 - Usernames are 3 to 32 characters (letters, digits, `.`, `-`, `_`) and unique ignoring case. Passwords are 8 to 256.
 - The email is required to create an account and stored lowercased (unique). **Nothing uses it yet:** no verification, no
@@ -30,10 +34,19 @@ card at about the same time keep the later change (clock differences between dev
 stays deleted unless it was edited after the deletion. At most 90 collections per request (the app batches) and about
 1.5 MB per collection.
 
-The service does accounts and collection sync, and nothing else. Anything about cards themselves (prices, card data) is
+**Share links** (`src/share.js`): a signed-in person can turn one synced list into a public, read-only page at
+`/s/<token>`. The token is 32 random URL-safe characters (24 random bytes), stored in the `shares` table next to the
+account's copy of the list; the page is built from that copy on every view, so it follows later syncs, shows only the list's
+name and cards (never the username or email, and not which deck cards the owner has), and is sent `no-store` with
+`noindex`, a locked-down Content-Security-Policy (no scripts; card pictures only from Scryfall, pokemontcg.io and
+YGOPRODeck) and no referrer, so revoking or renewing a link takes effect at once. One link per list, at most 100 shared
+lists per account; deleting an account or a list removes the page. Anyone holding the link can see the list, so treat it
+like a password-less invite.
+
+The service does accounts, collection sync and the share pages, and nothing else. Anything about cards themselves (prices, card data) is
 fetched by the app straight from the card sites (`app/js/priceSources.js`) and never passes through here.
 
-Layout: `src/worker.js` (routing, CORS), `src/auth/*.js` (the account endpoints), `src/sync.js`,
+Layout: `src/worker.js` (routing, CORS), `src/auth/*.js` (the account endpoints), `src/sync.js`, `src/share.js`,
 `src/lib.js` (validation, hashing, sessions, rate limiting), `src/schema.js` + `schema.sql` (the tables), `wrangler.jsonc`. The app itself (`../app`) is served as the website.
 
 ## One-time setup (Cloudflare dashboard)

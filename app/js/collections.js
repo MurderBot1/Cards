@@ -6,7 +6,10 @@
  * scanning a physical card. A collection can hold cards from any
  * mix of games — the game is chosen per search/scan, not per collection.
  */
-import { api, CONDITIONS, DEFAULT_CONDITION } from './api.js';
+import { api, accountRequest, CONDITIONS, DEFAULT_CONDITION } from './api.js';
+import { getSession } from './session.js';
+import { syncNow } from './sync.js';
+import { createShare, findShare, stopShare } from './shareLink.js';
 import { showToast } from './ui.js';
 import { IS_WEB } from './env.js';
 import { initImportExport } from './importExport.js';
@@ -103,6 +106,18 @@ const els = {
   cardDetailOwnedStepper: document.getElementById('card-detail-owned-stepper'),
   fab: document.getElementById('fab-add-card'),
   deleteCollectionBtn: document.getElementById('delete-collection-btn'),
+  shareBtn: document.getElementById('share-collection-btn'),
+  shareModal: document.getElementById('modal-share'),
+  shareTitle: document.getElementById('share-title'),
+  shareIntro: document.getElementById('share-intro'),
+  shareLinkBlock: document.getElementById('share-link-block'),
+  shareLink: document.getElementById('share-link'),
+  shareCopy: document.getElementById('share-copy'),
+  shareRenew: document.getElementById('share-renew'),
+  shareStop: document.getElementById('share-stop'),
+  shareError: document.getElementById('share-error'),
+  shareClose: document.getElementById('share-close'),
+  shareMake: document.getElementById('share-make'),
 
   newModal: document.getElementById('modal-new-collection'),
   newName: document.getElementById('new-collection-name'),
@@ -853,6 +868,97 @@ els.moveGo.addEventListener('click', async () => {
     els.moveGo.disabled = false;
   }
 });
+
+// ---- share a list with a link ----
+const shareDeps = {
+  session: getSession,
+  request: accountRequest,
+  sync: syncNow,
+  wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+};
+let sharing = null;  // the list the share sheet is about
+
+function showShareLink(share) {
+  els.shareLink.value = share ? share.url : '';
+  els.shareLinkBlock.classList.toggle('hidden', !share);
+  els.shareMake.classList.toggle('hidden', !!share);
+  els.shareIntro.classList.toggle('hidden', !!share);
+}
+function shareFailed(err) {
+  els.shareError.textContent = err.message || 'Something went wrong';
+  els.shareError.classList.remove('hidden');
+}
+function shareBusy(busy) {
+  for (const b of [els.shareMake, els.shareRenew, els.shareStop, els.shareCopy]) b.disabled = busy;
+}
+async function openShare() {
+  if (!activeCollection) return;
+  if (!getSession()) {
+    showToast('Sign in (Account tab) to share a list', 3000);
+    return;
+  }
+  sharing = activeCollection;
+  const words = kindWords(kindOf(sharing));
+  els.shareTitle.textContent = `Share this ${words.singular}`;
+  els.shareError.classList.add('hidden');
+  showShareLink(null);
+  els.shareMake.disabled = true;
+  els.shareModal.classList.remove('hidden');
+  try {
+    const share = await findShare(sharing.id, shareDeps);
+    if (sharing) showShareLink(share);
+  } catch (err) {
+    if (sharing) shareFailed(err);
+  } finally {
+    shareBusy(false);
+  }
+}
+function closeShare() {
+  els.shareModal.classList.add('hidden');
+  sharing = null;
+}
+async function changeShare(action) {
+  if (!sharing) return;
+  const list = sharing;
+  els.shareError.classList.add('hidden');
+  shareBusy(true);
+  try {
+    if (action === 'stop') {
+      await stopShare(list.id, shareDeps);
+      if (sharing === list) showShareLink(null);
+      showToast('Link turned off');
+    } else {
+      const share = await createShare(list.id, shareDeps, { renew: action === 'renew' });
+      if (sharing === list) showShareLink(share);
+      if (action === 'renew') showToast('New link made — the old one no longer works');
+    }
+  } catch (err) {
+    if (sharing === list) shareFailed(err);
+  } finally {
+    shareBusy(false);
+  }
+}
+async function copyShareLink() {
+  const url = els.shareLink.value;
+  try {
+    await navigator.clipboard.writeText(url);
+    showToast('Link copied');
+    return;
+  } catch (e) { /* not allowed here: select it so it can be copied by hand */ }
+  els.shareLink.focus();
+  els.shareLink.select();
+  let done = false;
+  try { done = document.execCommand('copy'); } catch (e) { /* ignore */ }
+  showToast(done ? 'Link copied' : 'Press and hold the link to copy it');
+}
+els.shareBtn.addEventListener('click', openShare);
+els.shareClose.addEventListener('click', closeShare);
+els.shareModal.addEventListener('click', (e) => { if (e.target === els.shareModal) closeShare(); });
+els.shareMake.addEventListener('click', () => changeShare('make'));
+els.shareRenew.addEventListener('click', () => changeShare('renew'));
+els.shareStop.addEventListener('click', () => changeShare('stop'));
+els.shareCopy.addEventListener('click', copyShareLink);
+els.shareLink.addEventListener('focus', () => els.shareLink.select());
 
 els.cardDetailClose.addEventListener('click', closeCardDetail);
 els.cardDetailModal.addEventListener('click', (e) => { if (e.target === els.cardDetailModal) closeCardDetail(); });

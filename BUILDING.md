@@ -308,6 +308,17 @@ across printings of the same name. Sideboards aren't tracked (the whole list is 
 Commander deck's commander and color identity; the panel says so. Cards not looked up yet (offline) are reported as
 unchecked, never as legal.
 
+## Sharing a list
+
+The share button in a list's toolbar (signed in only) makes a public, read-only link such as
+`https://<site>/s/<token>`: anyone with it sees the list's name and cards, nothing about the account, and cannot change
+anything. Making the link syncs first, because the page is served by the account service (`cloudflare/src/share.js`) from
+the copy of the list stored on the account, so it follows later syncs. "Make a new link" replaces the link (the old one
+stops working), "Stop sharing" kills it; a deleted list's link stops working too. The app side is `app/js/shareLink.js`
+(syncing, retrying while the account hasn't got the list yet, asking the service) and the sheet in `collections.js`. Guests
+are told to sign in. The service's table is created automatically (`cloudflare/src/schema.js`), so redeploying the Worker is
+all that's needed. See `cloudflare/README.md` for the page's headers and limits.
+
 ## Updates
 
 The app checks the project's GitHub releases on startup (and from "Check for updates" on the Account tab) and offers the
