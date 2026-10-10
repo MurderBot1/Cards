@@ -233,6 +233,13 @@ export const api = {
     return request(`/collections/${collectionId}/cards/bulk`, { method: 'POST', body: JSON.stringify({ cards }) });
   },
 
+  // Moves copies of a card to another list (all of them when `quantity` is left out) -> { source, target } (both lists)
+  async moveCard(collectionId, cardId, toCollectionId, quantity) {
+    const body = { to: toCollectionId };
+    if (quantity !== undefined) body.quantity = quantity;
+    return request(`/collections/${collectionId}/cards/${cardId}/move`, { method: 'POST', body: JSON.stringify(body) });
+  },
+
   // How many copies of one card of a deck the person has (decks only) -> the updated deck
   async setCardOwned(collectionId, cardId, owned) {
     return request(`/collections/${collectionId}/cards/${cardId}`, { method: 'PATCH', body: JSON.stringify({ owned }) });

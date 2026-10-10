@@ -476,5 +476,87 @@ int main() {
         CHECK(seen);
     }
 
+    // ---- moving copies of a card to another list
+    {
+        cardtest::TempDir t6;
+        long long clock = 9000;
+        int n = 0;
+        cardstore::Store st(t6.path() / "db.json", [&] { return "M" + std::to_string(++n); }, [&] { return clock += 10; });
+        auto make = [&](const char* name, const char* kind) { return st.create_collection({{"name", name}, {"kind", kind}}).body["id"].get<std::string>(); };
+        auto a = make("A", "collection");
+        auto b = make("B", "collection");
+        auto deck = make("Deck", "deck");
+        auto list = [&](const std::string& id) { return st.get_collection(id).body; };
+        auto bolt_body = json{{"name", "Bolt"}, {"game", "mtg"}, {"set", "M11"}, {"rarity", "Common"}, {"image", "http://x/b.jpg"}, {"id", "mtg-bolt"},
+                              {"condition", "Lightly Played"}, {"foil", true}, {"language", "Japanese"}, {"number", "146"}, {"quantity", 5}};
+        auto bolt = st.add_card(a, bolt_body).body["cards"][0]["id"].get<std::string>();
+        auto url = [&](const std::string& to, json extra = json::object()) { json body = {{"to", to}}; body.update(extra); return body; };
+
+        // some of the copies: the rest stay, the moved ones arrive with everything the card has
+        auto some = st.move_card(a, bolt, url(b, {{"quantity", 2}}));
+        CHECK_EQ(some.status, 200);
+        CHECK_EQ(some.body["source"]["cards"][0]["quantity"], json(3));
+        CHECK_EQ(some.body["target"]["cards"][0]["quantity"], json(2));
+        auto moved = some.body["target"]["cards"][0];
+        CHECK_EQ(moved["name"], json("Bolt"));
+        CHECK_EQ(moved["set"], json("M11"));
+        CHECK_EQ(moved["condition"], json("Lightly Played"));
+        CHECK_EQ(moved["foil"], json(true));
+        CHECK_EQ(moved["language"], json("Japanese"));
+        CHECK_EQ(moved["number"], json("146"));
+        CHECK_EQ(moved["uid"], json("mtg-bolt"));
+        CHECK_EQ(moved["image"], json("http://x/b.jpg"));
+        CHECK(moved["id"] != json(bolt));  // a row of its own in the other list
+        CHECK_EQ(list(b)["cards"][0]["quantity"], json(2));
+        CHECK(list(a)["updated"].get<long long>() > 9000 && list(b)["updated"].get<long long>() > 9000);
+
+        // moving more onto the same card stacks
+        CHECK_EQ(st.move_card(a, bolt, url(b, {{"quantity", 1}})).status, 200);
+        CHECK_EQ(list(b)["cards"].size(), static_cast<size_t>(1));
+        CHECK_EQ(list(b)["cards"][0]["quantity"], json(3));
+
+        // all of them (the default): the row goes, with a tombstone so other devices drop it too
+        auto rest = st.move_card(a, bolt, url(b));
+        CHECK_EQ(rest.status, 200);
+        CHECK_EQ(rest.body["source"]["cards"].size(), static_cast<size_t>(0));
+        CHECK(rest.body["source"]["tomb"].contains(bolt));
+        CHECK_EQ(list(b)["cards"][0]["quantity"], json(5));
+
+        // refusals change nothing
+        auto id_in_b = list(b)["cards"][0]["id"].get<std::string>();
+        CHECK_EQ(st.move_card(b, id_in_b, json::object()).body["error"], json("to must be the id of another list"));
+        CHECK_EQ(st.move_card(b, id_in_b, {{"to", 7}}).status, 400);
+        CHECK_EQ(st.move_card(b, id_in_b, url(b)).body["error"], json("choose a different list to move it to"));
+        CHECK_EQ(st.move_card(b, id_in_b, url("nope")).status, 404);
+        CHECK_EQ(st.move_card("nope", id_in_b, url(a)).status, 404);
+        CHECK_EQ(st.move_card(b, "nope", url(a)).status, 404);
+        for (json bad : {json(0), json(6), json(-1), json(1.5), json("2")}) {
+            auto r = st.move_card(b, id_in_b, url(a, {{"quantity", bad}}));
+            CHECK_EQ(r.status, 400);
+            CHECK_EQ(r.body["error"], json("quantity must be a whole number from 1 to 5"));
+        }
+        CHECK_EQ(list(b)["cards"][0]["quantity"], json(5));
+        CHECK_EQ(list(a)["cards"].size(), static_cast<size_t>(0));
+
+        // the other list's limits hold, and then nothing leaves the source
+        auto deck_card = [&](const std::string& name, long long q) { return json{{"name", name}, {"game", "mtg"}, {"set", "M10"}, {"quantity", q}}; };
+        auto big = st.add_card(a, deck_card("Big", 101)).body["cards"][0]["id"].get<std::string>();
+        auto over = st.move_card(a, big, url(deck));
+        CHECK_EQ(over.status, 400);
+        CHECK_EQ(over.body["error"], json("A deck can hold at most 100 copies of one card"));
+        CHECK_EQ(list(a)["cards"][0]["quantity"], json(101));
+        CHECK_EQ(list(deck)["cards"].size(), static_cast<size_t>(0));
+        CHECK_EQ(st.move_card(a, big, url(deck, {{"quantity", 100}})).status, 200);
+        CHECK_EQ(list(a)["cards"][0]["quantity"], json(1));
+        CHECK_EQ(list(deck)["cards"][0]["quantity"], json(100));
+        CHECK(!list(deck)["cards"][0].contains("owned"));  // nothing is had until said
+
+        // out of a deck: what is had is kept to what is still needed
+        CHECK_EQ(st.update_card(deck, list(deck)["cards"][0]["id"].get<std::string>(), {{"owned", 90}}).status, 200);
+        CHECK_EQ(st.move_card(deck, list(deck)["cards"][0]["id"].get<std::string>(), url(b, {{"quantity", 30}})).status, 200);
+        CHECK_EQ(list(deck)["cards"][0]["quantity"], json(70));
+        CHECK_EQ(list(deck)["cards"][0]["owned"], json(70));
+    }
+
     return cardtest::finish("cardstore");
 }

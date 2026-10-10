@@ -74,6 +74,15 @@ const els = {
   filterOwned: document.getElementById('filter-owned'),
   filterOwnedField: document.getElementById('filter-owned-field'),
   ownCheckBtn: document.getElementById('own-check-btn'),
+  moveBtn: document.getElementById('card-detail-move-btn'),
+  moveModal: document.getElementById('modal-move-card'),
+  moveTitle: document.getElementById('move-card-title'),
+  moveTarget: document.getElementById('move-card-target'),
+  moveCopies: document.getElementById('move-card-copies'),
+  moveStepper: document.getElementById('move-card-stepper'),
+  moveError: document.getElementById('move-card-error'),
+  moveCancel: document.getElementById('move-card-cancel'),
+  moveGo: document.getElementById('move-card-go'),
   cardDetailOwnedBlock: document.getElementById('card-detail-owned-block'),
   cardDetailOwned: document.getElementById('card-detail-owned'),
   cardDetailOwnedStepper: document.getElementById('card-detail-owned-stepper'),
@@ -647,6 +656,83 @@ els.cardDetailOwnedStepper.querySelectorAll('[data-action]').forEach((btn) => {
     }
   });
 });
+// ---- move copies of a card to another list ----
+let moveCard = null;      // the card being moved
+let moveCount = 1;        // how many copies
+let lastMoveTarget = '';  // the list picked last time, offered again
+
+function openMoveModal(card) {
+  const others = collections.filter((c) => c.id !== activeCollection.id);
+  if (others.length === 0) {
+    showToast('Make another list to move it to first');
+    return;
+  }
+  moveCard = card;
+  moveCount = card.quantity;  // all of them, unless changed
+  els.moveTitle.textContent = `Move ${card.name}`;
+  els.moveTarget.innerHTML = '';
+  for (const kind of KINDS) {
+    const lists = listsOfKind(others, kind);
+    if (lists.length === 0) continue;
+    const group = document.createElement('optgroup');
+    group.label = kindWords(kind).tab;
+    for (const list of lists) {
+      const opt = document.createElement('option');
+      opt.value = list.id;
+      opt.textContent = list.name;
+      group.appendChild(opt);
+    }
+    els.moveTarget.appendChild(group);
+  }
+  if (others.some((c) => c.id === lastMoveTarget)) els.moveTarget.value = lastMoveTarget;
+  els.moveError.classList.add('hidden');
+  els.moveGo.disabled = false;
+  showMoveCount();
+  els.moveModal.classList.remove('hidden');
+}
+function closeMoveModal() {
+  els.moveModal.classList.add('hidden');
+  moveCard = null;
+}
+function showMoveCount() {
+  els.moveCopies.textContent = moveCard && moveCard.quantity > 1 ? `${moveCount} of ${moveCard.quantity}` : '1';
+}
+els.moveBtn.addEventListener('click', () => { if (detailCard && activeCollection) openMoveModal(detailCard); });
+els.moveCancel.addEventListener('click', closeMoveModal);
+els.moveModal.addEventListener('click', (e) => { if (e.target === els.moveModal) closeMoveModal(); });
+els.moveStepper.querySelectorAll('[data-action]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    if (!moveCard) return;
+    moveCount = Math.min(moveCard.quantity, Math.max(1, moveCount + (btn.dataset.action === 'move-inc' ? 1 : -1)));
+    showMoveCount();
+  });
+});
+els.moveGo.addEventListener('click', async () => {
+  if (!moveCard || !activeCollection) return;
+  const card = moveCard;
+  const toId = els.moveTarget.value;
+  const copies = Math.min(moveCount, card.quantity);
+  els.moveGo.disabled = true;
+  els.moveError.classList.add('hidden');
+  try {
+    const result = await api.moveCard(activeCollection.id, card.id, toId, copies);
+    lastMoveTarget = toId;
+    activeCollection = result.source;
+    const at = collections.findIndex((c) => c.id === result.target.id);
+    if (at !== -1) collections[at] = result.target;
+    renderCardList(els.detailSearch.value);
+    syncActiveCollectionIntoList();
+    closeMoveModal();
+    closeCardDetail();
+    showToast(`Moved ${copies > 1 ? `${copies} × ` : ''}${card.name} to "${result.target.name}"`, 3000);
+  } catch (err) {
+    // e.g. the other list is full
+    els.moveError.textContent = err.message || 'Could not move it';
+    els.moveError.classList.remove('hidden');
+    els.moveGo.disabled = false;
+  }
+});
+
 els.cardDetailClose.addEventListener('click', closeCardDetail);
 els.cardDetailModal.addEventListener('click', (e) => { if (e.target === els.cardDetailModal) closeCardDetail(); });
 

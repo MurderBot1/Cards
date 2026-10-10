@@ -244,3 +244,51 @@ test('decks keep how many copies of each card the person has', () => {
   const synced = store.syncState().body.collections.find((c) => c.id === deck);
   assert.equal(synced.cards.find((c) => c.name === 'Shock').owned, 6, 'travels with the card in sync');
 });
+
+test('moving copies of a card to another list (same rules and messages as the native store)', () => {
+  const { store } = make();
+  const create = (name, kind) => store.handle('POST', '/collections', { name, kind }).body.id;
+  const a = create('A');
+  const b = create('B');
+  const deck = create('Deck', 'deck');
+  const list = (id) => store.handle('GET', `/collections/${id}`).body;
+  const bolt = store.handle('POST', `/collections/${a}/cards`, { name: 'Bolt', game: 'mtg', set: 'M11', rarity: 'Common', image: 'http://x/b.jpg', id: 'mtg-bolt', condition: 'Lightly Played', foil: true, language: 'Japanese', number: '146', quantity: 5 }).body.cards[0].id;
+  const move = (from, id, body) => store.handle('POST', `/collections/${from}/cards/${id}/move`, body);
+
+  const some = move(a, bolt, { to: b, quantity: 2 });
+  assert.equal(some.status, 200);
+  assert.deepEqual([some.body.source.cards[0].quantity, some.body.target.cards[0].quantity], [3, 2]);
+  const moved = some.body.target.cards[0];
+  assert.deepEqual({ ...moved, id: '', updated: 0 }, { id: '', name: 'Bolt', game: 'mtg', set: 'M11', rarity: 'Common', image: 'http://x/b.jpg', condition: 'Lightly Played', quantity: 2, updated: 0, uid: 'mtg-bolt', foil: true, language: 'Japanese', number: '146' }, 'arrives with everything the card has');
+  assert.notEqual(moved.id, bolt, 'a row of its own');
+  assert.equal(move(a, bolt, { to: b, quantity: 1 }).status, 200);
+  assert.deepEqual([list(b).cards.length, list(b).cards[0].quantity], [1, 3], 'stacks onto the same card');
+
+  const rest = move(a, bolt, { to: b });
+  assert.equal(rest.body.source.cards.length, 0, 'all by default: the row goes');
+  assert.ok(bolt in rest.body.source.tomb, 'with a tombstone for sync');
+  assert.equal(list(b).cards[0].quantity, 5);
+
+  const inB = list(b).cards[0].id;
+  assert.equal(move(b, inB, {}).body.error, 'to must be the id of another list');
+  assert.equal(move(b, inB, { to: 7 }).status, 400);
+  assert.equal(move(b, inB, { to: b }).body.error, 'choose a different list to move it to');
+  assert.equal(move(b, inB, { to: 'nope' }).status, 404);
+  assert.equal(move('nope', inB, { to: a }).status, 404);
+  assert.equal(move(b, 'nope', { to: a }).status, 404);
+  for (const bad of [0, 6, -1, 1.5, '2']) assert.equal(move(b, inB, { to: a, quantity: bad }).body.error, 'quantity must be a whole number from 1 to 5');
+  assert.equal(list(b).cards[0].quantity, 5, 'refusals change nothing');
+  assert.equal(list(a).cards.length, 0);
+
+  const big = store.handle('POST', `/collections/${a}/cards`, { name: 'Big', game: 'mtg', set: 'M10', quantity: 101 }).body.cards[0].id;
+  const over = move(a, big, { to: deck });
+  assert.equal(over.body.error, 'A deck can hold at most 100 copies of one card', "the other list's limits hold");
+  assert.deepEqual([list(a).cards[0].quantity, list(deck).cards.length], [101, 0], 'and then nothing leaves the source');
+  assert.equal(move(a, big, { to: deck, quantity: 100 }).status, 200);
+  assert.deepEqual([list(a).cards[0].quantity, list(deck).cards[0].quantity], [1, 100]);
+  assert.equal('owned' in list(deck).cards[0], false);
+
+  store.handle('PATCH', `/collections/${deck}/cards/${list(deck).cards[0].id}`, { owned: 90 });
+  assert.equal(move(deck, list(deck).cards[0].id, { to: b, quantity: 30 }).status, 200);
+  assert.deepEqual([list(deck).cards[0].quantity, list(deck).cards[0].owned], [70, 70], 'what is had is kept to what is still needed');
+});

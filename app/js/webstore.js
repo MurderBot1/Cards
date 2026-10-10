@@ -358,6 +358,57 @@ export class WebStore {
     return { status: 200, body: { applied, skipped } };
   }
 
+  // Moves copies of a card to another list: body { to: list id, quantity?: copies (default all) }. They are added to the
+  // other list (stacking, under its limits) and taken out of this one, together or not at all.
+  moveCard(collectionId, cardId, body) {
+    body = isObject(body) ? body : {};
+    if (typeof body.to !== 'string' || !body.to) return error(400, 'to must be the id of another list');
+    if (body.to === collectionId) return error(400, 'choose a different list to move it to');
+    const db = this.load();
+    const source = db.collections.find((c) => c.id === collectionId);
+    if (!source) return error(404, 'not found');
+    const target = db.collections.find((c) => c.id === body.to);
+    if (!target) return error(404, 'the list to move it to was not found');
+    const card = source.cards.find((c) => c.id === cardId);
+    if (!card) return error(404, 'not found');
+
+    let copies = card.quantity;
+    if (body.quantity !== undefined && body.quantity !== null) {
+      if (!Number.isInteger(body.quantity) || body.quantity < 1 || body.quantity > card.quantity) {
+        return error(400, `quantity must be a whole number from 1 to ${card.quantity}`);
+      }
+      copies = body.quantity;
+    }
+
+    // into the other list first (under its limits); the source is only changed once that has worked
+    const cardBody = {
+      name: card.name, game: card.game, set: card.set ?? '', rarity: card.rarity ?? '', image: card.image ?? '',
+      condition: card.condition ?? DEFAULT_CONDITION, quantity: copies,
+    };
+    if (card.uid) cardBody.uid = card.uid;
+    if (card.foil === true) cardBody.foil = true;
+    if (card.language) cardBody.language = card.language;
+    if (card.number) cardBody.number = card.number;
+    const now = this.nowMs();
+    const targetWork = clone(target);
+    const refused = this.addOne(targetWork, cardBody, now);
+    if (refused) return refused;
+
+    if (copies >= card.quantity) {
+      source.cards = source.cards.filter((c) => c.id !== cardId);
+      if (!isObject(source.tomb)) source.tomb = {};
+      source.tomb[cardId] = now;
+    } else {
+      card.quantity -= copies;
+      if (card.owned) writeOwned(card, card.owned);  // (never more than needed)
+      card.updated = now;
+    }
+    source.updated = now;
+    db.collections[db.collections.indexOf(target)] = targetWork;
+    this.save(db);
+    return { status: 200, body: { source, target: targetWork } };
+  }
+
   // Sets how many copies of each card of a deck the person has, in one go: body { owned: { card id: copies } }.
   setOwned(collectionId, body) {
     const owned = isObject(body) ? body.owned : undefined;
@@ -413,6 +464,7 @@ export class WebStore {
         if (!cardId && method === 'POST') return this.addCard(id, body);
         if (cardId === 'bulk' && method === 'POST') return this.addCards(id, body);
         if (cardId && method === 'PATCH') return this.updateCard(id, cardId, body);
+        if (cardId && parts[4] === 'move' && method === 'POST') return this.moveCard(id, cardId, body);
       } else if (sub === 'owned' && method === 'POST') {
         return this.setOwned(id, body);
       }

@@ -423,6 +423,63 @@ Result Store::update_card(const std::string& collection_id, const std::string& c
     return {200, *collection};
 }
 
+Result Store::move_card(const std::string& collection_id, const std::string& card_id, const json& body) {
+    json to = field(body, "to");
+    if (!to.is_string() || to.get<std::string>().empty()) return error(400, "to must be the id of another list");
+    const std::string target_id = to.get<std::string>();
+    if (target_id == collection_id) return error(400, "choose a different list to move it to");
+
+    std::lock_guard<std::mutex> lock(mu_);
+    json db = load_locked();
+    json* source = find_collection(db, collection_id);
+    if (!source) return error(404, "not found");
+    json* target = find_collection(db, target_id);
+    if (!target) return error(404, "the list to move it to was not found");
+    json* card = nullptr;
+    for (auto& c : (*source)["cards"])
+        if (c.value("id", "") == card_id) card = &c;
+    if (!card) return error(404, "not found");
+
+    const double have = (*card).value("quantity", 0.0);
+    long long copies = static_cast<long long>(have);
+    json quantity_v = field(body, "quantity");
+    if (!quantity_v.is_null()) {
+        if (!quantity_v.is_number_integer() || quantity_v.get<long long>() < 1 || quantity_v.get<long long>() > copies)
+            return error(400, "quantity must be a whole number from 1 to " + std::to_string(copies));
+        copies = quantity_v.get<long long>();
+    }
+
+    // into the other list first (under its limits); the source is only changed once that has worked
+    json card_body = {{"name", (*card)["name"]}, {"game", (*card)["game"]}, {"set", card->value("set", json(""))},
+                      {"rarity", card->value("rarity", json(""))}, {"image", card->value("image", json(""))},
+                      {"condition", card->value("condition", json(kDefaultCondition))}, {"quantity", copies}};
+    if (card->contains("uid")) card_body["uid"] = (*card)["uid"];
+    if (is_foil(*card)) card_body["foil"] = true;
+    if (!opt_text(*card, "language").empty()) card_body["language"] = (*card)["language"];
+    if (!opt_text(*card, "number").empty()) card_body["number"] = (*card)["number"];
+    const long long now = now_ms_();
+    json target_work = *target;
+    if (auto bad = add_one(target_work, card_body, now, make_id_)) return *bad;
+
+    if (static_cast<double>(copies) >= have) {
+        json kept = json::array();
+        for (auto& c : (*source)["cards"])
+            if (c.value("id", "") != card_id) kept.push_back(c);
+        (*source)["cards"] = kept;
+        if (!source->contains("tomb") || !(*source)["tomb"].is_object()) (*source)["tomb"] = json::object();
+        (*source)["tomb"][card_id] = now;
+    } else {
+        json& q = (*card)["quantity"];
+        q = q.is_number_integer() ? json(q.get<long long>() - copies) : json(have - static_cast<double>(copies));
+        if (card->contains("owned")) write_owned(*card, (*card)["owned"].get<long long>());  // (never more than needed)
+        (*card)["updated"] = now;
+    }
+    (*source)["updated"] = now;
+    *target = target_work;
+    save_locked(db);
+    return {200, json{{"source", *source}, {"target", *target}}};
+}
+
 Result Store::set_owned(const std::string& collection_id, const json& body) {
     json owned = field(body, "owned");
     if (!owned.is_object()) return error(400, "owned must be an object of card id to copies");

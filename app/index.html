@@ -456,6 +456,29 @@
         <button class="qty-btn" data-action="owned-inc" aria-label="More copies you have"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
       </div>
     </div>
+
+    <button class="btn btn-secondary btn-block" id="card-detail-move-btn" type="button">Move to another list&hellip;</button>
+  </div>
+</div>
+
+<!-- move a card to another list -->
+<div class="overlay hidden" id="modal-move-card">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <h2 class="sheet-title" id="move-card-title">Move card</h2>
+    <label class="field-label" for="move-card-target">Move to</label>
+    <select class="field-input" id="move-card-target"></select>
+    <p class="field-label">Copies to move</p>
+    <div class="card-qty card-qty--large" id="move-card-stepper">
+      <button class="qty-btn" data-action="move-dec" aria-label="Fewer copies"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+      <span id="move-card-copies">1</span>
+      <button class="qty-btn" data-action="move-inc" aria-label="More copies"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+    </div>
+    <p class="field-hint field-hint--error hidden" id="move-card-error"></p>
+    <div class="sheet-actions">
+      <button class="btn btn-secondary" id="move-card-cancel" type="button">Cancel</button>
+      <button class="btn btn-primary" id="move-card-go" type="button">Move</button>
+    </div>
   </div>
 </div>
 
