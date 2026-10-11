@@ -142,3 +142,14 @@ test('merging decks: the newer game and format win; one that has none does not w
   assert.equal('game' in mergeDocs(bare, cleanDoc(doc({ kind: 'deck', updated: 400 }))), false);
   assert.equal(JSON.stringify(mergeDocs(newer, newer)), JSON.stringify(newer), 'merging with itself changes nothing');
 });
+
+test('a wishlist made on two devices with the same id becomes one list holding both devices\' cards', () => {
+  const phone = cleanDoc(doc({ id: 'wishlist', name: 'Wishlist', kind: 'wishlist', updated: 100, cards: [card('a', { updated: 100 })] }));
+  const laptop = cleanDoc(doc({ id: 'wishlist', name: 'Wishlist', kind: 'wishlist', updated: 150, cards: [card('b', { updated: 150 })] }));
+  const merged = mergeDocs(phone, laptop);
+  assert.deepEqual([merged.id, merged.kind, ids(merged)], ['wishlist', 'wishlist', ['a', 'b']]);
+  assert.deepEqual(mergeDocs(laptop, phone), merged, 'whichever way round');
+  // made again after a delete on another device: the newer list lives on
+  const recreated = mergeDocs({ id: 'wishlist', deleted: 120 }, laptop);
+  assert.deepEqual([recreated.kind, ids(recreated)], ['wishlist', ['b']]);
+});

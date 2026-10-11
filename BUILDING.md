@@ -259,6 +259,13 @@ There is one tradelist and one wishlist, not several of each: the "New" tile is 
 is refused ("You can only have one wishlist"). Deleting it frees the place. Tradelists and wishlists made while several
 were allowed (v1.0.14 to v1.0.21) are left alone, none is merged or removed, but no more can be made.
 
+Because there is only one of each, the Tradelist and Wishlist tabs open that list straight away instead of showing a grid with a
+"New" tile (`openSingleList` in `app/js/collections.js`); the first time, the list is made quietly, named "Wishlist" or
+"Tradelist". It is made with a fixed id, the kind's own name (`POST /api/collections` accepts `id` for these two kinds only, and
+only that value; asking again for one that exists returns it with 200). That way two devices that each make theirs before
+syncing end up with one list, since the same id merges, instead of two. Where there are several from before the limit, the
+oldest opens. Going back (the arrow, or the Collection tab) shows the lists screen on that tab with the single list on it.
+
 A "different card" is a row (the same card in another condition, set, finish or language is its own row). The numbers
 live in three places that must agree: `native/cardstore/src/store.cpp` (`limits_for`), `app/js/listKinds.js` (`LIMITS`,
 used by the website's store) and `cloudflare/src/sync.js` (`LIMITS`; the Worker checks the cards in a list it is sent,

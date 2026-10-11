@@ -338,3 +338,24 @@ test("a deck's game and format: chosen when made, changed later, kept through sy
   store.handle('POST', '/sync/apply', { collections: [{ id: 'odd', name: 'Odd', kind: 'deck', game: 'pokemon', format: 'modern', updated: 9e12, cards: [] }], expect: {} });
   assert.equal('game' in store.handle('GET', '/collections/odd').body, false, 'a mismatched pair is not kept');
 });
+
+test('the one wishlist and the one tradelist can be made with a fixed id (the kind\'s own name)', () => {
+  const { store } = make();
+  const create = (body) => store.handle('POST', '/collections', body);
+  const wish = create({ name: 'Wishlist', kind: 'wishlist', id: 'wishlist' });
+  assert.deepEqual([wish.status, wish.body.id, wish.body.kind], [201, 'wishlist', 'wishlist']);
+  const again = create({ name: 'Other name', kind: 'wishlist', id: 'wishlist' });
+  assert.deepEqual([again.status, again.body.name], [200, 'Wishlist'], 'already made: that one, not an error or a second one');
+  assert.equal(create({ name: 'Trades', kind: 'tradelist', id: 'tradelist' }).body.id, 'tradelist');
+  for (const body of [
+    { kind: 'wishlist', id: 'mine' }, { kind: 'tradelist', id: 'wishlist' }, { kind: 'deck', id: 'deck' }, { id: 'wishlist' }, { kind: 'wishlist', id: 5 },
+  ]) assert.equal(create({ name: 'X', ...body }).status, 400, JSON.stringify(body));
+  assert.equal(create({ name: 'X', kind: 'wishlist', id: 5 }).body.error, 'only the wishlist and the tradelist have a fixed id');
+  assert.equal(store.handle('GET', '/collections').body.length, 2, 'refused ones were not made');
+
+  store.handle('DELETE', '/collections/wishlist');
+  assert.equal(create({ name: 'Wishlist', kind: 'wishlist', id: 'wishlist' }).status, 201, 'made again after a delete');
+  const state = store.syncState().body;
+  assert.deepEqual(state.deleted, [], 'no longer marked deleted');
+  assert.deepEqual(state.collections.map((c) => c.id).sort(), ['tradelist', 'wishlist']);
+});

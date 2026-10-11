@@ -110,18 +110,29 @@ export class WebStore {
     const game = body ? body.game : undefined;
     const format = body ? body.format : undefined;
     const given = (v) => v !== undefined && v !== null;
+    // the one wishlist and the one tradelist may be made with a fixed id (the kind's own name), so two devices that each
+    // make theirs before syncing end up with one list (the same id merges)
+    const fixedId = body ? body.id : undefined;
+    if (given(fixedId) && !((kind === 'wishlist' || kind === 'tradelist') && fixedId === kind)) {
+      return error(400, 'only the wishlist and the tradelist have a fixed id');
+    }
     if (given(game) || given(format)) {
       if (kind !== 'deck') return error(400, 'only a deck has a game and a format');
       const problem = deckFormatProblem(game, format);
       if (problem) return error(400, problem);
     }
     const db = this.load();
+    if (given(fixedId)) {
+      const have = db.collections.find((c) => c.id === fixedId);
+      if (have) return { status: 200, body: have };  // already made: just that one
+    }
     const madeKind = KINDS.includes(kind) ? kind : 'collection';
     const maxLists = limitsOf(madeKind).lists;
     if (maxLists !== null && db.collections.filter((c) => (KINDS.includes(c.kind) ? c.kind : 'collection') === madeKind).length >= maxLists) {
       return error(400, tooManyListsMessage(madeKind));
     }
-    const collection = { id: this.makeId(), name, cards: [], updated: this.nowMs() };
+    const collection = { id: given(fixedId) ? fixedId : this.makeId(), name, cards: [], updated: this.nowMs() };
+    if (given(fixedId) && isObject(db.deleted)) delete db.deleted[fixedId];  // made again after a delete
     if (isSpecialKind(kind)) collection.kind = kind;
     if (given(game)) {
       collection.game = game;

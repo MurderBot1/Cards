@@ -129,6 +129,39 @@ int main() {
         CHECK_EQ(store.list_collections().body.size(), static_cast<size_t>(1));
     }
 
+    // ---- the one wishlist and the one tradelist can be made with a fixed id (the kind's own name)
+    {
+        auto wish = store.create_collection({{"name", "Wishlist"}, {"kind", "wishlist"}, {"id", "wishlist"}});
+        CHECK_EQ(wish.status, 201);
+        CHECK_EQ(wish.body["id"], json("wishlist"));
+        CHECK_EQ(wish.body["kind"], json("wishlist"));
+        auto again = store.create_collection({{"name", "Other name"}, {"kind", "wishlist"}, {"id", "wishlist"}});
+        CHECK_EQ(again.status, 200);  // already made: that one, not an error and not a second one
+        CHECK_EQ(again.body["name"], json("Wishlist"));
+        CHECK_EQ(store.create_collection({{"name", "Trades"}, {"kind", "tradelist"}, {"id", "tradelist"}}).body["id"], json("tradelist"));
+        // refused: another id, another kind, no kind, a number
+        CHECK_EQ(store.create_collection({{"name", "X"}, {"kind", "wishlist"}, {"id", "mine"}}).status, 400);
+        CHECK_EQ(store.create_collection({{"name", "X"}, {"kind", "tradelist"}, {"id", "wishlist"}}).status, 400);
+        CHECK_EQ(store.create_collection({{"name", "X"}, {"kind", "deck"}, {"id", "deck"}}).status, 400);
+        CHECK_EQ(store.create_collection({{"name", "X"}, {"id", "wishlist"}}).status, 400);
+        auto bad_id = store.create_collection({{"name", "X"}, {"kind", "wishlist"}, {"id", 5}});
+        CHECK_EQ(bad_id.status, 400);
+        CHECK_EQ(bad_id.body["error"], json("only the wishlist and the tradelist have a fixed id"));
+        // deleted, then made again: it lives (not still marked deleted) and syncs as a list
+        CHECK_EQ(store.delete_collection("wishlist").status, 200);
+        CHECK_EQ(store.create_collection({{"name", "Wishlist"}, {"kind", "wishlist"}, {"id", "wishlist"}}).status, 201);
+        const json state_now = store.sync_state().body;
+        bool still_deleted = false;
+        for (auto& d : state_now["deleted"]) if (d["id"] == "wishlist") still_deleted = true;
+        CHECK(!still_deleted);
+        bool listed = false;
+        for (auto& c : state_now["collections"]) if (c["id"] == "wishlist") listed = true;
+        CHECK(listed);
+        store.delete_collection("wishlist");
+        store.delete_collection("tradelist");
+        CHECK_EQ(store.list_collections().body.size(), static_cast<size_t>(1));
+    }
+
     // ---- adding cards: validation
     const std::string cid = "id1";
     CHECK_EQ(store.add_card(cid, {{"game", "mtg"}}).status, 400);                      // no name

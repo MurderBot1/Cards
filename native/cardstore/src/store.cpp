@@ -197,6 +197,11 @@ Result Store::create_collection(const json& body) {
     if (name.empty()) return error(400, "name is required");
     json kind = field(body, "kind");
     if (!kind.is_null() && !valid_kind(kind)) return error(400, std::string("kind must be one of ") + kValidKindsRepr);
+    // The one wishlist and the one tradelist may be made with a fixed id (the kind's own name), so two devices that each
+    // make theirs before syncing end up with one list, not two (the same id merges).
+    json fixed_id = field(body, "id");
+    if (!fixed_id.is_null() && !((kind == "wishlist" || kind == "tradelist") && fixed_id == kind))
+        return error(400, "only the wishlist and the tradelist have a fixed id");
     json game = field(body, "game");
     json format = field(body, "format");
     if (!game.is_null() || !format.is_null()) {
@@ -207,6 +212,9 @@ Result Store::create_collection(const json& body) {
 
     std::lock_guard<std::mutex> lock(mu_);
     json db = load_locked();
+    if (!fixed_id.is_null()) {
+        if (json* have = find_collection(db, fixed_id.get<std::string>())) return {200, *have};  // already made: just that one
+    }
     const json made_kind = valid_kind(kind) ? kind : json("collection");
     const ListLimits limits = limits_for(made_kind);
     if (limits.max_lists >= 0) {
@@ -220,7 +228,9 @@ Result Store::create_collection(const json& body) {
             return error(400, limits.max_lists == 1 ? "You can only have one " + kind_word(made_kind)
                                                     : "You can have at most " + std::to_string(limits.max_lists) + " " + kind_word(made_kind) + "s");
     }
-    json collection = {{"id", make_id_()}, {"name", name}, {"cards", json::array()}, {"updated", now_ms_()}};
+    const std::string new_id = fixed_id.is_null() ? make_id_() : fixed_id.get<std::string>();
+    if (!fixed_id.is_null() && db.contains("deleted") && db["deleted"].is_object()) db["deleted"].erase(new_id);  // made again after a delete
+    json collection = {{"id", new_id}, {"name", name}, {"cards", json::array()}, {"updated", now_ms_()}};
     if (is_special_kind(kind)) collection["kind"] = kind;
     if (!game.is_null()) {
         collection["game"] = game;

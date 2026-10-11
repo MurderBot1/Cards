@@ -23,7 +23,7 @@ import { deckFormatOf, deckFormatText, formatsOf, gameOfCards } from './deckForm
 import { FORMATS, cardStatus, checkFormat, formatByKey, statusWord } from './deckLegality.js';
 import { legalityHtml } from './legalityView.js';
 import { deckTotals, missingOf, ownedFromCollections, ownedOf } from './deckOwnership.js';
-import { DEFAULT_KIND, KINDS, atListLimit, kindOf, kindWords, limitsOf, listCountText, listsOfKind } from './listKinds.js';
+import { DEFAULT_KIND, KINDS, atListLimit, isSingleList, kindOf, kindWords, limitsOf, listCountText, listsOfKind } from './listKinds.js';
 import { SORTS, activeFilterCount, emptyFilter, facetValues, filterCards, isCustomView } from './cardFilter.js';
 
 const GAME_LABELS = { mtg: 'Magic: The Gathering', pokemon: 'Pokémon', yugioh: 'Yu-Gi-Oh!' };
@@ -355,6 +355,13 @@ window.addEventListener('binder:collections-changed', () => { reloadCollections(
 let deckPick = { game: '', format: '' };
 let editingDeck = null;
 
+// what a new list of this kind is made with besides its name: a deck's game and format, the fixed id of the one
+// wishlist or tradelist
+function newListExtra(kind, deck = null) {
+  if (kind === 'deck') return deck;  // (a deck made by an import has none yet)
+  return isSingleList(kind) ? { id: kind } : null;
+}
+
 function showDeckPick() {
   setGamePicker(els.newDeckGame, deckPick.game);
   const formats = formatsOf(deckPick.game);
@@ -429,7 +436,7 @@ els.newCreateBtn.addEventListener('click', async () => {
   if (!name) return;
   els.newCreateBtn.disabled = true;
   try {
-    const collection = await api.createCollection(name, activeKind, activeKind === 'deck' ? { ...deckPick } : null);
+    const collection = await api.createCollection(name, activeKind, newListExtra(activeKind, { ...deckPick }));
     collections.push(collection);
     renderCollectionGrid();
     closeNewCollectionModal();
@@ -1079,12 +1086,35 @@ function setSegmentedValue(group, value) {
 }
 
 els.kindTabs.querySelectorAll('button').forEach((btn) => {
-  btn.addEventListener('click', () => {
+  btn.addEventListener('click', async () => {
     activeKind = btn.dataset.value;
     try { localStorage.setItem(KIND_KEY, activeKind); } catch (e) { /* not remembered */ }
     renderCollectionGrid();
+    if (isSingleList(activeKind)) await openSingleList(activeKind);
   });
 });
+
+// The wishlist and the tradelist are one list each, so their tab opens that list rather than offering to make one.
+// It is made quietly the first time (with the kind's own name as its id, so two devices that each make theirs before
+// syncing end up with one list). When there are several from before the limit existed, the oldest opens.
+let openingSingle = false;
+async function openSingleList(kind) {
+  if (openingSingle) return;
+  openingSingle = true;
+  try {
+    let list = listsOfKind(collections, kind)[0];
+    if (!list) {
+      list = await api.createCollection(kindWords(kind).tab, kind, { id: kind });
+      if (!collections.some((c) => c.id === list.id)) collections.push(list);
+      renderCollectionGrid();
+    }
+    if (activeKind === kind) await openCollection(list.id);  // (not if another tab was tapped meanwhile)
+  } catch (err) {
+    showToast(err.message || `Could not open the ${kindWords(kind).singular}`, 3500);
+  } finally {
+    openingSingle = false;
+  }
+}
 
 els.cardDetailCondition.querySelectorAll('button').forEach((btn) => {
   btn.addEventListener('click', async () => {
@@ -1804,7 +1834,7 @@ export async function initCollections(navigateCallback) {
   onNavigate = navigateCallback;
   initImportExport({
     getActiveCollection: () => activeCollection,
-    createCollection: async (name) => api.createCollection(name, activeKind),
+    createCollection: async (name) => api.createCollection(name, activeKind, newListExtra(activeKind)),
     imported: (collection) => {
       const at = collections.findIndex((c) => c.id === collection.id);
       if (at === -1) collections.push(collection);

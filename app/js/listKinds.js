@@ -75,6 +75,11 @@ export function limitsOf(kind) {
   return LIMITS[KINDS.includes(kind) ? kind : DEFAULT_KIND];
 }
 
+/** True for a kind of which there is just one list (the wishlist, the tradelist): its tab opens that list directly. */
+export function isSingleList(kind) {
+  return limitsOf(kind).lists === 1;
+}
+
 /** True when no more lists of this kind can be made. Lists made before a limit existed may exceed it; none is removed. */
 export function atListLimit(kind, count) {
   const max = limitsOf(kind).lists;

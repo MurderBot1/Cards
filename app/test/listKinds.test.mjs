@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  atListLimit, countLabel, kindOf, kindWords, KINDS, limitsOf, listCountText, listsOfKind, tooManyCardsMessage, tooManyCopiesMessage, tooManyListsMessage,
+  atListLimit, countLabel, isSingleList, kindOf, kindWords, KINDS, limitsOf, listCountText, listsOfKind, tooManyCardsMessage, tooManyCopiesMessage, tooManyListsMessage,
 } from '../js/listKinds.js';
 
 test('a list with no kind, or one we do not know, is a collection', () => {
@@ -66,4 +66,12 @@ test('when no more lists can be made, and how the lists are counted', () => {
   assert.equal(listCountText('wishlist', 1), '1 wishlist');
   assert.equal(listCountText('wishlist', 0), '0 wishlists');
   assert.equal(listCountText('tradelist', 3), '3 tradelists', 'more than the limit: just the count');
+});
+
+test('the wishlist and the tradelist are single lists; collections and decks are not', () => {
+  assert.equal(isSingleList('wishlist'), true);
+  assert.equal(isSingleList('tradelist'), true);
+  assert.equal(isSingleList('deck'), false);
+  assert.equal(isSingleList('collection'), false);
+  assert.equal(isSingleList('nonsense'), false, 'an unknown kind reads as a collection');
 });
