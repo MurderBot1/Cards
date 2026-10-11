@@ -11,6 +11,13 @@
 #include <webkit2/webkit2.h>
 #endif
 
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
+
 namespace cardview {
 
 namespace {
@@ -44,6 +51,35 @@ void enable_camera(webview_t w) {
 }
 #endif
 
+#ifdef _WIN32
+// webview's Windows window only gets the system's stock application icon, which is what the title bar (and Alt+Tab's
+// small icon) showed, while the taskbar read the icon baked into the .exe (native/binder/packaging/binder.rc, named
+// IDI_ICON1). So give the window the .exe's icon itself, a small one for the title bar and a big one for Alt+Tab and
+// the taskbar, each at the size this window's screen asks for (the .ico holds 16 to 256 px).
+void use_exe_icon(webview_t w) {
+    auto* hwnd = static_cast<HWND>(webview_get_window(w));
+    if (!hwnd) return;
+    UINT dpi = 96;
+    using GetDpiForWindowFn = UINT(WINAPI*)(HWND);
+    using GetMetricsForDpiFn = int(WINAPI*)(int, UINT);
+    GetMetricsForDpiFn metrics_for_dpi = nullptr;
+    if (HMODULE user32 = GetModuleHandleW(L"user32.dll")) {
+        if (auto get_dpi = reinterpret_cast<GetDpiForWindowFn>(reinterpret_cast<void*>(GetProcAddress(user32, "GetDpiForWindow"))))
+            dpi = get_dpi(hwnd);
+        metrics_for_dpi = reinterpret_cast<GetMetricsForDpiFn>(reinterpret_cast<void*>(GetProcAddress(user32, "GetSystemMetricsForDpi")));
+    }
+    auto metric = [&](int index) { return metrics_for_dpi ? metrics_for_dpi(index, dpi) : GetSystemMetrics(index); };
+    HINSTANCE exe = GetModuleHandleW(nullptr);
+    auto load = [&](int cx, int cy) {
+        return static_cast<HICON>(LoadImageW(exe, L"IDI_ICON1", IMAGE_ICON, cx, cy, LR_DEFAULTCOLOR));
+    };
+    if (HICON small_icon = load(metric(SM_CXSMICON), metric(SM_CYSMICON)))
+        SendMessageW(hwnd, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(small_icon));
+    if (HICON big_icon = load(metric(SM_CXICON), metric(SM_CYICON)))
+        SendMessageW(hwnd, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(big_icon));
+}
+#endif
+
 }  // namespace
 
 struct View::Impl {
@@ -63,6 +99,9 @@ View::View(const Options& options) : impl_(new Impl) {
     webview_set_size(impl_->w, options.width, options.height, WEBVIEW_HINT_NONE);
 #if defined(__linux__) && !defined(__ANDROID__)
     enable_camera(impl_->w);
+#endif
+#ifdef _WIN32
+    use_exe_icon(impl_->w);
 #endif
 }
 
