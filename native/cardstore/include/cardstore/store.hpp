@@ -32,6 +32,8 @@ public:
 
     Result list_collections();
     Result create_collection(const nlohmann::json& body);
+    // body may carry `id` for the wishlist and the tradelist only, and then it must be the kind's own name ("wishlist",
+    // "tradelist"); asking again for one that exists answers with it (200) instead of an error.
     // body for a deck may carry { game: "mtg"|"pokemon"|"yugioh", format } (a format of that game); both or neither.
     Result get_collection(const std::string& collection_id);
     // Changes the game and format of a deck: body { game, format }, both required.
