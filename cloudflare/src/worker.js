@@ -1,4 +1,4 @@
-// The account service's entry point: routes /api/* to the handlers, serves the public share pages (/s/<token>), adds CORS, and turns an unexpected
+// The account service's entry point: routes /api/* to the handlers, serves the public share pages (/s/<token>) and public wishlists and tradelists (/<username>/wishlist), adds CORS, and turns an unexpected
 // error into a JSON 500. Anything else is served from ./public (see wrangler.jsonc).
 import { CORS, withCors } from './cors.js';
 import { fail } from './lib.js';
@@ -7,7 +7,7 @@ import { onRequestPost as logout } from './auth/logout.js';
 import { onRequestGet as me } from './auth/me.js';
 import { onRequestPost as register } from './auth/register.js';
 import { ensureSchema } from './schema.js';
-import { onSharePage, onShareCreate, onShareList, onShareRevoke } from './share.js';
+import { onPublicList, onPublicPage, onPublish, onSharePage, onShareCreate, onShareList, onShareRevoke, onUnpublish, publicPathOf } from './share.js';
 import { onSync } from './sync.js';
 
 const ROUTES = {
@@ -19,6 +19,9 @@ const ROUTES = {
   'GET /api/share': onShareList,
   'POST /api/share': onShareCreate,
   'POST /api/share/revoke': onShareRevoke,
+  'GET /api/public': onPublicList,
+  'POST /api/public': onPublish,
+  'POST /api/public/revoke': onUnpublish,
 };
 const PATHS = new Set(Object.keys(ROUTES).map((key) => key.split(' ')[1]));
 
@@ -29,6 +32,16 @@ export default {
       try {
         await ensureSchema(env.DB);
         return await onSharePage({ env, token: pathname.slice(3) });
+      } catch (err) {
+        console.error(err);
+        return fail('Something went wrong on the server', 500);
+      }
+    }
+    const publicPage = request.method === 'GET' ? publicPathOf(pathname) : null;
+    if (publicPage) {  // /<username>/wishlist and /<username>/tradelist
+      try {
+        await ensureSchema(env.DB);
+        return await onPublicPage({ env, ...publicPage });
       } catch (err) {
         console.error(err);
         return fail('Something went wrong on the server', 500);

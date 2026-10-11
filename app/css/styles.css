@@ -1348,3 +1348,8 @@ html.is-web [data-app-only] { display: none !important; }
 .currency-row-detail { font-size: 0.72rem; color: var(--text-dim); }
 .currency-row-sample { font-size: 0.72rem; color: var(--text-dim); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .currency-tick { width: 16px; flex: none; text-align: center; color: var(--foil-1); font-weight: 700; }
+
+/* the public page option in the share sheet */
+.share-public { border-top: 1px solid var(--border); margin: 8px 0 4px; padding-top: 12px; }
+.share-public-title { margin: 0 0 4px; font-size: 0.95rem; font-weight: 600; }
+.share-public .sheet-actions { margin-top: 8px; }

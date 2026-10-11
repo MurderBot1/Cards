@@ -3,6 +3,12 @@
 //   POST /api/share/revoke { id }          -> { ok: true }         stop sharing (the old link stops working at once)
 //   GET  /api/share                        -> { shares: [{ id, token, url }] }
 //   GET  /s/<token>                        -> the page (HTML)
+// Public pages (opt-in, only for the wishlist and the tradelist) live at a readable address instead, /<username>/wishlist
+// and /<username>/tradelist, and say whose they are (the address does):
+//   GET  /api/public                       -> { public: [{ kind, id, url }] }
+//   POST /api/public        { id }         -> { kind, id, url }    make that list public (its kind says which address)
+//   POST /api/public/revoke { kind }       -> { ok: true }         take it down (the address is a 404 again at once)
+//   GET  /<username>/wishlist | /<username>/tradelist              -> the page (HTML)
 // The link is a random 32-character token, so it can't be guessed. The page is made from the list as last synced to the
 // account (so it follows later syncs), shows only the list's name and cards (never the username or email), and is
 // served with no-store so a revoked link is dead immediately.
@@ -122,15 +128,17 @@ function cardRow(card) {
     `<div class="info"><div class="name">${escapeHtml(card.name)}</div><div class="meta">${bits}</div></div><div class="qty">×${escapeHtml(card.quantity)}</div></li>`;
 }
 
-export function renderSharePage(doc) {
+export function renderSharePage(doc, owner = null) {
   const cards = [...doc.cards].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true }));
   const copies = cards.reduce((sum, c) => sum + Math.max(0, Math.floor(c.quantity)), 0);
   const kind = KIND_WORDS[doc.kind] || 'Collection';
   const count = `${cards.length.toLocaleString('en-US')} different card${cards.length === 1 ? '' : 's'} · ${copies.toLocaleString('en-US')} in total`;
   const list = cards.length ? `<ul>${cards.map(cardRow).join('')}</ul>` : '<ul><li class="empty">Nothing in this list yet.</li></ul>';
+  // a public page is headed with whose it is ("Julie's wishlist"); a share link with the list's own name
+  const heading = owner ? `${owner}’s ${kind.toLowerCase()}` : doc.name;
   return shell(
-    `${doc.name} — ${kind}`,
-    `<h1>${escapeHtml(doc.name)}</h1><p class="sub">${escapeHtml(kind)} · ${count}</p>${list}<footer>Shared from <a href="/">Binder</a></footer>`
+    `${heading} — ${kind}`,
+    `<h1>${escapeHtml(heading)}</h1><p class="sub">${escapeHtml(kind)} · ${count}</p>${list}<footer>Shared from <a href="/">Binder</a></footer>`
   );
 }
 
@@ -142,4 +150,64 @@ export async function onSharePage({ env, token }) {
     .first();
   const doc = row ? cleanDoc(JSON.parse(row.doc)) : null;
   return doc && doc.deleted === undefined ? renderSharePage(doc) : notFound();
+}
+
+// ---- public pages: /<username>/wishlist and /<username>/tradelist -----------------------------------------
+
+export const PUBLIC_KINDS = ['wishlist', 'tradelist'];
+const PUBLIC_PATH_RE = /^\/([A-Za-z0-9_.-]{3,32})\/(wishlist|tradelist)$/;
+
+/** The username and kind a path asks for ("/julie/wishlist"), or null when it is not a public page address. */
+export function publicPathOf(pathname) {
+  const match = PUBLIC_PATH_RE.exec(pathname);
+  return match ? { username: match[1], kind: match[2] } : null;
+}
+
+const publicOut = (request, username, kind, id) => ({ kind, id, url: `${new URL(request.url).origin}/${username}/${kind}` });
+
+export async function onPublicList({ request, env }) {
+  const user = await sessionUser(env.DB, request);
+  if (!user) return fail('Not signed in', 401);
+  const rows = await env.DB.prepare('SELECT kind, doc_id FROM public_lists WHERE user_id = ? ORDER BY kind').bind(user.id).all();
+  return json({ public: rows.results.map((r) => publicOut(request, user.username, r.kind, r.doc_id)) });
+}
+
+export async function onPublish({ request, env }) {
+  const user = await sessionUser(env.DB, request);
+  if (!user) return fail('Not signed in', 401);
+  const body = await readJson(request);
+  if (!body || typeof body.id !== 'string' || !body.id || body.id.length > 64) return fail('Say which list to make public', 400);
+  const doc = await liveDoc(env.DB, user.id, body.id);
+  if (!doc) return fail('Sync this list to your account first, then make it public', 404);
+  if (!PUBLIC_KINDS.includes(doc.kind)) return fail('Only a wishlist or a tradelist can be made public', 400);
+  await env.DB
+    .prepare('INSERT INTO public_lists (user_id, kind, doc_id, created_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(user_id, kind) DO UPDATE SET doc_id = excluded.doc_id, created_at = excluded.created_at')
+    .bind(user.id, doc.kind, doc.id, Date.now())
+    .run();
+  return json(publicOut(request, user.username, doc.kind, doc.id));
+}
+
+export async function onUnpublish({ request, env }) {
+  const user = await sessionUser(env.DB, request);
+  if (!user) return fail('Not signed in', 401);
+  const body = await readJson(request);
+  if (!body || !PUBLIC_KINDS.includes(body.kind)) return fail('Say which one to take down: the wishlist or the tradelist', 400);
+  await env.DB.prepare('DELETE FROM public_lists WHERE user_id = ? AND kind = ?').bind(user.id, body.kind).run();
+  return json({ ok: true });
+}
+
+// The page for /<username>/<kind>. Someone who doesn't exist, a list that isn't public and one that has been deleted all
+// look the same, so the address can't be used to find out who has an account.
+export async function onPublicPage({ env, username, kind }) {
+  const row = await env.DB
+    .prepare(
+      'SELECT users.username AS username, sync_docs.doc AS doc FROM users ' +
+        'JOIN public_lists ON public_lists.user_id = users.id AND public_lists.kind = ?1 ' +
+        'JOIN sync_docs ON sync_docs.user_id = users.id AND sync_docs.id = public_lists.doc_id ' +
+        'WHERE users.username_lower = ?2'
+    )
+    .bind(kind, username.toLowerCase())
+    .first();
+  const doc = row ? cleanDoc(JSON.parse(row.doc)) : null;
+  return doc && doc.deleted === undefined && doc.kind === kind ? renderSharePage(doc, row.username) : notFound();
 }

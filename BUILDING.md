@@ -349,6 +349,19 @@ stops working), "Stop sharing" kills it; a deleted list's link stops working too
 are told to sign in. The service's table is created automatically (`cloudflare/src/schema.js`), so redeploying the Worker is
 all that's needed. See `cloudflare/README.md` for the page's headers and limits.
 
+### A public page for the wishlist and the tradelist
+
+The wishlist and the tradelist can also be put on a page with a readable address, `https://<site>/<username>/wishlist` and
+`https://<site>/<username>/tradelist`, that anyone can open without a link. It is opt-in and off by default: in the share sheet
+of either list, "Public page" has "Make it public" / "Stop being public" (signed in only; the list is synced first, like a share
+link). Unlike a share link the page says whose it is ("Julie's wishlist"), because the address does, and the sheet says so
+before it is turned on. Only these two lists can have one (a deck or a collection is refused). The page shows the cards as last
+synced and is a plain 404 for someone with no account, a list that isn't public and one that was deleted, so the address can't
+be used to find out who has an account. It is sent `no-store` and `noindex` with the same locked-down headers as share pages.
+The Worker keeps one row per person and kind in `public_lists` (created automatically), and answers these paths itself
+(`cloudflare/src/share.js`, `publicPathOf`) before the `/api` check; the app's files are served first, so a username can't
+shadow them. Redeploy the Worker for it to work. See `cloudflare/README.md`.
+
 ## Updates
 
 The app checks the project's GitHub releases on startup (and from "Check for updates" on the Account tab) and offers the
