@@ -9,7 +9,8 @@
 import { api, accountRequest, CONDITIONS, DEFAULT_CONDITION } from './api.js';
 import { getSession } from './session.js';
 import { syncNow } from './sync.js';
-import { createShare, findShare, stopShare } from './shareLink.js';
+import { createShare, findPublic, findShare, publishList, stopShare, unpublishList } from './shareLink.js';
+import { AUTH_URL } from './config.js';
 import { showToast } from './ui.js';
 import { IS_WEB } from './env.js';
 import { initImportExport } from './importExport.js';
@@ -118,6 +119,11 @@ const els = {
   shareStop: document.getElementById('share-stop'),
   shareError: document.getElementById('share-error'),
   shareClose: document.getElementById('share-close'),
+  sharePublicBlock: document.getElementById('share-public-block'),
+  sharePublicIntro: document.getElementById('share-public-intro'),
+  sharePublicLink: document.getElementById('share-public-link'),
+  sharePublicCopy: document.getElementById('share-public-copy'),
+  sharePublicToggle: document.getElementById('share-public-toggle'),
   shareMake: document.getElementById('share-make'),
 
   newModal: document.getElementById('modal-new-collection'),
@@ -1004,7 +1010,58 @@ function shareFailed(err) {
   els.shareError.classList.remove('hidden');
 }
 function shareBusy(busy) {
-  for (const b of [els.shareMake, els.shareRenew, els.shareStop, els.shareCopy]) b.disabled = busy;
+  for (const b of [els.shareMake, els.shareRenew, els.shareStop, els.shareCopy, els.sharePublicToggle, els.sharePublicCopy]) b.disabled = busy;
+}
+
+// The wishlist and the tradelist can also be put on a public page, /<username>/wishlist or /<username>/tradelist.
+let publicPage = null;  // the public page this list has ({ kind, url }) while the sheet is open, else null
+function publicAddress(list) {
+  const session = getSession();
+  return `${AUTH_URL}/${session ? session.username : 'you'}/${kindOf(list)}`;
+}
+function showPublic(page) {
+  publicPage = page;
+  const words = kindWords(kindOf(sharing));
+  els.sharePublicBlock.classList.remove('hidden');
+  els.sharePublicLink.classList.toggle('hidden', !page);
+  els.sharePublicCopy.classList.toggle('hidden', !page);
+  els.sharePublicLink.value = page ? page.url : '';
+  els.sharePublicToggle.textContent = page ? 'Stop being public' : 'Make it public';
+  els.sharePublicIntro.textContent = page
+    ? `Anyone can open this address, no link needed. It shows your username and your ${words.singular}, and follows it as it syncs.`
+    : `Put your ${words.singular} on a page anyone can open at ${publicAddress(sharing)}. That address shows your username. You can take it down any time.`;
+}
+async function changePublic() {
+  if (!sharing) return;
+  const list = sharing;
+  els.shareError.classList.add('hidden');
+  shareBusy(true);
+  try {
+    if (publicPage) {
+      await unpublishList(kindOf(list), shareDeps);
+      if (sharing === list) showPublic(null);
+      showToast('No longer public');
+    } else {
+      const page = await publishList(list.id, shareDeps);
+      if (sharing === list) showPublic(page);
+    }
+  } catch (err) {
+    if (sharing === list) shareFailed(err);
+  } finally {
+    shareBusy(false);
+  }
+}
+async function copyText(text, input) {
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast('Copied');
+    return;
+  } catch (e) { /* not allowed here: select it so it can be copied by hand */ }
+  input.focus();
+  input.select();
+  let done = false;
+  try { done = document.execCommand('copy'); } catch (e) { /* ignore */ }
+  showToast(done ? 'Copied' : 'Press and hold the address to copy it');
 }
 async function openShare() {
   if (!activeCollection) return;
@@ -1017,13 +1074,21 @@ async function openShare() {
   els.shareTitle.textContent = `Share this ${words.singular}`;
   els.shareError.classList.add('hidden');
   showShareLink(null);
+  publicPage = null;
+  els.sharePublicBlock.classList.add('hidden');
   els.shareMake.disabled = true;
   els.shareModal.classList.remove('hidden');
+  const list = sharing;
+  const canBePublic = isSingleList(kindOf(list));
   try {
-    const share = await findShare(sharing.id, shareDeps);
-    if (sharing) showShareLink(share);
+    const share = await findShare(list.id, shareDeps);
+    if (sharing === list) showShareLink(share);
+    if (canBePublic) {
+      const page = await findPublic(kindOf(list), shareDeps);
+      if (sharing === list) showPublic(page && page.id === list.id ? page : null);
+    }
   } catch (err) {
-    if (sharing) shareFailed(err);
+    if (sharing === list) shareFailed(err);
   } finally {
     shareBusy(false);
   }
@@ -1074,6 +1139,9 @@ els.shareRenew.addEventListener('click', () => changeShare('renew'));
 els.shareStop.addEventListener('click', () => changeShare('stop'));
 els.shareCopy.addEventListener('click', copyShareLink);
 els.shareLink.addEventListener('focus', () => els.shareLink.select());
+els.sharePublicToggle.addEventListener('click', changePublic);
+els.sharePublicCopy.addEventListener('click', () => copyText(els.sharePublicLink.value, els.sharePublicLink));
+els.sharePublicLink.addEventListener('focus', () => els.sharePublicLink.select());
 
 els.cardDetailClose.addEventListener('click', closeCardDetail);
 els.cardDetailModal.addEventListener('click', (e) => { if (e.target === els.cardDetailModal) closeCardDetail(); });

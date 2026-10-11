@@ -14,6 +14,10 @@ by a [D1](https://developers.cloudflare.com/d1/) database. Both are on Cloudflar
 | `POST /api/share` | `{id, renew?}` + token | `200 {id, token, url}`; `404` until the list has been synced |
 | `POST /api/share/revoke` | `{id}` + token | `200 {ok: true}` |
 | `GET /s/<token>` | none | the read-only page for a shared list (HTML), `404` once revoked |
+| `GET /api/public` | token | `200 {public: [{kind, id, url}]}` (this account's public pages) |
+| `POST /api/public` | `{id}` + token | `200 {kind, id, url}`: makes that wishlist or tradelist public at `/<username>/<kind>`; `404` until synced, `400` for any other kind of list |
+| `POST /api/public/revoke` | `{kind}` + token | `200 {ok: true}` |
+| `GET /<username>/wishlist`, `GET /<username>/tradelist` | none | the public page (HTML), `404` for anything else |
 
 - Usernames are 3 to 32 characters (letters, digits, `.`, `-`, `_`) and unique ignoring case. Passwords are 8 to 256.
 - The email is required to create an account and stored lowercased (unique). **Nothing uses it yet:** no verification, no
@@ -43,7 +47,14 @@ YGOPRODeck) and no referrer, so revoking or renewing a link takes effect at once
 lists per account; deleting an account or a list removes the page. Anyone holding the link can see the list, so treat it
 like a password-less invite.
 
-The service does accounts, collection sync and the share pages, and nothing else. Anything about cards themselves (prices, card data) is
+**Public pages** (`src/share.js`): opt-in, only for the wishlist and the tradelist, at `/<username>/wishlist` and
+`/<username>/tradelist` (username matched ignoring case, shown as the account spelled it). One row per account and kind in
+`public_lists` points at the synced list; the page is built from it on every view, headed with the username (it is in the address,
+and the app says so before turning it on), never shows the email, and is `no-store` / `noindex` with the same headers as share
+pages. Someone with no account, a list that isn't public and a deleted list are the same `404`. The paths are answered before the
+`/api` check and only after the app's own files, so a username can't shadow those.
+
+The service does accounts, collection sync and the share and public pages, and nothing else. Anything about cards themselves (prices, card data) is
 fetched by the app straight from the card sites (`app/js/priceSources.js`) and never passes through here.
 
 Layout: `src/worker.js` (routing, CORS), `src/auth/*.js` (the account endpoints), `src/sync.js`, `src/share.js`,

@@ -28,15 +28,15 @@ export async function findShare(id, deps) {
   return (shares || []).find((s) => s.id === id) || null;
 }
 
-/** Makes the link for this list (or returns the one it has); `renew` swaps it for a new one, so the old one stops working. */
-export async function createShare(id, deps, { renew = false } = {}) {
-  const { token } = needSession(deps);
+// Syncs, then runs `ask` (a request), and when the account says it hasn't got the list yet (404) syncs and asks again,
+// a few times at most.
+async function afterSync(deps, ask) {
   for (let attempt = 1; ; attempt++) {
     try {
       await deps.sync();  // gets the latest edits to the account first
     } catch (e) { /* the service answers below if it still hasn't got the list */ }
     try {
-      return await deps.request('/share', { token, body: renew ? { id, renew: true } : { id } });
+      return await ask();
     } catch (err) {
       if (err.status !== 404 || attempt >= RETRIES) throw err;
       await deps.wait(RETRY_MS);
@@ -44,8 +44,35 @@ export async function createShare(id, deps, { renew = false } = {}) {
   }
 }
 
+/** Makes the link for this list (or returns the one it has); `renew` swaps it for a new one, so the old one stops working. */
+export async function createShare(id, deps, { renew = false } = {}) {
+  const { token } = needSession(deps);
+  return afterSync(deps, () => deps.request('/share', { token, body: renew ? { id, renew: true } : { id } }));
+}
+
 /** Stops sharing: the link stops working straight away. */
 export async function stopShare(id, deps) {
   const { token } = needSession(deps);
   await deps.request('/share/revoke', { token, body: { id } });
+}
+
+// ---- public pages: /<username>/wishlist and /<username>/tradelist (only those two lists can have one) ----------------
+
+/** The public page this kind of list has ({ kind, id, url }), or null. */
+export async function findPublic(kind, deps) {
+  const { token } = needSession(deps);
+  const { public: pages } = await deps.request('/public', { method: 'GET', token });
+  return (pages || []).find((p) => p.kind === kind) || null;
+}
+
+/** Makes this list the public page for its kind (the address is the person's username plus the kind). */
+export async function publishList(id, deps) {
+  const { token } = needSession(deps);
+  return afterSync(deps, () => deps.request('/public', { token, body: { id } }));
+}
+
+/** Takes the public page of a kind down: its address stops working straight away. */
+export async function unpublishList(kind, deps) {
+  const { token } = needSession(deps);
+  await deps.request('/public/revoke', { token, body: { kind } });
 }

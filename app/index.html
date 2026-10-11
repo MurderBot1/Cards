@@ -546,6 +546,15 @@
         <button class="link-btn link-btn--danger" id="share-stop" type="button">Stop sharing</button>
       </div>
     </div>
+    <div class="share-public hidden" id="share-public-block">
+      <h3 class="share-public-title">Public page</h3>
+      <p class="field-hint" id="share-public-intro"></p>
+      <input class="field-input hidden" id="share-public-link" type="text" readonly>
+      <div class="sheet-actions">
+        <button class="btn btn-secondary hidden" id="share-public-copy" type="button">Copy address</button>
+        <button class="btn btn-secondary" id="share-public-toggle" type="button">Make it public</button>
+      </div>
+    </div>
     <p class="field-hint field-hint--error hidden" id="share-error"></p>
     <div class="sheet-actions">
       <button class="btn btn-secondary" id="share-close" type="button">Close</button>
