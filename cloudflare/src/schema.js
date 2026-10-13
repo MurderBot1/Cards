@@ -13,6 +13,7 @@ export const STATEMENTS = [
   'CREATE INDEX IF NOT EXISTS sync_docs_pull ON sync_docs(user_id, server_updated)',
   'CREATE TABLE IF NOT EXISTS shares (token TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, doc_id TEXT NOT NULL, created_at INTEGER NOT NULL, UNIQUE (user_id, doc_id))',
   'CREATE TABLE IF NOT EXISTS public_lists (user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, kind TEXT NOT NULL, doc_id TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (user_id, kind))',
+  'CREATE TABLE IF NOT EXISTS sellers (user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, legal_name TEXT NOT NULL, phone TEXT NOT NULL, addr_line1 TEXT NOT NULL, addr_line2 TEXT NOT NULL DEFAULT \'\', city TEXT NOT NULL, region TEXT NOT NULL, postal TEXT NOT NULL, country TEXT NOT NULL, payout_kind TEXT NOT NULL, payout_ref TEXT NOT NULL DEFAULT \'\', stripe_account TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)',
   'DROP TABLE IF EXISTS prices',
   'DROP TABLE IF EXISTS api_hits',
 ];

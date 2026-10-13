@@ -18,6 +18,10 @@ by a [D1](https://developers.cloudflare.com/d1/) database. Both are on Cloudflar
 | `POST /api/public` | `{id}` + token | `200 {kind, id, url}`: makes that wishlist or tradelist public at `/<username>/<kind>`; `404` until synced, `400` for any other kind of list |
 | `POST /api/public/revoke` | `{kind}` + token | `200 {ok: true}` |
 | `GET /<username>/wishlist`, `GET /<username>/tradelist` | none | the public page (HTML), `404` for anything else |
+| `GET /api/seller` | token | `200 {seller: null \| {legalName, phone, address, payout: {kind, ref}, stripe, ready}, payments: {stripe, stripeTest, stripeProblem, paypal}}` |
+| `POST /api/seller` | `{legalName, phone, address: {line1, line2?, city, region, postal, country}, payout?: {kind: stripe\|venmo\|paypal, ref?}}` + token | register or update; same answer as `GET`; `400` with a message for anything missing or wrong |
+| `POST /api/seller/stripe` | token | `200 {url}`: Stripe's own onboarding page (makes the Express account once); `503` while Stripe isn't set up |
+| `POST /api/seller/delete` | token | `200 {ok, stripe: deleted\|kept\|none}`: removes the profile (and the Stripe account if Stripe allows) |
 
 - Usernames are 3 to 32 characters (letters, digits, `.`, `-`, `_`) and unique ignoring case. Passwords are 8 to 256.
 - The email is required to create an account and stored lowercased (unique). **Nothing uses it yet:** no verification, no
@@ -54,7 +58,13 @@ and the app says so before turning it on), never shows the email, and is `no-sto
 pages. Someone with no account, a list that isn't public and a deleted list are the same `404`. The paths are answered before the
 `/api` check and only after the app's own files, so a username can't shadow those.
 
-The service does accounts, collection sync and the share and public pages, and nothing else. Anything about cards themselves (prices, card data) is
+**Shop: sellers** (`src/seller.js`, `src/sellerInput.js`, `src/stripe.js`): seller registration, the first step of the shop. The profile
+(full legal name, phone, address, how they want to be paid) is in `sellers`, readable only by its owner and never shown or logged.
+Card and bank numbers are never accepted here: Stripe collects them on its own pages, and the Worker keeps only Stripe's account id.
+Stripe is called server-side with the secret `STRIPE_SECRET_KEY` (`wrangler secret put STRIPE_SECRET_KEY`, a **test** key to begin
+with). A live key is refused unless `PAYMENTS_LIVE` is `true`. Without a key the endpoints say payments aren't available yet.
+
+The service does accounts, collection sync, the share and public pages and (in test mode) seller registration, and nothing else. Anything about cards themselves (prices, card data) is
 fetched by the app straight from the card sites (`app/js/priceSources.js`) and never passes through here.
 
 Layout: `src/worker.js` (routing, CORS), `src/auth/*.js` (the account endpoints), `src/sync.js`, `src/share.js`,

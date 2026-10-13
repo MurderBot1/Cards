@@ -1353,3 +1353,29 @@ html.is-web [data-app-only] { display: none !important; }
 .share-public { border-top: 1px solid var(--border); margin: 8px 0 4px; padding-top: 12px; }
 .share-public-title { margin: 0 0 4px; font-size: 0.95rem; font-weight: 600; }
 .share-public .sheet-actions { margin-top: 8px; }
+
+/* the shop: seller registration */
+.shop-home { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+.seller-card {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px;
+}
+.seller-card-icon {
+  flex: none; width: 44px; height: 44px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--surface-2); border: 1px solid var(--border);
+}
+.seller-card-icon svg { width: 22px; height: 22px; }
+.seller-card-text { flex: 1 1 200px; min-width: 0; }
+.seller-card-text h2 { margin: 0 0 2px; font-size: 1rem; }
+.seller-card-text p { margin: 0; font-size: 0.8rem; color: var(--text-dim); }
+.seller-card-text .seller-detail { margin-top: 6px; }
+.seller-card-actions { display: flex; gap: 8px; flex-wrap: wrap; width: 100%; }
+.seller-card-actions .btn { flex: 1 1 160px; }
+.seller-card.is-ready { border-color: var(--foil-1); }
+.sheet--seller .field-input { margin-bottom: 8px; }
+.sheet--seller .field-label { margin-top: 10px; }
+.seller-row { display: flex; gap: 8px; }
+.seller-row .field-input { flex: 1 1 0; min-width: 0; }
+.seller-gap { margin-top: 0; }
+.sheet--seller .segmented { margin-bottom: 8px; }

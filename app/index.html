@@ -30,12 +30,28 @@
 
     <!-- ---------- SHOP (placeholder) ---------- -->
     <section class="view" id="view-shop" data-view="shop">
-      <div class="empty-state">
-        <div class="empty-icon">
-          <svg viewBox="0 0 24 24"><path d="M6 2l1.5 4.5M18 2l-1.5 4.5M3 6.5h18l-1.7 12.2a2 2 0 01-2 1.8H6.7a2 2 0 01-2-1.8L3 6.5z"/><path d="M8.5 10.5v4M15.5 10.5v4"/></svg>
+      <div class="shop-home">
+        <div class="seller-card" id="seller-card">
+          <div class="seller-card-icon">
+            <svg viewBox="0 0 24 24"><path d="M3 9l1.5-5h15L21 9M3 9v10a1 1 0 001 1h16a1 1 0 001-1V9M3 9h18M9 20v-6h6v6"/></svg>
+          </div>
+          <div class="seller-card-text">
+            <h2 id="seller-title">Sell your cards</h2>
+            <p id="seller-sub">Sign in (Account tab) to register as a seller.</p>
+            <p class="seller-detail hidden" id="seller-detail"></p>
+          </div>
+          <div class="seller-card-actions">
+            <button class="btn btn-primary hidden" id="seller-stripe" type="button">Set up payouts with Stripe</button>
+            <button class="btn btn-secondary hidden" id="seller-open" type="button">Register to sell</button>
+          </div>
         </div>
-        <h2>The shop is still being built</h2>
-        <p>Buying and trading singles will land here soon.</p>
+        <div class="empty-state">
+          <div class="empty-icon">
+            <svg viewBox="0 0 24 24"><path d="M6 2l1.5 4.5M18 2l-1.5 4.5M3 6.5h18l-1.7 12.2a2 2 0 01-2 1.8H6.7a2 2 0 01-1.9-1.8L3 6.5z"/><path d="M8.5 10.5v4M15.5 10.5v4"/></svg>
+          </div>
+          <h2>Buying is still being built</h2>
+          <p>Browsing, a cart and checkout will land here soon.</p>
+        </div>
       </div>
     </section>
 
@@ -577,6 +593,44 @@
     <div class="sheet-actions">
       <button class="btn btn-secondary" id="currency-close" type="button">Close</button>
     </div>
+  </div>
+</div>
+
+<!-- register as a seller (shop.js, sellerProfile.js) -->
+<div class="overlay hidden" id="modal-seller">
+  <div class="sheet sheet--seller">
+    <div class="sheet-handle"></div>
+    <h2 class="sheet-title" id="seller-sheet-title">Register to sell</h2>
+    <p class="field-hint">Only you can see these details; they are never shown on a listing or a public page. Card and bank numbers are never typed here: Stripe, Venmo and PayPal ask for those on their own pages.</p>
+    <label class="field-label" for="seller-name">Full legal name</label>
+    <input class="field-input" id="seller-name" type="text" autocomplete="name" placeholder="As on your ID" maxlength="100">
+    <label class="field-label" for="seller-phone">Phone number</label>
+    <input class="field-input" id="seller-phone" type="tel" autocomplete="tel" placeholder="+1 555 123 4567" maxlength="30">
+    <label class="field-label" for="seller-line1">Address</label>
+    <input class="field-input" id="seller-line1" type="text" autocomplete="address-line1" placeholder="Street address" maxlength="100">
+    <input class="field-input seller-gap" id="seller-line2" type="text" autocomplete="address-line2" placeholder="Apartment, suite (optional)" maxlength="100">
+    <div class="seller-row">
+      <input class="field-input" id="seller-city" type="text" autocomplete="address-level2" placeholder="City" maxlength="60">
+      <input class="field-input" id="seller-region" type="text" autocomplete="address-level1" placeholder="State / region" maxlength="60">
+    </div>
+    <div class="seller-row">
+      <input class="field-input" id="seller-postal" type="text" autocomplete="postal-code" placeholder="ZIP / postal code" maxlength="12">
+      <select class="field-input" id="seller-country" autocomplete="country" aria-label="Country"></select>
+    </div>
+    <p class="field-label">How do you want to be paid?</p>
+    <div class="segmented" id="seller-payout" role="tablist" aria-label="How you are paid">
+      <button data-value="stripe" role="tab">Bank / debit card</button>
+      <button data-value="venmo" role="tab">Venmo</button>
+      <button data-value="paypal" role="tab">PayPal</button>
+    </div>
+    <p class="field-hint" id="seller-payout-hint"></p>
+    <input class="field-input hidden" id="seller-payout-ref" type="text" maxlength="254">
+    <p class="field-hint field-hint--error hidden" id="seller-error"></p>
+    <div class="sheet-actions">
+      <button class="btn btn-secondary" id="seller-cancel" type="button">Cancel</button>
+      <button class="btn btn-primary" id="seller-save" type="button">Save</button>
+    </div>
+    <button class="link-btn link-btn--danger hidden" id="seller-remove" type="button">Remove my seller profile</button>
   </div>
 </div>
 
