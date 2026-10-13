@@ -42,6 +42,7 @@ class MainActivity : AppCompatActivity() {
         private const val MAX_LOAD_RETRIES = 40 // ~10s at 250ms apart
         private const val RETRY_DELAY_MS = 250L
         private const val RELEASES_PREFIX = "https://github.com/MurderBot1/Cards/releases/"
+        private const val STRIPE_CONNECT_PREFIX = "https://connect.stripe.com/"
         private val DATA_FILES = listOf("cards.sqlite3", "card-vectors.cvi") // carddownload::Options::files
     }
 
@@ -288,7 +289,8 @@ class MainActivity : AppCompatActivity() {
 
         @JavascriptInterface
         fun openExternal(url: String): Boolean {
-            if (!url.startsWith(RELEASES_PREFIX) || url.length > 400) return false
+            // this project's releases (the update banner) and Stripe's own seller sign-up pages (the shop)
+            if (!(url.startsWith(RELEASES_PREFIX) || url.startsWith(STRIPE_CONNECT_PREFIX)) || url.length > 400) return false
             return try {
                 startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 true

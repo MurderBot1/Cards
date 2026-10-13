@@ -122,7 +122,7 @@ export function autoUpdateEnabled() {
 }
 
 // Opens a download outside the page: through the Android bridge, or the local backend on a computer.
-async function openExternal(url) {
+export async function openExternal(url) {
   try {
     if (window.BinderAndroid && typeof window.BinderAndroid.openExternal === 'function') {
       if (window.BinderAndroid.openExternal(url)) return true;

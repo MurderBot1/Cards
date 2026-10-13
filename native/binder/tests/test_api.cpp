@@ -174,6 +174,16 @@ int main() {
         CHECK_EQ(cli.Post("/api/open-url", json{{"url", bad}}.dump(), kJson)->status, 400);
     }
     CHECK(binder::is_release_url(asset));
+    CHECK(binder::is_openable_url(asset));
+    CHECK(binder::is_openable_url("https://connect.stripe.com/setup/e/acct_1ABC/xyz"));  // the seller's Stripe sign-up
+    CHECK(!binder::is_release_url("https://connect.stripe.com/setup/e/acct_1ABC/xyz"));  // (but not a release, so never an update)
+    for (const char* bad : {"http://connect.stripe.com/setup", "https://connect.stripe.com.evil.example/x", "https://connect.stripe.coM/x",
+                            "https://connect.stripe.com/x y", "https://connect.stripe.com/`id`", "https://dashboard.stripe.com/x",
+                            "https://checkout.stripe.com/x"}) {
+        CHECK(!binder::is_openable_url(bad));
+    }
+    CHECK(!binder::is_openable_url("https://connect.stripe.com/" + std::string(400, 'a')));  // too long
+    CHECK_EQ(cli.Post("/api/open-url", json{{"url", "https://connect.stripe.com/x y"}}.dump(), kJson)->status, 400);
     CHECK(!binder::is_release_url(std::string("https://github.com/MurderBot1/Cards/releases/a\0b", 48)));  // an embedded NUL
     CHECK(!binder::is_release_url("https://github.com/MurderBot1/Cards/releases/a'b"));
     CHECK_EQ(cli.Post("/api/open-url", "{}", kJson)->status, 400);

@@ -139,13 +139,13 @@ void register_routes(cardhttp::Server& server, ApiContext& ctx) {
         return respond(store.sync_apply(body));
     });
 
-    // ---- the update banner's "Update" button: open this project's release download in the system browser ----------
+    // ---- the update banner's "Update" button (and the seller's Stripe sign-up): open a page in the system browser ----------
     server.route("POST", "/api/open-url", [&ctx](const Request& req) {
         json body;
         Response failure;
         if (!parse_object(req, body, failure)) return failure;
         std::string url = body.contains("url") && body["url"].is_string() ? body["url"].get<std::string>() : "";
-        if (!is_release_url(url)) return error(400, "only this project's release downloads can be opened");
+        if (!is_openable_url(url)) return error(400, "only this project's release downloads and Stripe's seller sign-up pages can be opened");
         bool opened = ctx.open_url ? ctx.open_url(url) : open_release_url(url);
         return opened ? Response::json(200, json{{"opened", true}}.dump()) : error(501, "couldn't open the browser");
     });

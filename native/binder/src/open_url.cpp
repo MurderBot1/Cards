@@ -24,20 +24,29 @@ namespace binder {
 
 namespace {
 constexpr const char* kReleasePrefix = "https://github.com/MurderBot1/Cards/releases/";
+constexpr const char* kStripeConnectPrefix = "https://connect.stripe.com/";
 constexpr size_t kMaxUrl = 400;
-}  // namespace
 
-bool is_release_url(const std::string& url) {
-    if (url.size() > kMaxUrl || url.rfind(kReleasePrefix, 0) != 0) return false;
+bool plain_url_chars(const std::string& url) {
     for (unsigned char c : url) {
         // the characters of an ordinary URL; no spaces, quotes, backticks, angle brackets, backslashes or control characters
         if (c == 0 || !(std::isalnum(c) || std::strchr("-._~:/?#[]@!$&()*+,;=%", c))) return false;
     }
     return true;
 }
+}  // namespace
+
+bool is_release_url(const std::string& url) {
+    return url.size() <= kMaxUrl && url.rfind(kReleasePrefix, 0) == 0 && plain_url_chars(url);
+}
+
+bool is_openable_url(const std::string& url) {
+    if (is_release_url(url)) return true;
+    return url.size() <= kMaxUrl && url.rfind(kStripeConnectPrefix, 0) == 0 && plain_url_chars(url);
+}
 
 bool open_release_url(const std::string& url) {
-    if (!is_release_url(url)) return false;
+    if (!is_openable_url(url)) return false;
 #if defined(_WIN32)
     return reinterpret_cast<INT_PTR>(ShellExecuteA(nullptr, "open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL)) > 32;
 #elif defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)

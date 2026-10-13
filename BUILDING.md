@@ -362,6 +362,37 @@ The Worker keeps one row per person and kind in `public_lists` (created automati
 (`cloudflare/src/share.js`, `publicPathOf`) before the `/api` check; the app's files are served first, so a username can't
 shadow them. Redeploy the Worker for it to work. See `cloudflare/README.md`.
 
+## The shop: becoming a seller (step 1 of the shop)
+
+The Shop tab starts with seller registration; browsing, listings, a cart and checkout follow in later releases, each its own release
+(see the plan in the task list). **All of it runs in the payment processors' test mode until the owner says otherwise.**
+
+**What a seller gives:** a full legal name (first and last), phone number, postal address (one of the countries Stripe can pay
+out to) and how they want to be paid: a bank account or debit card through Stripe, or Venmo (US sellers; the phone number their Venmo
+uses) or PayPal (their PayPal email). The profile lives in the Worker's `sellers` table, is readable only by its owner
+(`GET /api/seller`), is never shown on a listing or a public page, and is deleted by "Remove my seller profile". The rules are
+in `cloudflare/src/sellerInput.js` and, identically, `app/js/sellerProfile.js` (a test runs both on the same cases).
+
+**Card and bank numbers never touch Binder.** Nothing in the app, the Worker, the database or the logs ever holds one. For bank/debit
+payouts the app asks the Worker to make a Stripe *Express* account (prefilled with the phone and address) and opens Stripe's own
+onboarding page, which collects the ID check and the payout account; the Worker keeps only the Stripe account id and asks Stripe
+whether payouts are enabled. Venmo and PayPal sellers give only the phone/email their account uses; those payouts are made in
+a later release. (Credit cards can't receive payouts: buyers pay by card in the checkout release, sellers are paid to a bank
+account, debit card, Venmo or PayPal.)
+
+**To turn it on (the owner does this once, in the Cloudflare dashboard or with wrangler):**
+1. In a Stripe account, switch on **Connect** (test mode) and use *Express* accounts.
+2. In the `cloudflare` folder: `npx wrangler secret put STRIPE_SECRET_KEY` and paste the **test** secret key (`sk_test_...`).
+3. Redeploy the Worker. Until a key is set the Shop says payment setup isn't available yet, and the profile is still saved.
+A live key (`sk_live_...`) is refused by the Worker unless the variable `PAYMENTS_LIVE` is also set to `true`, so going live is a
+deliberate second step. The Stripe return pages are `/?seller=return` and `/?seller=refresh` on the Worker's address; the desktop,
+Android and iOS apps may open `https://connect.stripe.com/...` in the system browser (and nothing else but this project's releases).
+
+**Still the owner's to decide before real money moves:** the platform fee, sales tax, terms of service and privacy policy,
+what may be sold, and the rules for holding and paying out money (marketplace, money-transmission and tax-reporting rules vary
+by country: get legal and accounting advice; Stripe Connect and PayPal's marketplace products are built so the processor, not
+Binder, holds the funds).
+
 ## Updates
 
 The app checks the project's GitHub releases on startup (and from "Check for updates" on the Account tab) and offers the

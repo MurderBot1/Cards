@@ -10,8 +10,12 @@ namespace binder {
 // with nothing in the URL a shell or the OS could treat specially.
 bool is_release_url(const std::string& url);
 
+// Pages the app may open in the browser for a person: this project's releases (is_release_url) and Stripe's own seller
+// onboarding pages (https://connect.stripe.com/...), under the same character rules.
+bool is_openable_url(const std::string& url);
+
 // Hands `url` to the OS's default browser (ShellExecute / `open` / `xdg-open`, no shell involved). false if it isn't
-// a release URL or the opener couldn't be started. Always false on Android, whose WebView has its own bridge.
+// an openable URL or the opener couldn't be started. Always false on Android, whose WebView has its own bridge.
 bool open_release_url(const std::string& url);
 
 }  // namespace binder

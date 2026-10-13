@@ -7,6 +7,7 @@ import { onRequestPost as logout } from './auth/logout.js';
 import { onRequestGet as me } from './auth/me.js';
 import { onRequestPost as register } from './auth/register.js';
 import { ensureSchema } from './schema.js';
+import { onSellerDelete, onSellerGet, onSellerSave, onSellerStripe } from './seller.js';
 import { onPublicList, onPublicPage, onPublish, onSharePage, onShareCreate, onShareList, onShareRevoke, onUnpublish, publicPathOf } from './share.js';
 import { onSync } from './sync.js';
 
@@ -22,6 +23,10 @@ const ROUTES = {
   'GET /api/public': onPublicList,
   'POST /api/public': onPublish,
   'POST /api/public/revoke': onUnpublish,
+  'GET /api/seller': onSellerGet,
+  'POST /api/seller': onSellerSave,
+  'POST /api/seller/stripe': onSellerStripe,
+  'POST /api/seller/delete': onSellerDelete,
 };
 const PATHS = new Set(Object.keys(ROUTES).map((key) => key.split(' ')[1]));
 

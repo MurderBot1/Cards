@@ -12,6 +12,7 @@ import { showToast } from './ui.js';
 import { initSetupScreen } from './setup.js';
 import { IS_WEB } from './env.js';
 import { initCurrencySetting } from './currency.js';
+import { initShop, refreshShop } from './shop.js';
 
 const TAB_TITLES = { shop: 'Shop', collection: 'Collection', settings: 'Account' };
 
@@ -22,6 +23,7 @@ const headerSubtitle = document.getElementById('header-subtitle');
 const headerBackBtn = document.getElementById('header-back-btn');
 
 let activeTab = 'shop';
+let shopReady = false;  // the Shop tab is set up (it reads the seller profile when shown, not before)
 
 function setHeader(title, subtitle) {
   headerTitle.textContent = title;
@@ -47,6 +49,7 @@ function showTab(tab) {
 
   headerBackBtn.classList.toggle('hidden', !(tab === 'collection' && isInCollectionDetail()));
   setHeader(TAB_TITLES[tab], '');
+  if (tab === 'shop' && shopReady) refreshShop();
 }
 
 tabButtons.forEach((btn) => {
@@ -77,6 +80,8 @@ async function boot() {
   initCurrencySetting();  // (the exchange rates are read in the background)
   await initCollections(onCollectionNavigate);
   initSync();
+  initShop();
+  shopReady = true;
   if (!IS_WEB) initUpdates({ onToast: showToast });
   showTab('shop');
 }
