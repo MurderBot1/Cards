@@ -221,7 +221,11 @@ test('Stripe onboarding: registers first, makes the account once, and hands back
   const make = calls.find((c) => c.path === '/accounts' && c.method === 'POST');
   assert.equal(make.auth, `Bearer ${KEYS.STRIPE_SECRET_KEY}`);
   assert.equal(make.idem, 'binder-seller-1');
-  assert.match(make.body, /type=express/);
+  assert.doesNotMatch(make.body, /(^|&)type=/, 'the legacy account `type` is refused by Stripe for platforms where Stripe collects losses');
+  assert.match(make.body, /controller\[stripe_dashboard\]\[type\]=express/);
+  assert.match(make.body, /controller\[requirement_collection\]=stripe/);
+  assert.match(make.body, /controller\[losses\]\[payments\]=stripe/);
+  assert.match(make.body, /controller\[fees\]\[payer\]=application/);
   assert.match(make.body, /country=US/);
   assert.match(make.body, /individual\[address\]\[postal_code\]=97201/);
   assert.match(make.body, /capabilities\[transfers\]\[requested\]=true/);

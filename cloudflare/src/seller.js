@@ -14,6 +14,15 @@ import { stripeCall, stripeConfig } from './stripe.js';
 
 const origin = (request) => new URL(request.url).origin;
 
+// Who is responsible for what on a seller's Stripe account: Stripe shows its own (Express) dashboard, collects the ID check and the
+// payout account, and takes losses; the platform pays Stripe's fees.
+export const CONNECT_CONTROLLER = {
+  stripe_dashboard: { type: 'express' },
+  requirement_collection: 'stripe',
+  fees: { payer: 'application' },
+  losses: { payments: 'stripe' },
+};
+
 async function sellerRow(db, userId) {
   return db.prepare('SELECT * FROM sellers WHERE user_id = ?').bind(userId).first();
 }
@@ -100,7 +109,10 @@ export async function onSellerStripe({ request, env }) {
         'POST',
         '/accounts',
         {
-          type: 'express',
+          // An Express-style account (Stripe's own dashboard and onboarding pages) described with Stripe's `controller`
+          // properties rather than the legacy `type: 'express'`: Stripe refuses `type` for platforms where Stripe, not the
+          // platform, collects losses ("managed risk"), which is what a new platform gets.
+          controller: CONNECT_CONTROLLER,
           country: row.country,
           business_type: 'individual',
           capabilities: { transfers: { requested: true } },
