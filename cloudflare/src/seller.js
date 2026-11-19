@@ -14,12 +14,13 @@ import { stripeCall, stripeConfig } from './stripe.js';
 
 const origin = (request) => new URL(request.url).origin;
 
-// Who is responsible for what on a seller's Stripe account: Stripe shows its own (Express) dashboard, collects the ID check and the
-// payout account, and takes losses; the platform pays Stripe's fees.
-export const ACCOUNT_REQUEST_VERSION = 'v2';
+// Who is responsible for what on a seller's Stripe account: Stripe's hosted onboarding pages collect the ID check and the payout
+// account, and Stripe takes losses; the platform pays Stripe's fees. The seller gets no Stripe dashboard ('none'): Stripe refuses the
+// Express dashboard together with Stripe-held losses unless the account uses a preview API version (public preview).
+export const ACCOUNT_REQUEST_VERSION = 'v3';
 
 export const CONNECT_CONTROLLER = {
-  stripe_dashboard: { type: 'express' },
+  stripe_dashboard: { type: 'none' },
   requirement_collection: 'stripe',
   fees: { payer: 'application' },
   losses: { payments: 'stripe' },
@@ -111,7 +112,7 @@ export async function onSellerStripe({ request, env }) {
         'POST',
         '/accounts',
         {
-          // An Express-style account (Stripe's own dashboard and onboarding pages) described with Stripe's `controller`
+          // A connected account with Stripe's hosted onboarding pages and no seller dashboard, described with Stripe's `controller`
           // properties rather than the legacy `type: 'express'`: Stripe refuses `type` for platforms where Stripe, not the
           // platform, collects losses ("managed risk"), which is what a new platform gets.
           controller: CONNECT_CONTROLLER,
