@@ -75,7 +75,7 @@ embedder -> no art matching).
 
 Part of the app's build (`native/CMakeLists.txt`, see [BUILDING.md](../../BUILDING.md)), which downloads a prebuilt ONNX
 Runtime for the platform — `-DBINDER_WITH_ONNX=OFF` builds without it. Standalone, point CMake at an extracted
-[ONNX Runtime release](https://github.com/microsoft/onnxruntime/releases) (`<root>/include` and `<root>/lib`):
+ONNX Runtime layout (`<root>/include` and `<root>/lib`; the old GitHub releases are gone, so the desktop build makes this from the NuGet package, see `native/cmake/OrtNuget.cmake`):
 
 ```
 cmake -S native/cardnet -B build/cardnet -DONNXRUNTIME_ROOT_DIR=/path/to/onnxruntime-<platform>-<version> -DCARDNET_BUILD_TESTS=ON

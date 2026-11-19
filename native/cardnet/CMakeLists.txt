@@ -11,7 +11,8 @@ endif()
 # ---------------------------------------------------------------------------
 # Locate ONNX Runtime. Point -DONNXRUNTIME_ROOT_DIR at an extracted
 # onnxruntime-<platform>-<version> release (from
-# https://github.com/microsoft/onnxruntime/releases) — its layout is
+# https://github.com/microsoft/onnxruntime/releases, which no longer exist: the desktop build now assembles the same layout
+# from the NuGet package, see cmake/OrtNuget.cmake) — its layout is
 # always <root>/include and <root>/lib. See README.md for the exact
 # desktop and Android download/build steps.
 # ---------------------------------------------------------------------------

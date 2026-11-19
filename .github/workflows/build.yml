@@ -58,24 +58,6 @@ jobs:
       # Every C++ module's tests: cardvec, cardnet (pure parts), cardlog, cardpaths, cardstore, cardhttp,
       # cardauth, cardtext, cardcatalog, cardscan, cardonnx (against a real ONNX Runtime, downloaded at
       # configure time), cardview (a real window under xvfb), and the binder API driven over real HTTP.
-      - name: Which ONNX Runtime downloads exist (diagnostic)
-        continue-on-error: true
-        run: |
-          probe() { printf "%s -> " "$1"; curl -s -o /dev/null -L -w "%{http_code} %{url_effective}\n" "$1"; }
-          probe https://github.com/microsoft/onnxruntime
-          probe https://github.com/onnxruntime/onnxruntime
-          probe https://github.com/onnxruntime/onnxruntime/releases/download/v1.19.2/onnxruntime-linux-x64-1.19.2.tgz
-          probe https://download.onnxruntime.ai/onnxruntime-linux-x64-1.19.2.tgz
-          probe https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.19.2/microsoft.ml.onnxruntime.1.19.2.nupkg
-          probe https://repo1.maven.org/maven2/com/microsoft/onnxruntime/onnxruntime/1.19.2/onnxruntime-1.19.2.jar
-          probe https://files.pythonhosted.org/packages/source/o/onnxruntime/
-          git ls-remote https://github.com/microsoft/onnxruntime HEAD 2>&1 | head -2
-          git ls-remote https://github.com/onnxruntime/onnxruntime HEAD 2>&1 | head -2
-          mkdir -p /tmp/nuget && cd /tmp/nuget
-          curl -s -L -o ort.nupkg https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.19.2/microsoft.ml.onnxruntime.1.19.2.nupkg
-          ls -la ort.nupkg
-          unzip -l ort.nupkg | grep -E "include|runtimes/(linux-x64|win-x64|osx-arm64|osx-x86_64)/native" | head -40
-
       - name: C++ module tests (ctest)
         run: |
           cmake -S native -B build/native -DCMAKE_BUILD_TYPE=Release
