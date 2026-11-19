@@ -16,6 +16,8 @@ const origin = (request) => new URL(request.url).origin;
 
 // Who is responsible for what on a seller's Stripe account: Stripe shows its own (Express) dashboard, collects the ID check and the
 // payout account, and takes losses; the platform pays Stripe's fees.
+export const ACCOUNT_REQUEST_VERSION = 'v2';
+
 export const CONNECT_CONTROLLER = {
   stripe_dashboard: { type: 'express' },
   requirement_collection: 'stripe',
@@ -123,7 +125,9 @@ export async function onSellerStripe({ request, env }) {
           },
           metadata: { binder_user: String(user.id) },
         },
-        { idempotencyKey: `binder-seller-${user.id}` }
+        // the key covers the profile version and the request shape (bump ACCOUNT_REQUEST_VERSION if the request below changes):
+        // Stripe refuses a reused key whose parameters differ
+        { idempotencyKey: `binder-seller-${user.id}-${ACCOUNT_REQUEST_VERSION}-${row.updated_at}` }
       );
       account = created.id;
       await env.DB.prepare('UPDATE sellers SET stripe_account = ?, updated_at = ? WHERE user_id = ?').bind(account, Date.now(), user.id).run();
