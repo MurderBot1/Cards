@@ -220,7 +220,7 @@ test('Stripe onboarding: registers first, makes the account once, and hands back
   assert.equal((await res.json()).url, 'https://connect.stripe.com/setup/e/acct_123/abc');
   const make = calls.find((c) => c.path === '/accounts' && c.method === 'POST');
   assert.equal(make.auth, `Bearer ${KEYS.STRIPE_SECRET_KEY}`);
-  assert.equal(make.idem, 'binder-seller-1');
+  assert.match(make.idem, /^binder-seller-1-v\d+-\d+$/);
   assert.doesNotMatch(make.body, /(^|&)type=/, 'the legacy account `type` is refused by Stripe for platforms where Stripe collects losses');
   assert.match(make.body, /controller\[stripe_dashboard\]\[type\]=express/);
   assert.match(make.body, /controller\[requirement_collection\]=stripe/);
