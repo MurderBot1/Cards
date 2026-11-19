@@ -16,8 +16,8 @@ const origin = (request) => new URL(request.url).origin;
 
 // The seller's Stripe account is an Accounts v2 connected account (Stripe no longer recommends v1 for new platforms): a "recipient"
 // that Stripe pays out to, with no Stripe dashboard for the seller, Stripe's hosted pages collecting the ID check and the payout
-// account, the platform paying Stripe's fees and Stripe taking losses.
-export const ACCOUNT_REQUEST_VERSION = 'v4';
+// account, and the platform paying Stripe's fees. The platform is also the losses collector: Stripe only allows that for a recipient account.
+export const ACCOUNT_REQUEST_VERSION = 'v5';
 
 export function accountBody(row, email, userId) {
   return {
@@ -25,7 +25,7 @@ export function accountBody(row, email, userId) {
     display_name: row.legal_name,
     identity: { country: row.country },
     dashboard: 'none',
-    defaults: { responsibilities: { fees_collector: 'application', losses_collector: 'stripe' } },
+    defaults: { responsibilities: { fees_collector: 'application', losses_collector: 'application' } },
     configuration: { recipient: { capabilities: { stripe_balance: { stripe_transfers: { requested: true } } } } },
     metadata: { binder_user: String(userId) },
   };

@@ -236,7 +236,7 @@ test('Stripe onboarding: registers first, makes the account once, and hands back
     display_name: 'Julie Anne McRidland',
     identity: { country: 'US' },
     dashboard: 'none',
-    defaults: { responsibilities: { fees_collector: 'application', losses_collector: 'stripe' } },
+    defaults: { responsibilities: { fees_collector: 'application', losses_collector: 'application' } },
     configuration: { recipient: { capabilities: { stripe_balance: { stripe_transfers: { requested: true } } } } },
     metadata: { binder_user: '1' },
   });

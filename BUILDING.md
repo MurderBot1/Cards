@@ -386,8 +386,8 @@ account, debit card, Venmo or PayPal.)
 3. Redeploy the Worker. Until a key is set the Shop says payment setup isn't available yet, and the profile is still saved.
 A live key (`sk_live_...`) is refused by the Worker unless the variable `PAYMENTS_LIVE` is also set to `true`, so going live is a
 deliberate second step. The seller's account is made with Stripe's Accounts v2 API (Stripe no longer recommends v1 for new Connect platforms): a `recipient` configuration
-with `dashboard: none`, Stripe's hosted onboarding collecting the ID check and the payout account, the platform paying Stripe's fees and Stripe taking
-losses. `cloudflare/src/seller.js` (`accountBody`) and `stripe.js` (`STRIPE_V2_VERSION`) are the only places to change. The Stripe return pages are `/?seller=return` and `/?seller=refresh` on the Worker's address; the desktop,
+with `dashboard: none`, Stripe's hosted onboarding collecting the ID check and the payout account, the platform paying Stripe's fees and collecting losses
+(Stripe only allows `application` as the losses collector for a recipient account). `cloudflare/src/seller.js` (`accountBody`) and `stripe.js` (`STRIPE_V2_VERSION`) are the only places to change. The Stripe return pages are `/?seller=return` and `/?seller=refresh` on the Worker's address; the desktop,
 Android and iOS apps may open `https://connect.stripe.com/...` in the system browser (and nothing else but this project's releases).
 
 **Still the owner's to decide before real money moves:** the platform fee, sales tax, terms of service and privacy policy,
