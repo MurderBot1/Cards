@@ -14,17 +14,22 @@ import { stripeCall, stripeConfig } from './stripe.js';
 
 const origin = (request) => new URL(request.url).origin;
 
-// Who is responsible for what on a seller's Stripe account: Stripe's hosted onboarding pages collect the ID check and the payout
-// account, and Stripe takes losses; the platform pays Stripe's fees. The seller gets no Stripe dashboard ('none'): Stripe refuses the
-// Express dashboard together with Stripe-held losses unless the account uses a preview API version (public preview).
-export const ACCOUNT_REQUEST_VERSION = 'v3';
+// The seller's Stripe account is an Accounts v2 connected account (Stripe no longer recommends v1 for new platforms): a "recipient"
+// that Stripe pays out to, with no Stripe dashboard for the seller, Stripe's hosted pages collecting the ID check and the payout
+// account, the platform paying Stripe's fees and Stripe taking losses.
+export const ACCOUNT_REQUEST_VERSION = 'v4';
 
-export const CONNECT_CONTROLLER = {
-  stripe_dashboard: { type: 'none' },
-  requirement_collection: 'stripe',
-  fees: { payer: 'application' },
-  losses: { payments: 'stripe' },
-};
+export function accountBody(row, email, userId) {
+  return {
+    contact_email: email,
+    display_name: row.legal_name,
+    identity: { country: row.country },
+    dashboard: 'none',
+    defaults: { responsibilities: { fees_collector: 'application', losses_collector: 'stripe' } },
+    configuration: { recipient: { capabilities: { stripe_balance: { stripe_transfers: { requested: true } } } } },
+    metadata: { binder_user: String(userId) },
+  };
+}
 
 async function sellerRow(db, userId) {
   return db.prepare('SELECT * FROM sellers WHERE user_id = ?').bind(userId).first();
@@ -35,13 +40,12 @@ async function sellerRow(db, userId) {
 async function stripeState(env, row) {
   if (!row.stripe_account) return { account: false };
   try {
-    const acct = await stripeCall(env, 'GET', `/accounts/${encodeURIComponent(row.stripe_account)}`);
-    return {
-      account: true,
-      detailsSubmitted: !!acct.details_submitted,
-      payoutsEnabled: !!acct.payouts_enabled,
-      due: acct.requirements && Array.isArray(acct.requirements.currently_due) ? acct.requirements.currently_due.length : 0,
-    };
+    const acct = await stripeCall(env, 'GET', `/v2/core/accounts/${encodeURIComponent(row.stripe_account)}?include=configuration.recipient&include=requirements`);
+    const transfers = acct.configuration && acct.configuration.recipient && acct.configuration.recipient.capabilities
+      && acct.configuration.recipient.capabilities.stripe_balance && acct.configuration.recipient.capabilities.stripe_balance.stripe_transfers;
+    const payoutsEnabled = !!transfers && transfers.status === 'active';
+    const due = acct.requirements && Array.isArray(acct.requirements.entries) ? acct.requirements.entries.length : 0;
+    return { account: true, detailsSubmitted: payoutsEnabled || (!!transfers && due === 0), payoutsEnabled, due };
   } catch {
     return { account: true, unknown: true };
   }
@@ -106,38 +110,25 @@ export async function onSellerStripe({ request, env }) {
   try {
     let account = row.stripe_account;
     if (!account) {
-      // a Stripe "Express" account: Stripe's own pages collect the ID check and the bank account or debit card for payouts
-      const created = await stripeCall(
-        env,
-        'POST',
-        '/accounts',
-        {
-          // A connected account with Stripe's hosted onboarding pages and no seller dashboard, described with Stripe's `controller`
-          // properties rather than the legacy `type: 'express'`: Stripe refuses `type` for platforms where Stripe, not the
-          // platform, collects losses ("managed risk"), which is what a new platform gets.
-          controller: CONNECT_CONTROLLER,
-          country: row.country,
-          business_type: 'individual',
-          capabilities: { transfers: { requested: true } },
-          business_profile: { product_description: 'Trading cards sold on Binder' },
-          individual: {
-            phone: row.phone,
-            address: { line1: row.addr_line1, line2: row.addr_line2 || undefined, city: row.city, state: row.region, postal_code: row.postal, country: row.country },
-          },
-          metadata: { binder_user: String(user.id) },
-        },
-        // the key covers the profile version and the request shape (bump ACCOUNT_REQUEST_VERSION if the request below changes):
+      const mine = await env.DB.prepare('SELECT email FROM users WHERE id = ?').bind(user.id).first();
+      const created = await stripeCall(env, 'POST', '/v2/core/accounts', accountBody(row, mine ? mine.email : '', user.id), {
+        // the key covers the profile version and the request shape (bump ACCOUNT_REQUEST_VERSION if the request changes):
         // Stripe refuses a reused key whose parameters differ
-        { idempotencyKey: `binder-seller-${user.id}-${ACCOUNT_REQUEST_VERSION}-${row.updated_at}` }
-      );
+        idempotencyKey: `binder-seller-${user.id}-${ACCOUNT_REQUEST_VERSION}-${row.updated_at}`,
+      });
       account = created.id;
       await env.DB.prepare('UPDATE sellers SET stripe_account = ?, updated_at = ? WHERE user_id = ?').bind(account, Date.now(), user.id).run();
     }
-    const link = await stripeCall(env, 'POST', '/account_links', {
+    const link = await stripeCall(env, 'POST', '/v2/core/account_links', {
       account,
-      type: 'account_onboarding',
-      refresh_url: `${origin(request)}/?seller=refresh`,
-      return_url: `${origin(request)}/?seller=return`,
+      use_case: {
+        type: 'account_onboarding',
+        account_onboarding: {
+          configurations: ['recipient'],
+          refresh_url: `${origin(request)}/?seller=refresh`,
+          return_url: `${origin(request)}/?seller=return`,
+        },
+      },
     });
     return json({ url: link.url });
   } catch (err) {
@@ -153,7 +144,7 @@ export async function onSellerDelete({ request, env }) {
   if (row && row.stripe_account) {
     stripe = 'kept';
     try {
-      await stripeCall(env, 'DELETE', `/accounts/${encodeURIComponent(row.stripe_account)}`);  // only works while there is nothing in it
+      await stripeCall(env, 'POST', `/v2/core/accounts/${encodeURIComponent(row.stripe_account)}/close`, {});  // only works while nothing is owed
       stripe = 'deleted';
     } catch { /* it stays in Stripe; the profile here goes either way */ }
   }
