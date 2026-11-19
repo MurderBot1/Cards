@@ -58,6 +58,18 @@ jobs:
       # Every C++ module's tests: cardvec, cardnet (pure parts), cardlog, cardpaths, cardstore, cardhttp,
       # cardauth, cardtext, cardcatalog, cardscan, cardonnx (against a real ONNX Runtime, downloaded at
       # configure time), cardview (a real window under xvfb), and the binder API driven over real HTTP.
+      - name: Which ONNX Runtime downloads exist (diagnostic)
+        continue-on-error: true
+        run: |
+          for v in 1.19.2 1.20.1 1.21.0 1.22.0 1.22.2 1.23.0; do
+            printf "v$v linux-x64 tgz: "
+            curl -s -o /dev/null -w "%{http_code}\n" -L "https://github.com/microsoft/onnxruntime/releases/download/v$v/onnxruntime-linux-x64-$v.tgz"
+          done
+          echo "--- release v1.19.2 asset names (API) ---"
+          curl -s -H "Authorization: Bearer ${{ github.token }}" https://api.github.com/repos/microsoft/onnxruntime/releases/tags/v1.19.2 | grep -E '"(name|message)"' | head -30
+          echo "--- newest releases (API) ---"
+          curl -s -H "Authorization: Bearer ${{ github.token }}" "https://api.github.com/repos/microsoft/onnxruntime/releases?per_page=5" | grep -E '"tag_name"' | head -5
+
       - name: C++ module tests (ctest)
         run: |
           cmake -S native -B build/native -DCMAKE_BUILD_TYPE=Release
