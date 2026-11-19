@@ -385,7 +385,10 @@ account, debit card, Venmo or PayPal.)
 2. In the `cloudflare` folder: `npx wrangler secret put STRIPE_SECRET_KEY` and paste the **test** secret key (`sk_test_...`).
 3. Redeploy the Worker. Until a key is set the Shop says payment setup isn't available yet, and the profile is still saved.
 A live key (`sk_live_...`) is refused by the Worker unless the variable `PAYMENTS_LIVE` is also set to `true`, so going live is a
-deliberate second step. The Stripe return pages are `/?seller=return` and `/?seller=refresh` on the Worker's address; the desktop,
+deliberate second step. The seller's account is made with Stripe's `controller` properties (Stripe's own Express dashboard and onboarding; Stripe collects
+requirements and losses; the platform pays Stripe's fees), because Stripe refuses the legacy `type: 'express'` for a platform where
+Stripe collects losses. If Stripe later asks for its newer Accounts v2 API instead, `cloudflare/src/seller.js` and `stripe.js` are the
+only places to change. The Stripe return pages are `/?seller=return` and `/?seller=refresh` on the Worker's address; the desktop,
 Android and iOS apps may open `https://connect.stripe.com/...` in the system browser (and nothing else but this project's releases).
 
 **Still the owner's to decide before real money moves:** the platform fee, sales tax, terms of service and privacy policy,

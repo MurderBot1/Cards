@@ -1379,3 +1379,7 @@ html.is-web [data-app-only] { display: none !important; }
 .seller-row .field-input { flex: 1 1 0; min-width: 0; }
 .seller-gap { margin-top: 0; }
 .sheet--seller .segmented { margin-bottom: 8px; }
+
+/* a drop-down gets the theme's text and surface colors (the browser's own are dark text on a dark field) */
+select.field-input { color: var(--text); }
+select.field-input option, select.field-input optgroup { background: var(--surface); color: var(--text); }
