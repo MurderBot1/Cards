@@ -20,7 +20,7 @@ by a [D1](https://developers.cloudflare.com/d1/) database. Both are on Cloudflar
 | `GET /<username>/wishlist`, `GET /<username>/tradelist` | none | the public page (HTML), `404` for anything else |
 | `GET /api/seller` | token | `200 {seller: null \| {legalName, phone, address, payout: {kind, ref}, stripe, ready}, payments: {stripe, stripeTest, stripeProblem, paypal}}` |
 | `POST /api/seller` | `{legalName, phone, address: {line1, line2?, city, region, postal, country}, payout?: {kind: stripe\|venmo\|paypal, ref?}}` + token | register or update; same answer as `GET`; `400` with a message for anything missing or wrong |
-| `POST /api/seller/stripe` | token | `200 {url}`: Stripe's own onboarding page (makes the Express account once); `503` while Stripe isn't set up |
+| `POST /api/seller/stripe` | token | `200 {url}`: Stripe's own onboarding page (makes the Accounts v2 connected account once); `503` while Stripe isn't set up |
 | `POST /api/seller/delete` | token | `200 {ok, stripe: deleted\|kept\|none}`: removes the profile (and the Stripe account if Stripe allows) |
 
 - Usernames are 3 to 32 characters (letters, digits, `.`, `-`, `_`) and unique ignoring case. Passwords are 8 to 256.

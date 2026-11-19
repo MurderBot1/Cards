@@ -4,7 +4,9 @@
 //
 // Test mode first: a live key (sk_live_ / rk_live_) is refused unless the owner has also set PAYMENTS_LIVE to "true".
 
-const API = 'https://api.stripe.com/v1';
+const HOST = 'https://api.stripe.com';
+// Stripe's v2 API (Accounts v2) takes JSON and wants a dated API version; the v1 API takes form-encoded bodies.
+export const STRIPE_V2_VERSION = '2026-11-18.endive';
 
 /** { configured, test, problem }: whether payments with Stripe are on, and why not. */
 export function stripeConfig(env) {
@@ -42,14 +44,21 @@ export async function stripeCall(env, method, path, params = null, { idempotency
   }
   const headers = { Authorization: `Bearer ${env.STRIPE_SECRET_KEY.trim()}` };
   if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
+  const v2 = path.startsWith('/v2/');
+  if (v2) headers['Stripe-Version'] = STRIPE_V2_VERSION;
   let body;
   if (params && method !== 'GET') {
-    headers['Content-Type'] = 'application/x-www-form-urlencoded';
-    body = encodeForm(params);
+    if (v2) {
+      headers['Content-Type'] = 'application/json';
+      body = JSON.stringify(params);
+    } else {
+      headers['Content-Type'] = 'application/x-www-form-urlencoded';
+      body = encodeForm(params);
+    }
   }
   let res;
   try {
-    res = await fetch(`${API}${path}`, { method, headers, body });
+    res = await fetch(`${HOST}${v2 ? '' : '/v1'}${path}`, { method, headers, body });
   } catch {
     const err = new Error("Couldn't reach Stripe, try again in a moment");
     err.status = 502;

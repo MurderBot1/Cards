@@ -88,6 +88,7 @@ function fakeDb() {
   const run = (sql, a) => {
     if (sql.startsWith('CREATE') || sql.startsWith('DROP')) return [];
     if (sql.includes('FROM sessions JOIN users')) return a[0] === 'julie-hash' ? [{ id: 1, username: 'julie', expires_at: 9e12 }] : a[0] === 'bob-hash' ? [{ id: 2, username: 'bob', expires_at: 9e12 }] : [];
+    if (sql.startsWith('SELECT email FROM users')) return [{ email: a[0] === 1 ? 'julie@example.com' : 'bob@example.com' }];
     if (sql.startsWith('SELECT * FROM sellers')) return state.sellers.has(a[0]) ? [state.sellers.get(a[0])] : [];
     if (sql.startsWith('INSERT INTO sellers')) {
       const [user_id, legal_name, phone, addr_line1, addr_line2, city, region, postal, country, payout_kind, payout_ref, now] = a;
@@ -142,13 +143,20 @@ async function setup(extraEnv = {}) {
 function fakeStripe({ payoutsEnabled = false, failDelete = false } = {}) {
   const calls = [];
   globalThis.fetch = async (url, init = {}) => {
-    const path = new URL(url).pathname.replace('/v1', '');
-    calls.push({ method: init.method, path, auth: init.headers && init.headers.Authorization, idem: init.headers && init.headers['Idempotency-Key'], body: init.body ? decodeURIComponent(init.body) : '' });
+    const u = new URL(url);
+    const path = u.pathname.replace('/v1', '') + u.search;
+    calls.push({ method: init.method, path, version: init.headers && init.headers['Stripe-Version'], auth: init.headers && init.headers.Authorization, idem: init.headers && init.headers['Idempotency-Key'], body: init.body || '' });
     const json = (status, body) => ({ ok: status < 400, status, json: async () => body });
-    if (init.method === 'POST' && path === '/accounts') return json(200, { id: 'acct_123' });
-    if (init.method === 'POST' && path === '/account_links') return json(200, { url: 'https://connect.stripe.com/setup/e/acct_123/abc' });
-    if (init.method === 'GET' && path === '/accounts/acct_123') return json(200, { id: 'acct_123', details_submitted: payoutsEnabled, payouts_enabled: payoutsEnabled, requirements: { currently_due: payoutsEnabled ? [] : ['external_account', 'individual.id_number'] } });
-    if (init.method === 'DELETE' && path === '/accounts/acct_123') return failDelete ? json(400, { error: { message: 'has a balance' } }) : json(200, { deleted: true });
+    if (init.method === 'POST' && path === '/v2/core/accounts') return json(200, { id: 'acct_123' });
+    if (init.method === 'POST' && path === '/v2/core/account_links') return json(200, { url: 'https://connect.stripe.com/setup/e/acct_123/abc' });
+    if (init.method === 'GET' && path.startsWith('/v2/core/accounts/acct_123')) {
+      return json(200, {
+        id: 'acct_123',
+        configuration: { recipient: { capabilities: { stripe_balance: { stripe_transfers: { status: payoutsEnabled ? 'active' : 'restricted' } } } } },
+        requirements: { entries: payoutsEnabled ? [] : [{ description: 'external_account' }, { description: 'identity' }] },
+      });
+    }
+    if (init.method === 'POST' && path === '/v2/core/accounts/acct_123/close') return failDelete ? json(400, { error: { message: 'has a balance' } }) : json(200, { id: 'acct_123' });
     return json(404, { error: { message: 'unexpected' } });
   };
   return calls;
@@ -218,25 +226,31 @@ test('Stripe onboarding: registers first, makes the account once, and hands back
   const res = await call('POST', '/api/seller/stripe', {});
   assert.equal(res.status, 200);
   assert.equal((await res.json()).url, 'https://connect.stripe.com/setup/e/acct_123/abc');
-  const make = calls.find((c) => c.path === '/accounts' && c.method === 'POST');
+  const make = calls.find((c) => c.path === '/v2/core/accounts' && c.method === 'POST');
   assert.equal(make.auth, `Bearer ${KEYS.STRIPE_SECRET_KEY}`);
+  assert.equal(make.version, '2026-11-18.endive');
   assert.match(make.idem, /^binder-seller-1-v\d+-\d+$/);
-  assert.doesNotMatch(make.body, /(^|&)type=/, 'the legacy account `type` is refused by Stripe for platforms where Stripe collects losses');
-  assert.match(make.body, /controller\[stripe_dashboard\]\[type\]=none/);
-  assert.match(make.body, /controller\[requirement_collection\]=stripe/);
-  assert.match(make.body, /controller\[losses\]\[payments\]=stripe/);
-  assert.match(make.body, /controller\[fees\]\[payer\]=application/);
-  assert.match(make.body, /country=US/);
-  assert.match(make.body, /individual\[address\]\[postal_code\]=97201/);
-  assert.match(make.body, /capabilities\[transfers\]\[requested\]=true/);
-  assert.doesNotMatch(make.body, /external_account|card\[|bank_account|cvc|account_number/i, 'no card or bank details are ever sent from here');
-  const link = calls.find((c) => c.path === '/account_links');
-  assert.match(link.body, /account=acct_123/);
-  assert.match(link.body, /return_url=https:\/\/binder\.example\/\?seller=return/);
+  const made = JSON.parse(make.body);
+  assert.deepEqual(made, {
+    contact_email: 'julie@example.com',
+    display_name: 'Julie Anne McRidland',
+    identity: { country: 'US' },
+    dashboard: 'none',
+    defaults: { responsibilities: { fees_collector: 'application', losses_collector: 'stripe' } },
+    configuration: { recipient: { capabilities: { stripe_balance: { stripe_transfers: { requested: true } } } } },
+    metadata: { binder_user: '1' },
+  });
+  assert.doesNotMatch(make.body, /external_account|card|bank_account|cvc|account_number/i, 'no card or bank details are ever sent from here');
+  const link = calls.find((c) => c.path === '/v2/core/account_links');
+  const linked = JSON.parse(link.body);
+  assert.equal(linked.account, 'acct_123');
+  assert.equal(linked.use_case.type, 'account_onboarding');
+  assert.deepEqual(linked.use_case.account_onboarding.configurations, ['recipient']);
+  assert.equal(linked.use_case.account_onboarding.return_url, 'https://binder.example/?seller=return');
   // asking again reuses the account
   await call('POST', '/api/seller/stripe', {});
-  assert.equal(calls.filter((c) => c.path === '/accounts' && c.method === 'POST').length, 1);
-  assert.equal(calls.filter((c) => c.path === '/account_links').length, 2);
+  assert.equal(calls.filter((c) => c.path === '/v2/core/accounts' && c.method === 'POST').length, 1);
+  assert.equal(calls.filter((c) => c.path === '/v2/core/account_links').length, 2);
 });
 
 test('Stripe not set up, or failing: a plain message, and nothing breaks', async () => {
@@ -287,7 +301,7 @@ test('removing the seller profile deletes it, and the Stripe account when Stripe
   await call('POST', '/api/seller', GOOD);
   await call('POST', '/api/seller/stripe', {});
   assert.deepEqual(await (await call('POST', '/api/seller/delete', {})).json(), { ok: true, stripe: 'deleted' });
-  assert.ok(calls.some((c) => c.method === 'DELETE' && c.path === '/accounts/acct_123'));
+  assert.ok(calls.some((c) => c.method === 'POST' && c.path === '/v2/core/accounts/acct_123/close'));
   assert.equal(db.state.sellers.size, 0);
   assert.equal((await (await call('GET', '/api/seller')).json()).seller, null);
   assert.deepEqual(await (await call('POST', '/api/seller/delete', {})).json(), { ok: true, stripe: 'none' }, 'twice is fine');
