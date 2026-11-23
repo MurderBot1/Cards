@@ -14,10 +14,11 @@ import { stripeCall, stripeConfig } from './stripe.js';
 
 const origin = (request) => new URL(request.url).origin;
 
-// The seller's Stripe account is an Accounts v2 connected account (Stripe no longer recommends v1 for new platforms): a "recipient"
-// that Stripe pays out to, with no Stripe dashboard for the seller, Stripe's hosted pages collecting the ID check and the payout
-// account, and the platform paying Stripe's fees. The platform is also the losses collector: Stripe only allows that for a recipient account.
-export const ACCOUNT_REQUEST_VERSION = 'v5';
+// The seller's Stripe account is an Accounts v2 connected account (Stripe no longer recommends v1 for new platforms). This platform
+// has Stripe-managed risk, so Stripe must be the losses collector, and Stripe only allows that with a "merchant" configuration (a
+// "recipient" configuration only allows the platform as losses collector). The seller gets no Stripe dashboard, Stripe's hosted pages
+// collect the ID check and the payout account, and the platform pays Stripe's fees.
+export const ACCOUNT_REQUEST_VERSION = 'v6';
 
 export function accountBody(row, email, userId) {
   return {
@@ -25,8 +26,8 @@ export function accountBody(row, email, userId) {
     display_name: row.legal_name,
     identity: { country: row.country },
     dashboard: 'none',
-    defaults: { responsibilities: { fees_collector: 'application', losses_collector: 'application' } },
-    configuration: { recipient: { capabilities: { stripe_balance: { stripe_transfers: { requested: true } } } } },
+    defaults: { responsibilities: { fees_collector: 'application', losses_collector: 'stripe' } },
+    configuration: { merchant: { capabilities: { card_payments: { requested: true } } } },
     metadata: { binder_user: String(userId) },
   };
 }
@@ -40,9 +41,8 @@ async function sellerRow(db, userId) {
 async function stripeState(env, row) {
   if (!row.stripe_account) return { account: false };
   try {
-    const acct = await stripeCall(env, 'GET', `/v2/core/accounts/${encodeURIComponent(row.stripe_account)}?include=configuration.recipient&include=requirements`);
-    const transfers = acct.configuration && acct.configuration.recipient && acct.configuration.recipient.capabilities
-      && acct.configuration.recipient.capabilities.stripe_balance && acct.configuration.recipient.capabilities.stripe_balance.stripe_transfers;
+    const acct = await stripeCall(env, 'GET', `/v2/core/accounts/${encodeURIComponent(row.stripe_account)}?include=configuration.merchant&include=requirements`);
+    const transfers = acct.configuration && acct.configuration.merchant && acct.configuration.merchant.capabilities && acct.configuration.merchant.capabilities.card_payments;
     const payoutsEnabled = !!transfers && transfers.status === 'active';
     const due = acct.requirements && Array.isArray(acct.requirements.entries) ? acct.requirements.entries.length : 0;
     return { account: true, detailsSubmitted: payoutsEnabled || (!!transfers && due === 0), payoutsEnabled, due };
@@ -124,7 +124,7 @@ export async function onSellerStripe({ request, env }) {
       use_case: {
         type: 'account_onboarding',
         account_onboarding: {
-          configurations: ['recipient'],
+          configurations: ['merchant'],
           refresh_url: `${origin(request)}/?seller=refresh`,
           return_url: `${origin(request)}/?seller=return`,
         },

@@ -374,7 +374,7 @@ uses) or PayPal (their PayPal email). The profile lives in the Worker's `sellers
 in `cloudflare/src/sellerInput.js` and, identically, `app/js/sellerProfile.js` (a test runs both on the same cases).
 
 **Card and bank numbers never touch Binder.** Nothing in the app, the Worker, the database or the logs ever holds one. For bank/debit
-payouts the app asks the Worker to make a Stripe connected account through Accounts v2 (`POST /v2/core/accounts`, a "recipient" with no seller dashboard, contact email taken from the Binder account) and opens Stripe's own
+payouts the app asks the Worker to make a Stripe connected account through Accounts v2 (`POST /v2/core/accounts`, a "merchant" configuration with no seller dashboard, contact email taken from the Binder account) and opens Stripe's own
 onboarding page, which collects the ID check and the payout account; the Worker keeps only the Stripe account id and asks Stripe
 whether payouts are enabled. Venmo and PayPal sellers give only the phone/email their account uses; those payouts are made in
 a later release. (Credit cards can't receive payouts: buyers pay by card in the checkout release, sellers are paid to a bank
@@ -385,9 +385,10 @@ account, debit card, Venmo or PayPal.)
 2. In the `cloudflare` folder: `npx wrangler secret put STRIPE_SECRET_KEY` and paste the **test** secret key (`sk_test_...`).
 3. Redeploy the Worker. Until a key is set the Shop says payment setup isn't available yet, and the profile is still saved.
 A live key (`sk_live_...`) is refused by the Worker unless the variable `PAYMENTS_LIVE` is also set to `true`, so going live is a
-deliberate second step. The seller's account is made with Stripe's Accounts v2 API (Stripe no longer recommends v1 for new Connect platforms): a `recipient` configuration
-with `dashboard: none`, Stripe's hosted onboarding collecting the ID check and the payout account, the platform paying Stripe's fees and collecting losses
-(Stripe only allows `application` as the losses collector for a recipient account). `cloudflare/src/seller.js` (`accountBody`) and `stripe.js` (`STRIPE_V2_VERSION`) are the only places to change. The Stripe return pages are `/?seller=return` and `/?seller=refresh` on the Worker's address; the desktop,
+deliberate second step. The seller's account is made with Stripe's Accounts v2 API (Stripe no longer recommends v1 for new Connect platforms): a `merchant` configuration
+with `dashboard: none`, Stripe's hosted onboarding collecting the ID check and the payout account, the platform paying Stripe's fees and Stripe collecting losses
+(this platform has Stripe-managed risk, so Stripe refuses the platform as losses collector; Stripe in turn only allows `stripe` there for a merchant
+configuration, not a recipient one). `cloudflare/src/seller.js` (`accountBody`) and `stripe.js` (`STRIPE_V2_VERSION`) are the only places to change. The Stripe return pages are `/?seller=return` and `/?seller=refresh` on the Worker's address; the desktop,
 Android and iOS apps may open `https://connect.stripe.com/...` in the system browser (and nothing else but this project's releases).
 
 **Still the owner's to decide before real money moves:** the platform fee, sales tax, terms of service and privacy policy,
