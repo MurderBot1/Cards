@@ -152,7 +152,7 @@ function fakeStripe({ payoutsEnabled = false, failDelete = false } = {}) {
     if (init.method === 'GET' && path.startsWith('/v2/core/accounts/acct_123')) {
       return json(200, {
         id: 'acct_123',
-        configuration: { recipient: { capabilities: { stripe_balance: { stripe_transfers: { status: payoutsEnabled ? 'active' : 'restricted' } } } } },
+        configuration: { merchant: { capabilities: { card_payments: { status: payoutsEnabled ? 'active' : 'restricted' } } } },
         requirements: { entries: payoutsEnabled ? [] : [{ description: 'external_account' }, { description: 'identity' }] },
       });
     }
@@ -236,16 +236,16 @@ test('Stripe onboarding: registers first, makes the account once, and hands back
     display_name: 'Julie Anne McRidland',
     identity: { country: 'US' },
     dashboard: 'none',
-    defaults: { responsibilities: { fees_collector: 'application', losses_collector: 'application' } },
-    configuration: { recipient: { capabilities: { stripe_balance: { stripe_transfers: { requested: true } } } } },
+    defaults: { responsibilities: { fees_collector: 'application', losses_collector: 'stripe' } },
+    configuration: { merchant: { capabilities: { card_payments: { requested: true } } } },
     metadata: { binder_user: '1' },
   });
-  assert.doesNotMatch(make.body, /external_account|card|bank_account|cvc|account_number/i, 'no card or bank details are ever sent from here');
+  assert.doesNotMatch(make.body, /external_account|card_number|card\[|bank_account|cvc|account_number|routing/i, 'no card or bank details are ever sent from here');
   const link = calls.find((c) => c.path === '/v2/core/account_links');
   const linked = JSON.parse(link.body);
   assert.equal(linked.account, 'acct_123');
   assert.equal(linked.use_case.type, 'account_onboarding');
-  assert.deepEqual(linked.use_case.account_onboarding.configurations, ['recipient']);
+  assert.deepEqual(linked.use_case.account_onboarding.configurations, ['merchant']);
   assert.equal(linked.use_case.account_onboarding.return_url, 'https://binder.example/?seller=return');
   // asking again reuses the account
   await call('POST', '/api/seller/stripe', {});
