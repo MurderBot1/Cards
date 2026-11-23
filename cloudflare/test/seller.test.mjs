@@ -245,7 +245,7 @@ test('Stripe onboarding: registers first, makes the account once, and hands back
   const linked = JSON.parse(link.body);
   assert.equal(linked.account, 'acct_123');
   assert.equal(linked.use_case.type, 'account_onboarding');
-  assert.deepEqual(linked.use_case.account_onboarding.configurations, ['merchant']);
+  assert.deepEqual(Object.keys(linked.use_case.account_onboarding).sort(), ['refresh_url', 'return_url'], 'Stripe refuses `configurations` here as an unknown field');
   assert.equal(linked.use_case.account_onboarding.return_url, 'https://binder.example/?seller=return');
   // asking again reuses the account
   await call('POST', '/api/seller/stripe', {});

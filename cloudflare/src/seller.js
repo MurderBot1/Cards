@@ -119,12 +119,12 @@ export async function onSellerStripe({ request, env }) {
       account = created.id;
       await env.DB.prepare('UPDATE sellers SET stripe_account = ?, updated_at = ? WHERE user_id = ?').bind(account, Date.now(), user.id).run();
     }
+    // no `configurations`: Stripe answers that field is unknown for this API version, and the account's own configuration decides what is collected
     const link = await stripeCall(env, 'POST', '/v2/core/account_links', {
       account,
       use_case: {
         type: 'account_onboarding',
         account_onboarding: {
-          configurations: ['merchant'],
           refresh_url: `${origin(request)}/?seller=refresh`,
           return_url: `${origin(request)}/?seller=return`,
         },
