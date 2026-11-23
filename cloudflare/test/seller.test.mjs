@@ -152,7 +152,7 @@ function fakeStripe({ payoutsEnabled = false, failDelete = false } = {}) {
     if (init.method === 'GET' && path.startsWith('/v2/core/accounts/acct_123')) {
       return json(200, {
         id: 'acct_123',
-        configuration: { merchant: { capabilities: { card_payments: { status: payoutsEnabled ? 'active' : 'restricted' } } } },
+        configuration: { merchant: { capabilities: { card_payments: { status: payoutsEnabled ? 'active' : 'restricted' }, stripe_balance: { payouts: { status: payoutsEnabled ? 'active' : 'restricted' } } } } },
         requirements: { entries: payoutsEnabled ? [] : [{ description: 'external_account' }, { description: 'identity' }] },
       });
     }
@@ -245,7 +245,7 @@ test('Stripe onboarding: registers first, makes the account once, and hands back
   const linked = JSON.parse(link.body);
   assert.equal(linked.account, 'acct_123');
   assert.equal(linked.use_case.type, 'account_onboarding');
-  assert.deepEqual(linked.use_case.account_onboarding.configurations, ['merchant']);
+  assert.deepEqual(Object.keys(linked.use_case.account_onboarding).sort(), ['refresh_url', 'return_url'], 'Stripe refuses `configurations` here as an unknown field');
   assert.equal(linked.use_case.account_onboarding.return_url, 'https://binder.example/?seller=return');
   // asking again reuses the account
   await call('POST', '/api/seller/stripe', {});
@@ -286,8 +286,9 @@ test('the seller\'s Stripe status is read from Stripe: ready only when payouts a
   let { seller } = await (await call('GET', '/api/seller')).json();
   assert.deepEqual(seller.stripe, { account: true, detailsSubmitted: false, payoutsEnabled: false, due: 2 });
   assert.equal(seller.ready, false);
-  fakeStripe({ payoutsEnabled: true });
+  const statusCalls = fakeStripe({ payoutsEnabled: true });
   ({ seller } = await (await call('GET', '/api/seller')).json());
+  assert.ok(statusCalls.some((c) => c.method === 'GET' && c.path === '/v2/core/accounts/acct_123?include[0]=configuration.merchant&include[1]=requirements'), 'array-style include');
   assert.deepEqual([seller.stripe.payoutsEnabled, seller.stripe.due, seller.ready], [true, 0, true]);
   globalThis.fetch = async () => { throw new Error('down'); };
   ({ seller } = await (await call('GET', '/api/seller')).json());
@@ -301,7 +302,9 @@ test('removing the seller profile deletes it, and the Stripe account when Stripe
   await call('POST', '/api/seller', GOOD);
   await call('POST', '/api/seller/stripe', {});
   assert.deepEqual(await (await call('POST', '/api/seller/delete', {})).json(), { ok: true, stripe: 'deleted' });
-  assert.ok(calls.some((c) => c.method === 'POST' && c.path === '/v2/core/accounts/acct_123/close'));
+  const closed = calls.find((c) => c.method === 'POST' && c.path === '/v2/core/accounts/acct_123/close');
+  assert.ok(closed);
+  assert.deepEqual(JSON.parse(closed.body), { applied_configurations: ['merchant'] });
   assert.equal(db.state.sellers.size, 0);
   assert.equal((await (await call('GET', '/api/seller')).json()).seller, null);
   assert.deepEqual(await (await call('POST', '/api/seller/delete', {})).json(), { ok: true, stripe: 'none' }, 'twice is fine');

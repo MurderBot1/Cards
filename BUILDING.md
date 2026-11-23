@@ -388,7 +388,7 @@ A live key (`sk_live_...`) is refused by the Worker unless the variable `PAYMENT
 deliberate second step. The seller's account is made with Stripe's Accounts v2 API (Stripe no longer recommends v1 for new Connect platforms): a `merchant` configuration
 with `dashboard: none`, Stripe's hosted onboarding collecting the ID check and the payout account, the platform paying Stripe's fees and Stripe collecting losses
 (this platform has Stripe-managed risk, so Stripe refuses the platform as losses collector; Stripe in turn only allows `stripe` there for a merchant
-configuration, not a recipient one). `cloudflare/src/seller.js` (`accountBody`) and `stripe.js` (`STRIPE_V2_VERSION`) are the only places to change. The Stripe return pages are `/?seller=return` and `/?seller=refresh` on the Worker's address; the desktop,
+configuration, not a recipient one). The Shop shows a seller as ready once Stripe reports the merchant's `stripe_balance.payouts` capability as active. `cloudflare/src/seller.js` (`accountBody`) and `stripe.js` (`STRIPE_V2_VERSION`) are the only places to change. The Stripe return pages are `/?seller=return` and `/?seller=refresh` on the Worker's address; the desktop,
 Android and iOS apps may open `https://connect.stripe.com/...` in the system browser (and nothing else but this project's releases).
 
 **Still the owner's to decide before real money moves:** the platform fee, sales tax, terms of service and privacy policy,
