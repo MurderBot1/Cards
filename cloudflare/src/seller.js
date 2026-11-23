@@ -41,11 +41,14 @@ async function sellerRow(db, userId) {
 async function stripeState(env, row) {
   if (!row.stripe_account) return { account: false };
   try {
-    const acct = await stripeCall(env, 'GET', `/v2/core/accounts/${encodeURIComponent(row.stripe_account)}?include=configuration.merchant&include=requirements`);
-    const transfers = acct.configuration && acct.configuration.merchant && acct.configuration.merchant.capabilities && acct.configuration.merchant.capabilities.card_payments;
-    const payoutsEnabled = !!transfers && transfers.status === 'active';
+    // Stripe wants array-style `include[0]=...` here (and exposes `requirements` and the merchant configuration only when asked)
+    const acct = await stripeCall(env, 'GET', `/v2/core/accounts/${encodeURIComponent(row.stripe_account)}?include[0]=configuration.merchant&include[1]=requirements`);
+    const caps = (acct.configuration && acct.configuration.merchant && acct.configuration.merchant.capabilities) || {};
+    const payouts = caps.stripe_balance && caps.stripe_balance.payouts;
+    const payoutsEnabled = !!payouts && payouts.status === 'active';
     const due = acct.requirements && Array.isArray(acct.requirements.entries) ? acct.requirements.entries.length : 0;
-    return { account: true, detailsSubmitted: payoutsEnabled || (!!transfers && due === 0), payoutsEnabled, due };
+    const detailsSubmitted = payoutsEnabled || (!!caps.card_payments && caps.card_payments.status === 'active') || (!!payouts && due === 0);
+    return { account: true, detailsSubmitted, payoutsEnabled, due };
   } catch {
     return { account: true, unknown: true };
   }
@@ -144,7 +147,7 @@ export async function onSellerDelete({ request, env }) {
   if (row && row.stripe_account) {
     stripe = 'kept';
     try {
-      await stripeCall(env, 'POST', `/v2/core/accounts/${encodeURIComponent(row.stripe_account)}/close`, {});  // only works while nothing is owed
+      await stripeCall(env, 'POST', `/v2/core/accounts/${encodeURIComponent(row.stripe_account)}/close`, { applied_configurations: ['merchant'] });
       stripe = 'deleted';
     } catch { /* it stays in Stripe; the profile here goes either way */ }
   }
