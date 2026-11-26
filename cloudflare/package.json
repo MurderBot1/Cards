@@ -8,6 +8,7 @@
     "test": "node --test test/*.test.mjs"
   },
   "devDependencies": {
+    "sql.js": "^1.17.0",
     "wrangler": "^3.114.0"
   }
 }
