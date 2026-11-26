@@ -1,10 +1,11 @@
 /**
  * market.js
- * The Shop tab: a search of ALL cards (the same catalog search the "add a card" sheet uses), where each result shows the lowest price
+ * The Shop tab: a search of ALL cards, in every game at once (the catalog search the "add a card" sheet uses, asked of each game), where each result shows the lowest price
  * any Binder seller is asking, or "Unavailable" when nobody is selling it. With nothing typed it shows what was listed most recently.
  * Tapping a card lists every offer for it (condition, seller, price) with a way to put it in the cart; a seller can list the same card.
  */
 import { api } from './api.js';
+import { createCrossSearch } from './catalogSearch.js';
 import { artHtml, escapeHtml, gameName, usd } from './dom.js';
 import { cartQty, changeCart, initCart, openCart, refreshCart, requireSignIn } from './cartView.js';
 import { openListingEditor } from './listingsView.js';
@@ -19,8 +20,8 @@ const CONDITION_ABBR = { 'Near Mint': 'NM', 'Lightly Played': 'LP', 'Moderately 
 const $ = (id) => document.getElementById(id);
 let els = null;
 
-let game = 'mtg';
 let query = '';
+let cross = null;        // the running search over all games (catalogSearch.js)
 let results = [];        // catalog cards: { id, name, set, number, rarity, image, game }
 let prices = {};         // catalog id -> { fromCents, count, quantity }; a card with no entry is unavailable
 let loaded = 0;          // how much the source (search or feed) has given so far
@@ -37,7 +38,7 @@ function itemHtml(card, index) {
   const price = p
     ? `<span class="market-price">From ${usd(p.fromCents)}</span><span class="market-sub">${p.count} offer${p.count === 1 ? '' : 's'} · ${p.quantity} available</span>`
     : '<span class="market-price market-price--none">Unavailable</span>';
-  const meta = [card.set, card.number, card.rarity].filter(Boolean).map(escapeHtml).join(' · ');
+  const meta = [gameName(card.game), card.set, card.number, card.rarity].filter(Boolean).map(escapeHtml).join(' · ');
   return `
     <button class="market-item" type="button" data-index="${index}">
       <span class="market-art">${artHtml(card.image, card.name)}</span>
@@ -56,7 +57,7 @@ function render() {
   const none = results.length === 0 && !loading;
   els.empty.classList.toggle('hidden', !none);
   els.emptyTitle.textContent = query ? 'No cards found' : 'Nothing is for sale yet';
-  els.emptyText.textContent = query ? `Nothing in ${gameName(game)} matches that name.` : 'Search for any card above to see its price, or who is selling it.';
+  els.emptyText.textContent = query ? 'No card in any game matches that name.' : 'Search for any card above to see its price, or who is selling it.';
   watchEnd();
 }
 
@@ -77,6 +78,7 @@ async function load(reset) {
     loaded = 0;
     exhausted = false;
     loading = false;
+    cross = query ? createCrossSearch((g, q, o) => api.searchCards(g, q, o), query) : null;
   }
   if (loading || exhausted) return;
   const mine = token;
@@ -85,12 +87,10 @@ async function load(reset) {
   let batch = [];
   try {
     if (query) {
-      const found = await api.searchCards(game, query, { limit: PAGE, offset: loaded });
-      batch = found.map((c) => ({ ...c, game }));
-      loaded += found.length;
-      exhausted = found.length < PAGE;
+      batch = await cross.more();
+      exhausted = cross.done;
     } else {
-      const feed = await shopApi.listings({ sort: 'new', game, limit: PAGE, offset: loaded });
+      const feed = await shopApi.listings({ sort: 'new', limit: PAGE, offset: loaded });
       loaded += feed.listings.length;
       exhausted = !feed.hasMore;
       const seen = new Set(results.map((c) => c.id));
@@ -208,35 +208,20 @@ async function openOffers(card) {
 
 // ---- starting up -------------------------------------------------------------------------------------------------------------
 
-function markGame() {
-  els.game.querySelectorAll('button').forEach((b) => {
-    b.classList.toggle('is-selected', b.dataset.value === game);
-    b.setAttribute('aria-selected', String(b.dataset.value === game));
-  });
-}
-
 function updateSellButton() {
   els.sell.classList.toggle('hidden', !getSellerState().ready);
 }
 
 export function initMarket() {
   els = {
-    game: $('market-game'), search: $('market-search'), heading: $('market-heading'), list: $('market-list'),
+    search: $('market-search'), heading: $('market-heading'), list: $('market-list'),
     empty: $('market-empty'), emptyTitle: $('market-empty-title'), emptyText: $('market-empty-text'), sell: $('market-sell'),
   };
   initCart();
-  markGame();
   let timer = null;
   els.search.addEventListener('input', () => {
     clearTimeout(timer);
     timer = setTimeout(() => { query = els.search.value.trim(); load(true); }, 250);
-  });
-  els.game.addEventListener('click', (e) => {
-    const button = e.target.closest('button');
-    if (!button) return;
-    game = button.dataset.value;
-    markGame();
-    load(true);
   });
   els.list.addEventListener('click', (e) => {
     const item = e.target.closest('.market-item');

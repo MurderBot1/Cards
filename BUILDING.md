@@ -369,7 +369,7 @@ one open at a time). **All of it runs in the payment processors' test mode until
 
 ### What a person sees
 
-- **Market** (`app/js/market.js`): search *all* cards (the same catalog search as "add a card", for Magic, Pokémon and Yu-Gi-Oh!). Each
+- **Market** (`app/js/market.js`): search *all* cards, in every game at once (the same catalog search as "add a card", asked of Magic, Pokémon and Yu-Gi-Oh! together and woven into one list by `app/js/catalogSearch.js`; there is no game picker). Each
   result shows the card's art, its name and **the lowest price any seller asks, or "Unavailable"** when nobody sells it. With nothing
   typed it shows what was listed most recently. Tapping a card lists every offer (condition, finish, seller, price, how many) with an
   *Add to cart* button, and *Sell this card* for a registered seller.
