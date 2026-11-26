@@ -5,6 +5,7 @@
  * card, then asks for condition, finish, quantity and price. Only a seller who can be paid can list (the service checks).
  */
 import { api, CONDITIONS } from './api.js';
+import { createCrossSearch } from './catalogSearch.js';
 import { artHtml, escapeHtml, gameName, usd } from './dom.js';
 import { openSheet } from './sheet.js';
 import { shopApi } from './shopApi.js';
@@ -12,7 +13,7 @@ import { parsePriceToCents } from './shopInput.js';
 import { showToast } from './ui.js';
 
 const LANGUAGES = ['English', 'Japanese', 'German', 'French', 'Spanish', 'Italian', 'Portuguese', 'Korean', 'Chinese (Simplified)', 'Chinese (Traditional)', 'Russian'];
-const PICK_PAGE = 20;
+const PICK_PAGE = 8;   // per game
 
 // ---- my listings ---------------------------------------------------------------------------------------------------------------
 
@@ -88,48 +89,33 @@ export async function openMyListings() {
  */
 export function openListingEditor({ card, listing, onSaved } = {}) {
   const sheet = openSheet({ title: listing ? 'Edit listing' : 'List a card' });
-  let game = (card && card.game) || (listing && listing.game) || 'mtg';
 
   const pickStage = () => {
     sheet.setTitle('Find the card to sell');
     sheet.body.innerHTML = `
-      <div class="segmented segmented--game" data-role="game" role="tablist" aria-label="Game">
-        <button data-value="mtg" role="tab"><span class="game-dot game-dot--mtg"></span>Magic</button>
-        <button data-value="pokemon" role="tab"><span class="game-dot game-dot--pokemon"></span>Pok&eacute;mon</button>
-        <button data-value="yugioh" role="tab"><span class="game-dot game-dot--yugioh"></span>Yu-Gi-Oh!</button>
-      </div>
-      <div class="search-bar"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><input type="search" data-role="q" placeholder="Search by card name&hellip;" autocomplete="off"></div>
+      <div class="search-bar"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><input type="search" data-role="q" placeholder="Search all cards by name&hellip;" autocomplete="off"></div>
       <div class="pick-list" data-role="results"></div>`;
-    const picker = sheet.body.querySelector('[data-role="game"]');
     const input = sheet.body.querySelector('[data-role="q"]');
     const results = sheet.body.querySelector('[data-role="results"]');
     let found = [];
     let timer = null;
     let counter = 0;
-    const markGame = () => picker.querySelectorAll('button').forEach((b) => b.classList.toggle('is-selected', b.dataset.value === game));
     const run = async () => {
       const mine = ++counter;
       const q = input.value.trim();
       if (!q) { results.innerHTML = '<p class="setting-hint">Type a card name.</p>'; return; }
       results.innerHTML = '<p class="setting-hint">Searching…</p>';
       try {
-        found = (await api.searchCards(game, q, { limit: PICK_PAGE })).map((r) => ({ ...r, game }));
+        found = await createCrossSearch((g, text, o) => api.searchCards(g, text, o), q, { perGame: PICK_PAGE }).more();
       } catch (err) {
         if (mine === counter) results.innerHTML = `<p class="field-hint field-hint--error">${escapeHtml(err.message || "Couldn't search")}</p>`;
         return;
       }
       if (mine !== counter) return;
       results.innerHTML = found.length
-        ? found.map((r, i) => `<button class="pick-row" type="button" data-i="${i}"><span class="cart-art">${artHtml(r.image, r.name)}</span><span class="cart-line-main"><span class="cart-line-name">${escapeHtml(r.name)}</span><span class="cart-line-meta">${escapeHtml(r.set || '')} ${escapeHtml(r.number || '')} ${r.rarity ? `· ${escapeHtml(r.rarity)}` : ''}</span></span></button>`).join('')
+        ? found.map((r, i) => `<button class="pick-row" type="button" data-i="${i}"><span class="cart-art">${artHtml(r.image, r.name)}</span><span class="cart-line-main"><span class="cart-line-name">${escapeHtml(r.name)}</span><span class="cart-line-meta">${escapeHtml(gameName(r.game))} · ${escapeHtml(r.set || '')} ${escapeHtml(r.number || '')} ${r.rarity ? `· ${escapeHtml(r.rarity)}` : ''}</span></span></button>`).join('')
         : '<p class="setting-hint">No cards found.</p>';
     };
-    picker.addEventListener('click', (e) => {
-      const b = e.target.closest('button');
-      if (!b) return;
-      game = b.dataset.value;
-      markGame();
-      run();
-    });
     input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(run, 250); });
     results.addEventListener('click', (e) => {
       const row = e.target.closest('.pick-row');
@@ -137,7 +123,6 @@ export function openListingEditor({ card, listing, onSaved } = {}) {
       card = found[Number(row.dataset.i)];
       formStage();
     });
-    markGame();
     input.focus();
     run();
   };
