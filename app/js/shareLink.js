@@ -14,7 +14,7 @@ const RETRY_MS = 1500;
 function needSession(deps) {
   const session = deps.session();
   if (!session) {
-    const err = new Error('Sign in (Account tab) to share a list');
+    const err = new Error('Sign in (Settings) to share a list');
     err.needsSignIn = true;
     throw err;
   }

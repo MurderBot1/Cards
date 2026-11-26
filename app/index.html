@@ -28,29 +28,37 @@
   <!-- ============ MAIN VIEWS ============ -->
   <main id="view-root">
 
-    <!-- ---------- SHOP (placeholder) ---------- -->
+    <!-- ---------- SHOP (the market: market.js) ---------- -->
     <section class="view" id="view-shop" data-view="shop">
-      <div class="shop-home">
-        <div class="seller-card" id="seller-card">
-          <div class="seller-card-icon">
-            <svg viewBox="0 0 24 24"><path d="M3 9l1.5-5h15L21 9M3 9v10a1 1 0 001 1h16a1 1 0 001-1V9M3 9h18M9 20v-6h6v6"/></svg>
+      <div class="market">
+        <div class="market-top">
+          <div class="segmented segmented--game" id="market-game" role="tablist" aria-label="Game">
+            <button data-value="mtg" role="tab"><span class="game-dot game-dot--mtg"></span>Magic</button>
+            <button data-value="pokemon" role="tab"><span class="game-dot game-dot--pokemon"></span>Pok&eacute;mon</button>
+            <button data-value="yugioh" role="tab"><span class="game-dot game-dot--yugioh"></span>Yu-Gi-Oh!</button>
           </div>
-          <div class="seller-card-text">
-            <h2 id="seller-title">Sell your cards</h2>
-            <p id="seller-sub">Sign in (Account tab) to register as a seller.</p>
-            <p class="seller-detail hidden" id="seller-detail"></p>
-          </div>
-          <div class="seller-card-actions">
-            <button class="btn btn-primary hidden" id="seller-stripe" type="button">Set up payouts with Stripe</button>
-            <button class="btn btn-secondary hidden" id="seller-open" type="button">Register to sell</button>
+          <div class="market-search-row">
+            <div class="search-bar market-search">
+              <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+              <input type="search" id="market-search" placeholder="Search all cards&hellip;" autocomplete="off" enterkeyhint="search">
+            </div>
+            <button class="icon-btn market-sell-btn hidden" id="market-sell" type="button" aria-label="Sell a card">
+              <svg viewBox="0 0 24 24"><path d="M20.6 13.4l-7.2 7.2a2 2 0 01-2.8 0L3 13V3h10l7.6 7.6a2 2 0 010 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>
+            </button>
+            <button class="icon-btn market-cart-btn" id="market-cart" type="button" aria-label="Open your cart">
+              <svg viewBox="0 0 24 24"><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l2.7 12.4a2 2 0 002 1.6h8.1a2 2 0 002-1.6L21 7H6"/></svg>
+              <span class="cart-badge hidden" id="market-cart-count">0</span>
+            </button>
           </div>
         </div>
-        <div class="empty-state">
+        <p class="market-heading" id="market-heading">For sale on Binder</p>
+        <div class="market-list" id="market-list"></div>
+        <div class="empty-state hidden" id="market-empty">
           <div class="empty-icon">
-            <svg viewBox="0 0 24 24"><path d="M6 2l1.5 4.5M18 2l-1.5 4.5M3 6.5h18l-1.7 12.2a2 2 0 01-2 1.8H6.7a2 2 0 01-1.9-1.8L3 6.5z"/><path d="M8.5 10.5v4M15.5 10.5v4"/></svg>
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
           </div>
-          <h2>Buying is still being built</h2>
-          <p>Browsing, a cart and checkout will land here soon.</p>
+          <h2 id="market-empty-title">Nothing is for sale yet</h2>
+          <p id="market-empty-text">Search for any card above to see its price, or who is selling it.</p>
         </div>
       </div>
     </section>
@@ -178,7 +186,8 @@
     <section class="view" id="view-settings" data-view="settings">
       <div class="settings-scroll">
 
-        <div class="settings-group">
+        <div class="settings-group" data-section="account">
+          <h3 class="settings-group-title">Account</h3>
           <div class="account-card" id="account-card">
             <div class="account-avatar" id="account-avatar">
               <svg viewBox="0 0 24 24"><path d="M20 21a8 8 0 10-16 0"/><circle cx="12" cy="8" r="5"/></svg>
@@ -193,7 +202,36 @@
           </div>
         </div>
 
-        <div class="settings-group">
+        <div class="settings-group" data-section="selling">
+          <h3 class="settings-group-title">Selling</h3>
+          <div class="seller-card" id="seller-card">
+            <div class="seller-card-icon">
+              <svg viewBox="0 0 24 24"><path d="M3 9l1.5-5h15L21 9M3 9v10a1 1 0 001 1h16a1 1 0 001-1V9M3 9h18M9 20v-6h6v6"/></svg>
+            </div>
+            <div class="seller-card-text">
+              <h2 id="seller-title">Sell your cards</h2>
+              <p id="seller-sub">Sign in (Account section) to register as a seller.</p>
+              <p class="seller-detail hidden" id="seller-detail"></p>
+            </div>
+            <div class="seller-card-actions">
+              <button class="btn btn-primary hidden" id="seller-stripe" type="button">Set up payouts with Stripe</button>
+              <button class="btn btn-secondary hidden" id="seller-open" type="button">Register to sell</button>
+              <button class="btn btn-secondary hidden" id="seller-listings" type="button">My listings</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-group" data-section="orders">
+          <h3 class="settings-group-title">Orders</h3>
+          <div id="orders-root"><p class="setting-hint">Sign in to see your orders.</p></div>
+        </div>
+
+        <div class="settings-group" data-section="payment">
+          <h3 class="settings-group-title">Shipping &amp; saved cards</h3>
+          <div id="payment-root"><p class="setting-hint">Sign in to keep a shipping address and saved cards.</p></div>
+        </div>
+
+        <div class="settings-group" data-section="appearance">
           <h3 class="settings-group-title">Appearance</h3>
 
           <div class="setting-row">
@@ -221,7 +259,7 @@
           </div>
         </div>
 
-        <div class="settings-group">
+        <div class="settings-group" data-section="prices">
           <h3 class="settings-group-title">Prices</h3>
           <div class="setting-row">
             <div class="setting-label">
@@ -240,7 +278,7 @@
           </div>
         </div>
 
-        <div class="settings-group" data-app-only>
+        <div class="settings-group" data-section="scanner" data-app-only>
           <h3 class="settings-group-title">Scanner</h3>
 
           <div class="setting-row">
@@ -268,7 +306,7 @@
           </div>
         </div>
 
-        <div class="settings-group" data-app-only>
+        <div class="settings-group" data-section="updates" data-app-only>
           <h3 class="settings-group-title">Updates</h3>
           <div class="setting-row">
             <div class="setting-label">
@@ -299,9 +337,9 @@
       <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9h16M9 4v16"/></svg>
       <span>Collection</span>
     </button>
-    <button class="tab-btn" data-tab="settings" aria-label="Account">
+    <button class="tab-btn" data-tab="settings" aria-label="Settings">
       <svg viewBox="0 0 24 24"><path d="M20 21a8 8 0 10-16 0"/><circle cx="12" cy="8" r="5"/></svg>
-      <span>Account</span>
+      <span>Settings</span>
     </button>
   </nav>
 </div>

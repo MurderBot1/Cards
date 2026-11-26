@@ -10,8 +10,9 @@ namespace binder {
 // with nothing in the URL a shell or the OS could treat specially.
 bool is_release_url(const std::string& url);
 
-// Pages the app may open in the browser for a person: this project's releases (is_release_url) and Stripe's own seller
-// onboarding pages (https://connect.stripe.com/...), under the same character rules.
+// Pages the app may open in the browser for a person: this project's releases (is_release_url) and the shop's pages (Stripe's
+// seller sign-up and payment pages, PayPal's payment page, Shippo shipping labels, the big carriers' tracking pages), each
+// an exact https:// prefix, under the same character rules.
 bool is_openable_url(const std::string& url);
 
 // Hands `url` to the OS's default browser (ShellExecute / `open` / `xdg-open`, no shell involved). false if it isn't

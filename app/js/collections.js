@@ -1066,7 +1066,7 @@ async function copyText(text, input) {
 async function openShare() {
   if (!activeCollection) return;
   if (!getSession()) {
-    showToast('Sign in (Account tab) to share a list', 3000);
+    showToast('Sign in (Settings) to share a list', 3000);
     return;
   }
   sharing = activeCollection;

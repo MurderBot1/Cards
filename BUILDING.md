@@ -207,7 +207,7 @@ The same Cloudflare Worker that does accounts also serves the app itself (`cloud
 at `app/`), so `https://binder.<account>.workers.dev/` is a website version of Binder. There is no local backend there, so
 `app/js/env.js` switches the page into web mode whenever it is served from anything but localhost (or with `?web=1`):
 
-- **Shop, Collection and Account** are all there. Sign-in and sync work as in the apps.
+- **Shop, Collection and Settings** are all there (the market, cart, checkout, selling and orders included). Sign-in and sync work as in the apps.
 - **Collections** are kept in the browser (`app/js/webstore.js`, a port of `native/cardstore` that answers the same routes), and
   sync with the account through the same `/sync/state` and `/sync/apply` protocol, so a collection built on the website shows up in
   the apps and the other way round. Without signing in they live only in that browser.
@@ -362,39 +362,94 @@ The Worker keeps one row per person and kind in `public_lists` (created automati
 (`cloudflare/src/share.js`, `publicPathOf`) before the `/api` check; the app's files are served first, so a username can't
 shadow them. Redeploy the Worker for it to work. See `cloudflare/README.md`.
 
-## The shop: becoming a seller (step 1 of the shop)
+## The shop
 
-The Shop tab starts with seller registration; browsing, listings, a cart and checkout follow in later releases, each its own release
-(see the plan in the task list). **All of it runs in the payment processors' test mode until the owner says otherwise.**
+The Shop tab is the market; selling, orders and saved cards live in **Settings** (on a phone each Settings section is a dropdown,
+one open at a time). **All of it runs in the payment processors' test mode until the owner says otherwise.**
+
+### What a person sees
+
+- **Market** (`app/js/market.js`): search *all* cards (the same catalog search as "add a card", for Magic, Pokémon and Yu-Gi-Oh!). Each
+  result shows the card's art, its name and **the lowest price any seller asks, or "Unavailable"** when nobody sells it. With nothing
+  typed it shows what was listed most recently. Tapping a card lists every offer (condition, finish, seller, price, how many) with an
+  *Add to cart* button, and *Sell this card* for a registered seller.
+- **Cart and checkout** (`cartView.js`): the cart lives on the account (it follows a person between devices). Checkout asks where to
+  send it (US addresses for now), shows each seller's shipping and the total, then sends the buyer to **Stripe's own payment page**,
+  which has its own "save my payment info" box: a buyer chooses there whether to keep the card for next time or not. Back from Stripe
+  (`/?checkout=success&order=...`) the app checks the order and opens Settings, Orders.
+- **Settings → Selling** (`shop.js`, `listingsView.js`): register as a seller (below), then *My listings*: pick a card from the catalog,
+  set condition, finish, language, quantity and price. **Settings → Orders** (`ordersView.js`): the buyer's orders with each seller's
+  parcel, a progress strip and the carrier's tracking (with a link to the carrier's page), *I received it* and *Cancel & refund* before
+  it ships; and the seller's sales with the buyer's ship-to address, *Buy shipping label*, *I have a tracking number* and *Refund buyer*.
+  **Settings → Shipping & saved cards** (`paymentView.js`): the saved address, and the saved cards (brand, last four and expiry only).
+
+### How the money moves
+
+The buyer pays **Binder** (one Stripe payment for the whole cart; Stripe Checkout, with `transfer_group` = the order). Binder holds it
+and pays each seller **only when that seller's parcel is delivered**: the carrier says so (Shippo's tracking webhook, or the hourly
+poll), the buyer taps *I received it*, or, for a parcel the seller posted and tracked by hand, 14 days after shipping. A parcel the
+seller never ships is refunded after 10 days. Binder's fee is **10% of the item price** (`PLATFORM_FEE_PERCENT`); Stripe's own fees come
+out of Binder's share, so the seller gets item price minus the fee. Shipping is separate:
+
+- **With Shippo** (`SHIPPO_API_KEY`): the cart is quoted per seller from the seller's address to the buyer's (package guessed from the
+  number of cards: envelope up to 20, small box up to 100, box up to 500, large box beyond), the buyer pays the cheapest USPS rate
+  **plus 20%** (`SHIPPING_MARKUP_PERCENT`) in case the real label costs more, and the seller buys the label through Binder (one tap).
+  Binder keeps the shipping the buyer paid, since Binder paid the carrier.
+- **Without Shippo** (or if Shippo is down, or the carrier isn't one it follows): a flat rate per package tier is charged
+  ($5.00 / $8.00 / $15.00 / $25.00) and the seller posts the parcel themselves and types the tracking number; that shipping money goes
+  to the seller. If Shippo follows that carrier it still reports delivery, otherwise the buyer confirms or 14 days pass.
+
+A refund before shipping gives the cards back to the seller's stock. A refund after a seller was paid first reverses that transfer. A
+parcel the carrier says came back, or a payment dispute, puts the payout on hold. Unpaid checkouts keep their cards reserved for 35
+minutes. All the timed work (expiring unpaid orders, the 10- and 14-day rules, tracking polls, payout retries) is one hourly sweep
+(`triggers.crons` in `cloudflare/wrangler.jsonc`, `scheduled()` in `worker.js`).
+
+### What the owner has to set up (Cloudflare → the Worker → Settings → Variables and Secrets; secrets as type **Secret**)
+
+| Name | What | Needed for |
+| --- | --- | --- |
+| `STRIPE_SECRET_KEY` (secret) | Stripe **test** secret key (`sk_test_...`) | everything that takes money |
+| `STRIPE_WEBHOOK_SECRET` (secret) | the signing secret (`whsec_...`) of a Stripe webhook endpoint `https://<worker>/api/stripe/webhook` listening for `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.expired`, `charge.refunded`, `charge.dispute.created` | orders being confirmed when the buyer never comes back to the app, refunds and disputes made in Stripe's dashboard |
+| `SHIPPO_API_KEY` (secret) | Shippo API token (the **test** token to begin with) | live shipping quotes, labels, tracking |
+| `SHIPPO_WEBHOOK_TOKEN` (secret) | any long random string; add a **Track updated** webhook in Shippo's settings with the URL `https://<worker>/api/shippo/webhook?token=<that string>` | delivery detected as it happens (the hourly poll is the backstop) |
+| `PLATFORM_FEE_PERCENT` | Binder's cut of the item price, default `10` | changing the fee without a release |
+| `SHIPPING_MARKUP_PERCENT` | bump on a live shipping quote, default `20` | changing it without a release |
+| `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` (secrets), `PAYPAL_ENV` (`sandbox`, the default, or `live`) | PayPal app credentials | PayPal/Venmo checkout and Venmo/PayPal seller payouts. **Off until set.** |
+| `PAYMENTS_LIVE` | `true` | a live key (`sk_live_...`, or PayPal `live`) is refused without it, so going live is a deliberate second step |
+
+`wrangler.jsonc` has `"keep_vars": true`, so a deploy no longer wipes variables added in the dashboard.
+
+**Not yet exercised against the real services from the build environment** (it can't reach them): the v2 Stripe calls were checked
+against Stripe's API reference, and the Shippo calls against Shippo's; PayPal's reference could not be read, so the PayPal code follows
+the endpoints it confirmed and is switched off until it is tried in PayPal's sandbox. Paying sellers uses Stripe **transfers** to the
+v2 merchant account: if Stripe refuses those, orders stay "delivered, payout pending" and are retried every hour, and the error shows up
+in the Worker's logs; fix that first when testing in Stripe test mode.
+
+### Becoming a seller
 
 **What a seller gives:** a full legal name (first and last), phone number, postal address (one of the countries Stripe can pay
 out to) and how they want to be paid: a bank account or debit card through Stripe, or Venmo (US sellers; the phone number their Venmo
 uses) or PayPal (their PayPal email). The profile lives in the Worker's `sellers` table, is readable only by its owner
-(`GET /api/seller`), is never shown on a listing or a public page, and is deleted by "Remove my seller profile". The rules are
-in `cloudflare/src/sellerInput.js` and, identically, `app/js/sellerProfile.js` (a test runs both on the same cases).
+(`GET /api/seller`), is never shown on a listing or a public page, and is deleted by "Remove my seller profile" (refused while there
+are orders to ship or be paid). The rules are in `cloudflare/src/sellerInput.js` and, identically, `app/js/sellerProfile.js` (a test
+runs both on the same cases). The listing, address and tracking rules are `cloudflare/src/shopInput.js` and `app/js/shopInput.js`.
 
 **Card and bank numbers never touch Binder.** Nothing in the app, the Worker, the database or the logs ever holds one. For bank/debit
-payouts the app asks the Worker to make a Stripe connected account through Accounts v2 (`POST /v2/core/accounts`, a "merchant" configuration with no seller dashboard, contact email taken from the Binder account) and opens Stripe's own
-onboarding page, which collects the ID check and the payout account; the Worker keeps only the Stripe account id and asks Stripe
-whether payouts are enabled. Venmo and PayPal sellers give only the phone/email their account uses; those payouts are made in
-a later release. (Credit cards can't receive payouts: buyers pay by card in the checkout release, sellers are paid to a bank
-account, debit card, Venmo or PayPal.)
+payouts the app asks the Worker to make a Stripe connected account through Accounts v2 (`POST /v2/core/accounts`, a "merchant"
+configuration with no seller dashboard, contact email taken from the Binder account) and opens Stripe's own onboarding page, which
+collects the ID check and the payout account; the Worker keeps only the Stripe account id and asks Stripe whether payouts are enabled
+(`stripe_balance.payouts` active). The account has the platform paying Stripe's fees and Stripe collecting losses (this platform has
+Stripe-managed risk, so Stripe refuses the platform as losses collector, and only allows `stripe` there for a merchant configuration).
+`cloudflare/src/seller.js` (`accountBody`) and `stripe.js` (`STRIPE_V2_VERSION`) are the only places to change. Venmo and PayPal
+sellers give only the phone/email their account uses, and can sell only once PayPal is switched on (they are paid through PayPal
+Payouts). The Stripe return pages are `/?seller=return` and `/?seller=refresh`. The desktop, Android and iOS apps open Stripe's and
+PayPal's payment pages, Shippo labels and the big carriers' tracking pages in the system browser, from an exact allowlist of https
+prefixes (`native/binder/src/open_url.cpp`, `MainActivity.kt`, `BinderViewController.mm`), and nothing else but this project's releases.
 
-**To turn it on (the owner does this once, in the Cloudflare dashboard or with wrangler):**
-1. In a Stripe account, switch on **Connect** (test mode) and use Accounts v2 connected accounts.
-2. In the `cloudflare` folder: `npx wrangler secret put STRIPE_SECRET_KEY` and paste the **test** secret key (`sk_test_...`).
-3. Redeploy the Worker. Until a key is set the Shop says payment setup isn't available yet, and the profile is still saved.
-A live key (`sk_live_...`) is refused by the Worker unless the variable `PAYMENTS_LIVE` is also set to `true`, so going live is a
-deliberate second step. The seller's account is made with Stripe's Accounts v2 API (Stripe no longer recommends v1 for new Connect platforms): a `merchant` configuration
-with `dashboard: none`, Stripe's hosted onboarding collecting the ID check and the payout account, the platform paying Stripe's fees and Stripe collecting losses
-(this platform has Stripe-managed risk, so Stripe refuses the platform as losses collector; Stripe in turn only allows `stripe` there for a merchant
-configuration, not a recipient one). The Shop shows a seller as ready once Stripe reports the merchant's `stripe_balance.payouts` capability as active. `cloudflare/src/seller.js` (`accountBody`) and `stripe.js` (`STRIPE_V2_VERSION`) are the only places to change. The Stripe return pages are `/?seller=return` and `/?seller=refresh` on the Worker's address; the desktop,
-Android and iOS apps may open `https://connect.stripe.com/...` in the system browser (and nothing else but this project's releases).
-
-**Still the owner's to decide before real money moves:** the platform fee, sales tax, terms of service and privacy policy,
-what may be sold, and the rules for holding and paying out money (marketplace, money-transmission and tax-reporting rules vary
-by country: get legal and accounting advice; Stripe Connect and PayPal's marketplace products are built so the processor, not
-Binder, holds the funds).
+**Still the owner's to decide before real money moves:** sales tax, terms of service and privacy policy, what may be sold, the
+rules for holding and paying out money (marketplace, money-transmission and tax-reporting rules vary by country: get legal and
+accounting advice), and whether Binder or Stripe should be liable for chargebacks (today the platform pays Stripe's fees and the
+transfers come out of Binder's balance).
 
 ## Updates
 

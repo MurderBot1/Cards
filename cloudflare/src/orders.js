@@ -171,7 +171,12 @@ export async function onCheckout({ request, env }) {
       );
     }
   }
-  await env.DB.batch(statements);
+  try {
+    await env.DB.batch(statements);
+  } catch (err) {
+    for (const r of reserved) await env.DB.prepare('UPDATE listings SET quantity = quantity + ? WHERE id = ?').bind(r.qty, r.listing.id).run();  // nothing was saved: the cards go back
+    throw err;
+  }
 
   try {
     const base = origin(request);
@@ -339,8 +344,8 @@ export function payoutFor(g) {
 export async function onOrders({ request, env }) {
   const user = await sessionUser(env.DB, request);
   if (!user) return fail('Not signed in', 401);
-  const rows = (await env.DB.prepare("SELECT * FROM orders WHERE buyer_id = ? AND (status != 'cancelled' OR flag != 'abandoned') ORDER BY created_at DESC LIMIT 50").bind(user.id).all()).results;
-  const orders = await ordersOut(env, rows.filter((o) => o.status !== 'cancelled'));
+  const rows = (await env.DB.prepare("SELECT * FROM orders WHERE buyer_id = ? AND status != 'cancelled' ORDER BY created_at DESC LIMIT 50").bind(user.id).all()).results;
+  const orders = await ordersOut(env, rows);
   return json({ orders });
 }
 

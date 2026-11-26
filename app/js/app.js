@@ -13,8 +13,13 @@ import { initSetupScreen } from './setup.js';
 import { IS_WEB } from './env.js';
 import { initCurrencySetting } from './currency.js';
 import { initShop, refreshShop } from './shop.js';
+import { initMarket, refreshMarket } from './market.js';
+import { handleCheckoutReturn } from './cartView.js';
+import { initOrders } from './ordersView.js';
+import { initPayment } from './paymentView.js';
+import { announceVisibleSections, initSettingsAccordion, openSettingsSection } from './settingsAccordion.js';
 
-const TAB_TITLES = { shop: 'Shop', collection: 'Collection', settings: 'Account' };
+const TAB_TITLES = { shop: 'Shop', collection: 'Collection', settings: 'Settings' };
 
 const tabButtons = document.querySelectorAll('.tab-btn');
 const views = document.querySelectorAll('.view');
@@ -23,7 +28,7 @@ const headerSubtitle = document.getElementById('header-subtitle');
 const headerBackBtn = document.getElementById('header-back-btn');
 
 let activeTab = 'shop';
-let shopReady = false;  // the Shop tab is set up (it reads the seller profile when shown, not before)
+let shopReady = false;  // the Shop tab and the Settings sections that belong to it are set up
 
 function setHeader(title, subtitle) {
   headerTitle.textContent = title;
@@ -49,11 +54,24 @@ function showTab(tab) {
 
   headerBackBtn.classList.toggle('hidden', !(tab === 'collection' && isInCollectionDetail()));
   setHeader(TAB_TITLES[tab], '');
-  if (tab === 'shop' && shopReady) refreshShop();
+  if (shopReady) {
+    if (tab === 'shop') refreshMarket();
+    if (tab === 'settings') {
+      refreshShop();            // the seller card (the Selling section) reads the profile when Settings is shown
+      announceVisibleSections();
+    }
+  }
 }
 
 tabButtons.forEach((btn) => {
   btn.addEventListener('click', () => showTab(btn.dataset.tab));
+});
+
+// other modules ask to go somewhere: { tab, section } (e.g. back from paying -> Settings, Orders)
+window.addEventListener('binder:goto', (e) => {
+  const { tab, section } = e.detail || {};
+  if (tab) showTab(tab);
+  if (section) openSettingsSection(section);
 });
 
 headerBackBtn.addEventListener('click', () => {
@@ -80,10 +98,15 @@ async function boot() {
   initCurrencySetting();  // (the exchange rates are read in the background)
   await initCollections(onCollectionNavigate);
   initSync();
+  initSettingsAccordion();
   initShop();
+  initOrders();
+  initPayment();
+  initMarket();
   shopReady = true;
   if (!IS_WEB) initUpdates({ onToast: showToast });
   showTab('shop');
+  handleCheckoutReturn();  // back from paying? say what happened and show the order
 }
 
 boot();

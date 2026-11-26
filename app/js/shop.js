@@ -1,9 +1,10 @@
 /**
  * shop.js
- * The Shop tab, so far: registering as a seller. A signed-in person gives their full legal name, address and phone and says how
- * they want to be paid (bank account or debit card through Stripe, Venmo, or PayPal); the account service keeps that for them
- * alone. Card and bank numbers are never typed into Binder: Stripe's own pages collect the ID check and the payout account, and
- * the app only ever sees whether that is done. (Browsing, the cart and checkout come in later releases.)
+ * Registering as a seller, in Settings (the "Selling" section). A signed-in person gives their full legal name, address and phone
+ * and says how they want to be paid (bank account or debit card through Stripe, Venmo, or PayPal); the account service keeps that
+ * for them alone. Card and bank numbers are never typed into Binder: Stripe's own pages collect the ID check and the payout
+ * account, and the app only ever sees whether that is done. Once they can be paid, "My listings" opens (listingsView.js).
+ * The market (market.js) asks getSellerState() whether to offer "Sell this card", and hears 'binder:seller' when it changes.
  */
 import { accountRequest } from './api.js';
 import { getSession } from './session.js';
@@ -11,11 +12,12 @@ import { IS_WEB } from './env.js';
 import { showToast } from './ui.js';
 import { openExternal } from './updates.js';
 import { SELLER_COUNTRIES, cleanSeller, countryName, sellerStatus } from './sellerProfile.js';
+import { openMyListings } from './listingsView.js';
 
 const $ = (id) => document.getElementById(id);
 const els = {
   card: $('seller-card'), title: $('seller-title'), sub: $('seller-sub'), detail: $('seller-detail'),
-  open: $('seller-open'), stripe: $('seller-stripe'),
+  open: $('seller-open'), stripe: $('seller-stripe'), listings: $('seller-listings'),
   modal: $('modal-seller'), sheetTitle: $('seller-sheet-title'),
   name: $('seller-name'), phone: $('seller-phone'), line1: $('seller-line1'), line2: $('seller-line2'),
   city: $('seller-city'), region: $('seller-region'), postal: $('seller-postal'), country: $('seller-country'),
@@ -30,15 +32,30 @@ let payoutKind = 'stripe';
 
 const regionNames = (() => { try { return new Intl.DisplayNames(undefined, { type: 'region' }); } catch (e) { return null; } })();
 
+/** { seller, payments, loaded, ready }: whether the signed-in person can list cards right now. */
+export function getSellerState() {
+  return { seller, payments, loaded, ready: !!seller && sellerStatus(seller, payments).ready };
+}
+
+function announce() {
+  window.dispatchEvent(new CustomEvent('binder:seller', { detail: getSellerState() }));
+}
+
 function render() {
+  render_();
+  announce();
+}
+
+function render_() {
   const session = getSession();
+  els.listings.classList.add('hidden');
   els.card.classList.remove('is-ready');
   els.detail.classList.add('hidden');
   els.stripe.classList.add('hidden');
   els.open.classList.add('hidden');
   if (!session) {
     els.title.textContent = 'Sell your cards';
-    els.sub.textContent = 'Sign in (Account tab) to register as a seller.';
+    els.sub.textContent = 'Sign in (Account section) to register as a seller.';
     return;
   }
   if (!loaded) {
@@ -60,6 +77,7 @@ function render() {
   els.detail.classList.remove('hidden');
   els.card.classList.toggle('is-ready', status.ready);
   els.stripe.classList.toggle('hidden', !status.needsStripe);
+  els.listings.classList.toggle('hidden', !status.ready);
   els.stripe.textContent = seller.stripe && seller.stripe.account ? 'Continue payout setup with Stripe' : 'Set up payouts with Stripe';
   els.open.textContent = 'Edit my details';
   els.open.classList.remove('hidden');
@@ -132,7 +150,7 @@ function showError(message) {
 
 function openSheet() {
   if (!getSession()) {
-    showToast('Sign in (Account tab) to register as a seller', 3000);
+    showToast('Sign in (Account section) to register as a seller', 3000);
     return;
   }
   fillCountries();
@@ -231,6 +249,7 @@ async function startStripe() {
 export function initShop() {
   els.open.addEventListener('click', openSheet);
   els.stripe.addEventListener('click', startStripe);
+  els.listings.addEventListener('click', () => openMyListings());
   els.cancel.addEventListener('click', closeSheet);
   els.modal.addEventListener('click', (e) => { if (e.target === els.modal) closeSheet(); });
   els.save.addEventListener('click', save);
@@ -247,6 +266,7 @@ export function initShop() {
       url.searchParams.delete('seller');
       window.history.replaceState(null, '', url.pathname + (url.search ? url.search : '') + url.hash);
       showToast(back === 'return' ? 'Welcome back from Stripe' : 'Stripe asked to start that page again: tap the button to continue', 3500);
+      setTimeout(() => window.dispatchEvent(new CustomEvent('binder:goto', { detail: { tab: 'settings', section: 'selling' } })), 0);
     }
   } catch (e) { /* the address stays as it was */ }
 }

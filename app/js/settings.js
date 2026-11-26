@@ -1,6 +1,6 @@
 /**
  * settings.js
- * Handles the Account tab: sign-in / account creation (backed by the Cloudflare
+ * Handles the Settings tab (its Account section): sign-in / account creation (backed by the Cloudflare
  * account service in /cloudflare, via api.js),
  * loading/saving preferences via api.js, applying appearance changes
  * live (theme + font size), and wiring up the scanner preference controls.
