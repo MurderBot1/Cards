@@ -7,6 +7,8 @@
   "compatibility_date": "2024-09-23",
   // Every deploy would otherwise delete the variables added in the Cloudflare dashboard (e.g. STRIPE_SECRET_KEY set as plain text).
   "keep_vars": true,
+  // Hourly sweep of the shop (worker.js: scheduled): expire unpaid orders, follow tracking, pay and refund on time
+  "triggers": { "crons": ["17 * * * *"] },
   "assets": { "directory": "../app" },
   "d1_databases": [
     {

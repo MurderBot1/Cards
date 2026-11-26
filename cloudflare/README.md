@@ -21,7 +21,20 @@ by a [D1](https://developers.cloudflare.com/d1/) database. Both are on Cloudflar
 | `GET /api/seller` | token | `200 {seller: null \| {legalName, phone, address, payout: {kind, ref}, stripe, ready}, payments: {stripe, stripeTest, stripeProblem, paypal}}` |
 | `POST /api/seller` | `{legalName, phone, address: {line1, line2?, city, region, postal, country}, payout?: {kind: stripe\|venmo\|paypal, ref?}}` + token | register or update; same answer as `GET`; `400` with a message for anything missing or wrong |
 | `POST /api/seller/stripe` | token | `200 {url}`: Stripe's own onboarding page (makes the Accounts v2 connected account once); `503` while Stripe isn't set up |
-| `POST /api/seller/delete` | token | `200 {ok, stripe: deleted\|kept\|none}`: removes the profile (and the Stripe account if Stripe allows) |
+| `POST /api/seller/delete` | token | `200 {ok, stripe: deleted\|kept\|none}`: removes the profile (and the Stripe account if Stripe allows); `409` while there are orders to ship or be paid |
+| `GET /api/shop/prices?ids=a,b` | none | `200 {prices: {<catalog id>: {fromCents, count, quantity}}}`: the lowest price per card; a card nobody sells has no entry |
+| `GET /api/shop/listings?cardId=&q=&game=&seller=&sort=&limit=&offset=` | none | `200 {listings, hasMore}`: what is for sale (only a username is ever shown about a seller) |
+| `GET /api/shop/listings/mine` | token | `200 {listings}` |
+| `POST /api/shop/listing`, `POST /api/shop/listing/remove` | listing fields (`id` to change one) / `{id}` + token | `201/200 {listing}`; `403` unless the seller can be paid |
+| `GET /api/shop/cart`, `POST /api/shop/cart/set {listingId, qty}`, `POST /api/shop/cart/clear` | token | the cart: `{items, groups, itemsCents, cardCount}` |
+| `GET /api/shop/buyer`, `POST /api/shop/buyer {address}`, `POST /api/shop/buyer/method/remove {id}` | token | saved address and saved cards (brand, last four, expiry) |
+| `POST /api/shop/checkout/quote {address?}` | token | per-seller items and shipping, the total, and `problems` that block checkout |
+| `POST /api/shop/checkout {address?, provider?}` | token | reserves the cards and returns `{orderId, url}` (Stripe's payment page, or PayPal's) |
+| `POST /api/shop/orders/sync {orderId}`, `/abandon {orderId}`, `GET /api/shop/orders` | token | after paying / leaving without paying / the buyer's orders |
+| `POST /api/shop/orders/cancel {groupId}`, `/received {groupId}` | token | cancel and refund before it ships / "it arrived" (pays the seller) |
+| `GET /api/shop/sales`, `POST /api/shop/sales/label {groupId}`, `/ship {groupId, carrier, trackingNumber}`, `/refund {groupId}` | token | the seller's side: what to ship, buy a Shippo label, tracking typed by hand, refund |
+| `POST /api/stripe/webhook` | Stripe-Signature | Stripe's events (needs `STRIPE_WEBHOOK_SECRET`); safe to receive twice |
+| `POST /api/shippo/webhook?token=` | `SHIPPO_WEBHOOK_TOKEN` | Shippo's `track_updated`: delivered pays the seller |
 
 - Usernames are 3 to 32 characters (letters, digits, `.`, `-`, `_`) and unique ignoring case. Passwords are 8 to 256.
 - The email is required to create an account and stored lowercased (unique). **Nothing uses it yet:** no verification, no
@@ -64,7 +77,14 @@ Card and bank numbers are never accepted here: Stripe collects them on its own p
 Stripe is called server-side with the secret `STRIPE_SECRET_KEY` (`wrangler secret put STRIPE_SECRET_KEY`, a **test** key to begin
 with). A live key is refused unless `PAYMENTS_LIVE` is `true`. Without a key the endpoints say payments aren't available yet.
 
-The service does accounts, collection sync, the share and public pages and (in test mode) seller registration, and nothing else. Anything about cards themselves (prices, card data) is
+**Shop** (`src/listings.js`, `cart.js`, `buyer.js`, `orders.js`, `shipping.js`, `webhooks.js`, `paypal.js`, `money.js`, `shopInput.js`): listings tied to
+catalog cards, a server-side cart, checkout through Stripe Checkout (PayPal/Venmo built and **off** until `PAYPAL_*` are set), one
+shipment per seller with Shippo rates (+20%), labels and tracking (or a flat rate and hand-typed tracking), payouts held until
+delivery (10% fee), refunds, signed Stripe and token-guarded Shippo webhooks, and an hourly sweep (`scheduled()`, the cron in
+`wrangler.jsonc`). The variables and secrets, and how the money moves, are in `../BUILDING.md` ("The shop"). The tests run
+against real SQLite (`sql.js`) through a D1-shaped wrapper (`test/helpers/d1.mjs`).
+
+The service does accounts, collection sync, the share and public pages and (in test mode) the shop, and nothing else. Anything about cards themselves (prices, card data) is
 fetched by the app straight from the card sites (`app/js/priceSources.js`) and never passes through here.
 
 Layout: `src/worker.js` (routing, CORS), `src/auth/*.js` (the account endpoints), `src/sync.js`, `src/share.js`,

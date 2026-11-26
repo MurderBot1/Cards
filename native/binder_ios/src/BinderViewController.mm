@@ -8,7 +8,13 @@
 static const NSInteger kMaxLoadRetries = 40;       // ~10 s at 250 ms apart: the server thread may not be accepting yet
 static const NSTimeInterval kRetryDelay = 0.25;
 static NSString* const kReleasesPrefix = @"https://github.com/MurderBot1/Cards/releases/";
-static NSString* const kStripeConnectPrefix = @"https://connect.stripe.com/";   // the shop's seller sign-up pages
+// the shop's pages that may be opened in Safari: Stripe's seller sign-up and payment pages, PayPal's payment page, Shippo's
+// shipping labels, and the big carriers' tracking pages
+static NSArray<NSString*>* ShopPrefixes(void) {
+    return @[ @"https://connect.stripe.com/", @"https://checkout.stripe.com/", @"https://www.paypal.com/", @"https://www.sandbox.paypal.com/",
+              @"https://shippo-delivery-east.s3.amazonaws.com/", @"https://shippo-delivery-west.s3.amazonaws.com/",
+              @"https://tools.usps.com/", @"https://www.ups.com/", @"https://www.fedex.com/", @"https://www.dhl.com/" ];
+}
 static NSString* const kOpenHandlerName = @"binderOpen";
 static NSString* const kSaveHandlerName = @"binderSave";   // { name, text }: an exported file, offered through the share sheet
 
@@ -209,7 +215,9 @@ static NSString* const kSaveHandlerName = @"binderSave";   // { name, text }: an
     }
     if (![message.name isEqualToString:kOpenHandlerName] || ![message.body isKindOfClass:[NSString class]]) return;
     NSString* urlString = (NSString*)message.body;
-    if (!([urlString hasPrefix:kReleasesPrefix] || [urlString hasPrefix:kStripeConnectPrefix]) || urlString.length > 400) return;
+    BOOL allowed = [urlString hasPrefix:kReleasesPrefix];
+    for (NSString* prefix in ShopPrefixes()) if ([urlString hasPrefix:prefix]) allowed = YES;
+    if (!allowed || urlString.length > 400) return;
     NSURL* url = [NSURL URLWithString:urlString];
     if (url) [UIApplication.sharedApplication openURL:url options:@{} completionHandler:nil];
 }

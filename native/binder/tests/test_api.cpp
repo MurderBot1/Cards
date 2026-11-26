@@ -177,9 +177,16 @@ int main() {
     CHECK(binder::is_openable_url(asset));
     CHECK(binder::is_openable_url("https://connect.stripe.com/setup/e/acct_1ABC/xyz"));  // the seller's Stripe sign-up
     CHECK(!binder::is_release_url("https://connect.stripe.com/setup/e/acct_1ABC/xyz"));  // (but not a release, so never an update)
+    for (const char* shop : {"https://checkout.stripe.com/c/pay/cs_test_a1B2", "https://www.sandbox.paypal.com/checkoutnow?token=5O190127TN364715T",
+                             "https://shippo-delivery-east.s3.amazonaws.com/abc.pdf?Signature=x%2By&Expires=1", "https://tools.usps.com/go/TrackConfirmAction?tLabels=9400",
+                             "https://www.ups.com/track?tracknum=1Z999", "https://www.fedex.com/fedextrack/?trknbr=123"}) {
+        CHECK(binder::is_openable_url(shop));
+        CHECK(!binder::is_release_url(shop));
+    }
     for (const char* bad : {"http://connect.stripe.com/setup", "https://connect.stripe.com.evil.example/x", "https://connect.stripe.coM/x",
                             "https://connect.stripe.com/x y", "https://connect.stripe.com/`id`", "https://dashboard.stripe.com/x",
-                            "https://checkout.stripe.com/x"}) {
+                            "https://checkout.stripe.com.evil.example/x", "http://checkout.stripe.com/x", "https://www.ups.com.evil.example/x",
+                            "https://tools.usps.com@evil.example/x"}) {
         CHECK(!binder::is_openable_url(bad));
     }
     CHECK(!binder::is_openable_url("https://connect.stripe.com/" + std::string(400, 'a')));  // too long

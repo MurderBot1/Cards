@@ -83,11 +83,14 @@ export function payoutText(payout) {
 
 /**
  * Where a registered seller stands, as { ready, headline, detail, needsStripe }: ready when they can sell (paid through Stripe once
- * Stripe has enabled payouts, or through Venmo or PayPal), else what is left.
+ * Stripe has enabled payouts, or through Venmo or PayPal once those are switched on), else what is left.
  */
 export function sellerStatus(seller, payments) {
   if (!seller) return { ready: false, headline: 'Not a seller yet', detail: '', needsStripe: false };
-  if (seller.payout.kind !== 'stripe') return { ready: true, headline: 'Ready to sell', detail: `You will be paid with ${payoutText(seller.payout)}.`, needsStripe: false };
+  if (seller.payout.kind !== 'stripe') {
+    if (seller.ready) return { ready: true, headline: 'Ready to sell', detail: `You will be paid with ${payoutText(seller.payout)}.`, needsStripe: false };
+    return { ready: false, headline: 'Profile saved', detail: `Venmo and PayPal payouts are not switched on yet. Choose Stripe payouts under Edit my details to start selling now (you picked ${payoutText(seller.payout)}).`, needsStripe: false };
+  }
   if (seller.ready) return { ready: true, headline: 'Ready to sell', detail: 'Stripe will pay you to your bank account or debit card.', needsStripe: false };
   if (!payments || !payments.stripe) {
     return { ready: false, headline: 'Profile saved', detail: "Payments aren't switched on yet, so payout setup with Stripe can't start. Your profile is kept.", needsStripe: false };

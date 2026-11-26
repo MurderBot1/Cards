@@ -89,6 +89,8 @@ function fakeDb() {
     if (sql.startsWith('CREATE') || sql.startsWith('DROP')) return [];
     if (sql.includes('FROM sessions JOIN users')) return a[0] === 'julie-hash' ? [{ id: 1, username: 'julie', expires_at: 9e12 }] : a[0] === 'bob-hash' ? [{ id: 2, username: 'bob', expires_at: 9e12 }] : [];
     if (sql.startsWith('SELECT email FROM users')) return [{ email: a[0] === 1 ? 'julie@example.com' : 'bob@example.com' }];
+    if (sql.startsWith('SELECT COUNT(*) AS n FROM order_groups')) return [{ n: 0 }];
+    if (sql.startsWith('UPDATE listings SET status')) return [];
     if (sql.startsWith('SELECT * FROM sellers')) return state.sellers.has(a[0]) ? [state.sellers.get(a[0])] : [];
     if (sql.startsWith('INSERT INTO sellers')) {
       const [user_id, legal_name, phone, addr_line1, addr_line2, city, region, postal, country, payout_kind, payout_ref, now] = a;
@@ -198,10 +200,13 @@ test('registering stores the cleaned profile for that person only', async () => 
   assert.equal(db.state.sellers.size, 1, 'a bad form stores nothing');
 });
 
-test('Venmo and PayPal sellers are ready as soon as they have registered', async () => {
-  const { call } = await setup(KEYS);
-  const venmo = (await (await call('POST', '/api/seller', { ...GOOD, payout: { kind: 'venmo' } })).json()).seller;
-  assert.deepEqual([venmo.payout, venmo.ready, venmo.stripe], [{ kind: 'venmo', ref: '5551234567' }, true, null]);
+test('Venmo and PayPal sellers are ready only once PayPal is switched on', async () => {
+  const off = await setup(KEYS);
+  const venmoOff = (await (await off.call('POST', '/api/seller', { ...GOOD, payout: { kind: 'venmo' } })).json());
+  assert.deepEqual([venmoOff.seller.payout, venmoOff.seller.ready, venmoOff.seller.stripe, venmoOff.payments.paypal], [{ kind: 'venmo', ref: '5551234567' }, false, null, false]);
+  const { call } = await setup({ ...KEYS, PAYPAL_CLIENT_ID: 'client-id', PAYPAL_CLIENT_SECRET: 'client-secret' });
+  const venmo = (await (await call('POST', '/api/seller', { ...GOOD, payout: { kind: 'venmo' } })).json());
+  assert.deepEqual([venmo.seller.ready, venmo.payments.paypal], [true, true]);
   const paypal = (await (await call('POST', '/api/seller', { ...GOOD, payout: { kind: 'paypal', ref: 'j@example.com' } })).json()).seller;
   assert.deepEqual([paypal.payout.kind, paypal.ready], ['paypal', true]);
 });

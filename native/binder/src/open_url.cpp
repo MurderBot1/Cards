@@ -24,7 +24,20 @@ namespace binder {
 
 namespace {
 constexpr const char* kReleasePrefix = "https://github.com/MurderBot1/Cards/releases/";
-constexpr const char* kStripeConnectPrefix = "https://connect.stripe.com/";
+// Pages of the shop that may be opened in the system browser: Stripe's seller sign-up and payment pages, PayPal's payment page,
+// Shippo's shipping labels, and the big carriers' tracking pages.
+constexpr const char* kShopPrefixes[] = {
+    "https://connect.stripe.com/",
+    "https://checkout.stripe.com/",
+    "https://www.paypal.com/",
+    "https://www.sandbox.paypal.com/",
+    "https://shippo-delivery-east.s3.amazonaws.com/",
+    "https://shippo-delivery-west.s3.amazonaws.com/",
+    "https://tools.usps.com/",
+    "https://www.ups.com/",
+    "https://www.fedex.com/",
+    "https://www.dhl.com/",
+};
 constexpr size_t kMaxUrl = 400;
 
 bool plain_url_chars(const std::string& url) {
@@ -42,7 +55,11 @@ bool is_release_url(const std::string& url) {
 
 bool is_openable_url(const std::string& url) {
     if (is_release_url(url)) return true;
-    return url.size() <= kMaxUrl && url.rfind(kStripeConnectPrefix, 0) == 0 && plain_url_chars(url);
+    if (url.size() > kMaxUrl || !plain_url_chars(url)) return false;
+    for (const char* prefix : kShopPrefixes) {
+        if (url.rfind(prefix, 0) == 0) return true;
+    }
+    return false;
 }
 
 bool open_release_url(const std::string& url) {

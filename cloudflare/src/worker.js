@@ -7,7 +7,12 @@ import { onRequestPost as logout } from './auth/logout.js';
 import { onRequestGet as me } from './auth/me.js';
 import { onRequestPost as register } from './auth/register.js';
 import { ensureSchema } from './schema.js';
+import { onBuyerGet, onBuyerSave, onMethodRemove } from './buyer.js';
+import { onCartClear, onCartGet, onCartSet } from './cart.js';
+import { onBrowse, onListingRemove, onListingSave, onMine, onPrices } from './listings.js';
+import { onAbandon, onBuyerCancel, onCheckout, onLabel, onOrders, onQuote, onReceived, onSales, onSellerRefund, onShip, onSync as onOrderSync, runMaintenance } from './orders.js';
 import { onSellerDelete, onSellerGet, onSellerSave, onSellerStripe } from './seller.js';
+import { onShippoWebhook, onStripeWebhook } from './webhooks.js';
 import { onPublicList, onPublicPage, onPublish, onSharePage, onShareCreate, onShareList, onShareRevoke, onUnpublish, publicPathOf } from './share.js';
 import { onSync } from './sync.js';
 
@@ -27,6 +32,30 @@ const ROUTES = {
   'POST /api/seller': onSellerSave,
   'POST /api/seller/stripe': onSellerStripe,
   'POST /api/seller/delete': onSellerDelete,
+  'GET /api/shop/prices': onPrices,
+  'GET /api/shop/listings': onBrowse,
+  'GET /api/shop/listings/mine': onMine,
+  'POST /api/shop/listing': onListingSave,
+  'POST /api/shop/listing/remove': onListingRemove,
+  'GET /api/shop/cart': onCartGet,
+  'POST /api/shop/cart/set': onCartSet,
+  'POST /api/shop/cart/clear': onCartClear,
+  'GET /api/shop/buyer': onBuyerGet,
+  'POST /api/shop/buyer': onBuyerSave,
+  'POST /api/shop/buyer/method/remove': onMethodRemove,
+  'POST /api/shop/checkout/quote': onQuote,
+  'POST /api/shop/checkout': onCheckout,
+  'POST /api/shop/orders/sync': onOrderSync,
+  'POST /api/shop/orders/abandon': onAbandon,
+  'GET /api/shop/orders': onOrders,
+  'POST /api/shop/orders/cancel': onBuyerCancel,
+  'POST /api/shop/orders/received': onReceived,
+  'GET /api/shop/sales': onSales,
+  'POST /api/shop/sales/label': onLabel,
+  'POST /api/shop/sales/ship': onShip,
+  'POST /api/shop/sales/refund': onSellerRefund,
+  'POST /api/stripe/webhook': onStripeWebhook,
+  'POST /api/shippo/webhook': onShippoWebhook,
 };
 const PATHS = new Set(Object.keys(ROUTES).map((key) => key.split(' ')[1]));
 
@@ -64,5 +93,15 @@ export default {
       console.error(err);
       return withCors(fail('Something went wrong on the server', 500));
     }
+  },
+
+  // The hourly sweep (see "triggers" in wrangler.jsonc): expires unpaid orders, refunds parcels never shipped, pays sellers on
+  // hand-tracked orders after 14 days, follows tracking, and retries payouts that failed.
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(
+      ensureSchema(env.DB)
+        .then(() => runMaintenance(env))
+        .catch((err) => console.error(err))
+    );
   },
 };

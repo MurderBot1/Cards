@@ -1383,3 +1383,129 @@ html.is-web [data-app-only] { display: none !important; }
 /* a drop-down gets the theme's text and surface colors (the browser's own are dark text on a dark field) */
 select.field-input { color: var(--text); }
 select.field-input option, select.field-input optgroup { background: var(--surface); color: var(--text); }
+
+/* ===================================================================
+   The market (market.js): search results, offers, cart, checkout
+=================================================================== */
+.market { padding: 12px 16px 28px; display: flex; flex-direction: column; gap: 12px; max-width: 760px; margin: 0 auto; }
+.market-top { display: flex; flex-direction: column; gap: 10px; }
+.market-search-row { display: flex; gap: 8px; align-items: center; }
+.market-search { flex: 1 1 auto; min-width: 0; margin-bottom: 0; }
+.market-cart-btn, .market-sell-btn { position: relative; flex-shrink: 0; }
+.cart-badge {
+  position: absolute; top: -5px; right: -5px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+  background: var(--foil-1); color: #fff; font-size: 0.68rem; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
+.market-heading { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-faint); }
+.market-list { display: flex; flex-direction: column; gap: 12px; }
+/* a result: the card's art on the left, filling the height; its name on top, its price under it */
+.market-item {
+  display: flex; align-items: stretch; gap: 14px; width: 100%; text-align: left; padding: 10px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text); cursor: pointer;
+}
+.market-item:hover, .market-item:focus-visible { border-color: var(--foil-1); }
+.market-art { flex: 0 0 96px; aspect-ratio: 5 / 7; border-radius: 6px; overflow: hidden; background: var(--surface-3); display: block; }
+.market-art img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.market-art-blank { display: block; width: 100%; height: 100%; background: var(--surface-3); }
+.market-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 4px; padding: 2px 2px 2px 0; }
+.market-name { font-family: var(--font-display); font-weight: 600; font-size: 1.02rem; line-height: 1.25; overflow-wrap: anywhere; }
+.market-price { font-size: 1.05rem; font-weight: 700; color: var(--foil-2); }
+.market-price--none { color: var(--text-faint); font-weight: 600; }
+.market-sub, .market-meta { font-size: 0.75rem; color: var(--text-dim); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.market-meta { margin-top: auto; }
+
+.sheet--shop { display: flex; flex-direction: column; max-height: 92%; padding-bottom: 16px; }
+.sheet--shop .sheet-header { flex-shrink: 0; }
+.sheet--shop .sheet-body { overflow-y: auto; min-height: 0; flex: 1 1 auto; }
+.sheet--tall { max-height: 92%; }
+.btn-small { flex: 0 0 auto; padding: 8px 12px; font-size: 0.8rem; }
+.sheet-actions--stack { flex-direction: column; }
+.check-row { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; margin-bottom: 8px; }
+
+.offers-head { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 14px; }
+.offers-head .market-art { flex-basis: 84px; }
+.offers-list { display: flex; flex-direction: column; gap: 10px; }
+.offers-none { text-align: center; padding: 18px 8px; }
+.offer { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-md); }
+.offer-main { min-width: 0; }
+.offer-line { font-size: 0.9rem; font-weight: 500; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.offer-sub { font-size: 0.75rem; color: var(--text-dim); margin-top: 2px; }
+.offer-buy { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
+.offer-price { font-size: 1.05rem; font-weight: 700; }
+.stepper { display: inline-flex; align-items: center; gap: 10px; background: var(--surface-3); border-radius: var(--radius-sm); padding: 3px 6px; }
+.stepper button { width: 28px; height: 28px; border: none; border-radius: 6px; background: var(--surface); color: var(--text); font-size: 1.1rem; font-weight: 600; cursor: pointer; }
+.stepper span { min-width: 18px; text-align: center; font-weight: 600; }
+
+.cart-group { margin-bottom: 14px; }
+.cart-seller { font-size: 0.8rem; color: var(--text-dim); margin-bottom: 6px; }
+.cart-line, .my-listing, .pick-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); width: 100%; text-align: left; background: none; color: var(--text); }
+.pick-row { border: none; border-bottom: 1px solid var(--border); cursor: pointer; }
+.cart-line.is-gone, .my-listing.is-out { opacity: 0.6; }
+.cart-art { flex: 0 0 48px; aspect-ratio: 5 / 7; border-radius: 4px; overflow: hidden; background: var(--surface-3); display: block; }
+.cart-art--small { flex-basis: 32px; }
+.cart-art img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cart-art .market-art-blank { background: var(--surface-3); }
+.cart-line-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cart-line-name { font-size: 0.9rem; font-weight: 600; overflow-wrap: anywhere; }
+.cart-line-meta { font-size: 0.75rem; color: var(--text-dim); }
+.cart-line-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
+.cart-line-price { font-weight: 700; }
+.cart-warn { font-size: 0.75rem; color: var(--danger); font-weight: 600; }
+.cart-total, .quote-row { display: flex; justify-content: space-between; gap: 12px; font-size: 0.9rem; padding: 4px 0; }
+.cart-total { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 12px; font-size: 1rem; }
+.quote-row--ship { color: var(--text-dim); font-size: 0.82rem; }
+.checkout-step { font-size: 0.95rem; font-weight: 600; margin-bottom: 8px; }
+.field-hint .link-btn, .tracking-line .link-btn, .order-head .link-btn { display: inline; width: auto; padding: 0; margin-left: 4px; }
+.my-listings { margin-bottom: 12px; }
+.pick-list { margin-top: 8px; }
+
+/* ---- orders and tracking (ordersView.js) ---- */
+.orders-title { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-faint); margin: 4px 0 8px; }
+.order { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px; margin-bottom: 12px; }
+.order-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 0.85rem; margin-bottom: 8px; }
+.order-group { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 10px; }
+.order-group-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 0.85rem; margin-bottom: 8px; }
+.pill { display: inline-block; padding: 3px 10px; border-radius: 999px; background: var(--surface-3); font-size: 0.72rem; font-weight: 600; white-space: nowrap; }
+.order-line { display: flex; align-items: center; gap: 10px; font-size: 0.85rem; padding: 4px 0; }
+.order-line > span:nth-child(2) { flex: 1 1 auto; min-width: 0; }
+.order-line-price { font-weight: 600; }
+.order-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.steps { display: flex; list-style: none; padding: 0; margin: 4px 0 10px; gap: 4px; }
+.steps li { flex: 1; text-align: center; font-size: 0.7rem; color: var(--text-faint); padding-top: 12px; position: relative; }
+.steps li::before { content: ''; position: absolute; top: 2px; left: 0; right: 0; height: 4px; border-radius: 2px; background: var(--surface-3); }
+.steps li.is-done { color: var(--text); font-weight: 600; }
+.steps li.is-done::before { background: var(--foil-gradient); }
+.tracking { background: var(--surface-2); border-radius: var(--radius-sm); padding: 8px 10px; margin: 8px 0; }
+.tracking-status { font-size: 0.85rem; font-weight: 600; }
+.tracking-line { font-size: 0.78rem; color: var(--text-dim); display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.tracking-number { font-family: var(--font-mono); color: var(--text); overflow-wrap: anywhere; }
+.ship-to { background: var(--surface-2); border-radius: var(--radius-sm); padding: 8px 10px; margin: 8px 0; font-size: 0.82rem; }
+.ship-to-title { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-faint); margin-bottom: 2px; }
+.saved-card { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 0.88rem; }
+.saved-card-name { flex: 1 1 auto; font-weight: 500; }
+.setting-row--stack .setting-label { margin-bottom: 4px; }
+
+/* ===================================================================
+   Settings sections as dropdowns on a phone: every section folds away behind its title, one open at a time
+   (settingsAccordion.js). Wider windows show every section, as before.
+=================================================================== */
+.settings-group-title .chev { display: none; }
+@media (max-width: 720px) {
+  .settings-group { margin-bottom: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
+  .settings-group-title {
+    display: flex; align-items: center; justify-content: space-between; margin: 0; padding: 15px 16px; cursor: pointer;
+    font-size: 0.8rem; color: var(--text); user-select: none;
+  }
+  .settings-group-title .chev { display: block; width: 18px; height: 18px; flex-shrink: 0; transition: transform 0.2s ease; color: var(--text-dim); }
+  .settings-group.is-open > .settings-group-title .chev { transform: rotate(180deg); }
+  .settings-group.is-open > .settings-group-title { border-bottom: 1px solid var(--border); }
+  .settings-group:not(.is-open) > :not(.settings-group-title) { display: none; }
+  .settings-group > :not(.settings-group-title) { margin-left: 12px; margin-right: 12px; }
+  .settings-group > .settings-group-title + * { margin-top: 12px; }
+  .settings-group > :last-child { margin-bottom: 12px; }
+  .settings-group .setting-row, .settings-group .seller-card, .settings-group .account-card { background: var(--surface-2); }
+}
+@media (min-width: 900px) {
+  .sheet--shop { max-width: 560px; }
+}

@@ -10,6 +10,7 @@
 //   POST /api/seller/delete       -> { ok, stripe: 'deleted' | 'kept' | 'none' }   remove the profile
 import { fail, json, readJson, sessionUser } from './lib.js';
 import { cleanSeller } from './sellerInput.js';
+import { paypalConfig } from './paypal.js';
 import { stripeCall, stripeConfig } from './stripe.js';
 
 const origin = (request) => new URL(request.url).origin;
@@ -32,7 +33,7 @@ export function accountBody(row, email, userId) {
   };
 }
 
-async function sellerRow(db, userId) {
+export async function sellerRow(db, userId) {
   return db.prepare('SELECT * FROM sellers WHERE user_id = ?').bind(userId).first();
 }
 
@@ -54,9 +55,26 @@ async function stripeState(env, row) {
   }
 }
 
-function paymentsOut(env) {
+export function paymentsOut(env) {
   const stripe = stripeConfig(env);
-  return { stripe: stripe.configured, stripeTest: stripe.test, stripeProblem: stripe.configured ? '' : stripe.problem, paypal: false };
+  return { stripe: stripe.configured, stripeTest: stripe.test, stripeProblem: stripe.configured ? '' : stripe.problem, paypal: paypalConfig(env).configured };
+}
+
+/**
+ * Whether this seller can have listings and take orders right now: { ok } or { ok: false, reason } with a message the seller
+ * can act on. A Stripe seller is asked about live (payouts enabled); a Venmo/PayPal seller needs PayPal switched on.
+ */
+export async function sellerCanSell(env, row) {
+  if (!row) return { ok: false, reason: 'Register as a seller first (Settings)' };
+  if (row.payout_kind === 'stripe') {
+    const state = await stripeState(env, row);
+    if (!state.account) return { ok: false, reason: 'Finish payout setup with Stripe first (Settings)' };
+    if (state.unknown) return { ok: false, reason: "Couldn't check your Stripe account just now, try again in a moment" };
+    if (!state.payoutsEnabled) return { ok: false, reason: 'Stripe still needs details from you before you can be paid (Settings)' };
+    return { ok: true };
+  }
+  if (!paypalConfig(env).configured) return { ok: false, reason: 'PayPal and Venmo payouts are not switched on yet: choose Stripe payouts in Settings' };
+  return { ok: true };
 }
 
 async function sellerOut(env, row) {
@@ -68,7 +86,7 @@ async function sellerOut(env, row) {
     payout: { kind: row.payout_kind, ref: row.payout_ref },
     stripe,
     // ready to sell: paid through Stripe once Stripe says payouts are enabled, or through Venmo/PayPal with the reference given
-    ready: row.payout_kind === 'stripe' ? !!(stripe && stripe.payoutsEnabled) : true,
+    ready: row.payout_kind === 'stripe' ? !!(stripe && stripe.payoutsEnabled) : paypalConfig(env).configured,
   };
 }
 
@@ -143,6 +161,9 @@ export async function onSellerDelete({ request, env }) {
   const user = await sessionUser(env.DB, request);
   if (!user) return fail('Not signed in', 401);
   const row = await sellerRow(env.DB, user.id);
+  const open = await env.DB.prepare("SELECT COUNT(*) AS n FROM order_groups WHERE seller_id = ? AND status IN ('pending', 'awaiting_shipment', 'shipped', 'delivered')").bind(user.id).first();
+  if (open && open.n > 0) return fail('You still have orders to ship or be paid for: finish those first', 409);
+  await env.DB.prepare("UPDATE listings SET status = 'removed', updated_at = ? WHERE seller_id = ?").bind(Math.floor(Date.now() / 1000), user.id).run();
   let stripe = 'none';
   if (row && row.stripe_account) {
     stripe = 'kept';

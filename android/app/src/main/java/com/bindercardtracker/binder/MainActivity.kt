@@ -42,7 +42,13 @@ class MainActivity : AppCompatActivity() {
         private const val MAX_LOAD_RETRIES = 40 // ~10s at 250ms apart
         private const val RETRY_DELAY_MS = 250L
         private const val RELEASES_PREFIX = "https://github.com/MurderBot1/Cards/releases/"
-        private const val STRIPE_CONNECT_PREFIX = "https://connect.stripe.com/"
+        // the shop's pages that may be opened in the browser: Stripe's seller sign-up and payment pages, PayPal's payment page,
+        // Shippo's shipping labels, and the big carriers' tracking pages
+        private val SHOP_PREFIXES = listOf(
+            "https://connect.stripe.com/", "https://checkout.stripe.com/", "https://www.paypal.com/", "https://www.sandbox.paypal.com/",
+            "https://shippo-delivery-east.s3.amazonaws.com/", "https://shippo-delivery-west.s3.amazonaws.com/",
+            "https://tools.usps.com/", "https://www.ups.com/", "https://www.fedex.com/", "https://www.dhl.com/"
+        )
         private val DATA_FILES = listOf("cards.sqlite3", "card-vectors.cvi") // carddownload::Options::files
     }
 
@@ -289,8 +295,8 @@ class MainActivity : AppCompatActivity() {
 
         @JavascriptInterface
         fun openExternal(url: String): Boolean {
-            // this project's releases (the update banner) and Stripe's own seller sign-up pages (the shop)
-            if (!(url.startsWith(RELEASES_PREFIX) || url.startsWith(STRIPE_CONNECT_PREFIX)) || url.length > 400) return false
+            // this project's releases (the update banner) and the shop's pages (see SHOP_PREFIXES)
+            if (!(url.startsWith(RELEASES_PREFIX) || SHOP_PREFIXES.any { url.startsWith(it) }) || url.length > 400) return false
             return try {
                 startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 true

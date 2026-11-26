@@ -58,7 +58,7 @@ export async function stripeCall(env, method, path, params = null, { idempotency
   }
   let res;
   try {
-    res = await fetch(`${HOST}${v2 ? '' : '/v1'}${path}`, { method, headers, body });
+    res = await fetch(`${HOST}${v2 || path.startsWith('/v1/') ? '' : '/v1'}${path}`, { method, headers, body });
   } catch {
     const err = new Error("Couldn't reach Stripe, try again in a moment");
     err.status = 502;
