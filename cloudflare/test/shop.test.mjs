@@ -471,3 +471,32 @@ test('PayPal money cannot pay a Stripe seller', async () => {
   assert.equal(res.status, 409);
   assert.match(res.data.error, /PayPal or Venmo/);
 });
+
+// ---- address suggestions while typing ------------------------------------------------------------------------------------------
+
+test('address suggestions: signed in only, US street addresses with state codes, and quiet when the lookup is down', async () => {
+  const shop = await shopWithListings();
+  const feature = (p) => ({ properties: p });
+  const asked = [];
+  globalThis.fetch = async (url) => {
+    asked.push(String(url));
+    return { ok: true, status: 200, json: async () => ({ features: [
+      feature({ countrycode: 'US', housenumber: '1932', street: 'Market Street', city: 'San Francisco', state: 'California', postcode: '94102' }),
+      feature({ countrycode: 'US', housenumber: '1932', street: 'Market Street', city: 'San Francisco', state: 'California', postcode: '94102' }),
+      feature({ countrycode: 'CA', housenumber: '1932', street: 'Market Street', city: 'Toronto', state: 'Ontario', postcode: 'M5V' }),
+      feature({ countrycode: 'US', name: 'A park', city: 'Austin', state: 'Texas' }),
+      feature({ countrycode: 'US', street: 'Lamar Boulevard', city: 'Austin', state: 'Texas', postcode: '78701' }),
+    ] }) };
+  };
+  assert.equal((await shop.call('GET', '/api/shop/address/suggest?q=1932+market', undefined, null)).status, 401);
+  assert.deepEqual((await shop.call('GET', '/api/shop/address/suggest?q=19')).data.results, [], 'too short to ask');
+  assert.equal(asked.length, 0);
+  const found = (await shop.call('GET', '/api/shop/address/suggest?q=1932+market')).data.results;
+  assert.deepEqual(found, [
+    { line1: '1932 Market Street', city: 'San Francisco', region: 'CA', postal: '94102', country: 'US' },
+    { line1: 'Lamar Boulevard', city: 'Austin', region: 'TX', postal: '78701', country: 'US' },
+  ], 'US only, no repeats, nothing without a street');
+  assert.match(asked[0], /^https:\/\/photon\.komoot\.io\/api\/\?/);
+  globalThis.fetch = async () => { throw new Error('down'); };
+  assert.deepEqual((await shop.call('GET', '/api/shop/address/suggest?q=1932+market')).data.results, []);
+});
