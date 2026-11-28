@@ -55,6 +55,14 @@ export async function onCartGet({ request, env }) {
   return respond(env, user.id);
 }
 
+// Test accounts named in SELF_PURCHASE_USERS (comma separated usernames, default none) may buy their own listings, so a whole
+// sale can be tried with one account in Stripe's test mode. Everyone else still can't. Usernames are unique (users.username_lower),
+// so each name matches exactly one account: the whole username, never a part of it, and each name counts once.
+function canBuyOwn(env, user) {
+  const names = new Set(String((env && env.SELF_PURCHASE_USERS) || '').split(',').map((n) => n.trim().toLowerCase()).filter(Boolean));
+  return names.has(String(user.username || '').toLowerCase());
+}
+
 export async function onCartSet({ request, env }) {
   const user = await sessionUser(env.DB, request);
   if (!user) return fail('Sign in to use the cart', 401);
@@ -68,7 +76,7 @@ export async function onCartSet({ request, env }) {
   }
   const listing = await env.DB.prepare("SELECT id, seller_id, quantity FROM listings WHERE id = ? AND status = 'active' AND quantity > 0").bind(listingId).first();
   if (!listing) return fail('That card is no longer for sale', 404);
-  if (listing.seller_id === user.id) return fail("You can't buy your own listing", 400);
+  if (listing.seller_id === user.id && !canBuyOwn(env, user)) return fail("You can't buy your own listing", 400);
   const have = await env.DB.prepare('SELECT COUNT(*) AS n FROM cart_items WHERE user_id = ? AND listing_id != ?').bind(user.id, listingId).first();
   if (have.n >= MAX_CART_LINES) return fail(`The cart holds ${MAX_CART_LINES} different listings`, 409);
   const clamped = Math.min(qty, listing.quantity);
