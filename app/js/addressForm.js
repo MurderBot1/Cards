@@ -26,29 +26,90 @@ export function addressFormHtml(a) {
   const v = (key) => escapeHtml((a && a[key]) || '');
   return `<div class="address-form">
     <label class="field-label">Name on the parcel</label>
-    <input class="field-input" data-f="name" type="text" autocomplete="name" maxlength="100" value="${v('name')}">
+    <input class="field-input" data-f="name" type="text" name="ship-name" autocomplete="shipping name" maxlength="100" value="${v('name')}">
     <label class="field-label">Address</label>
-    <input class="field-input" data-f="line1" type="text" autocomplete="address-line1" placeholder="Street address" maxlength="100" value="${v('line1')}">
-    <input class="field-input" data-f="line2" type="text" autocomplete="address-line2" placeholder="Apartment, suite (optional)" maxlength="100" value="${v('line2')}">
+    <input class="field-input" data-f="line1" type="text" name="ship-line1" autocomplete="shipping address-line1" placeholder="Street address" maxlength="100" value="${v('line1')}">
+    <input class="field-input" data-f="line2" type="text" name="ship-line2" autocomplete="shipping address-line2" placeholder="Apartment, suite (optional)" maxlength="100" value="${v('line2')}">
     <div class="seller-row">
-      <input class="field-input" data-f="city" type="text" autocomplete="address-level2" placeholder="City" maxlength="60" value="${v('city')}">
-      <input class="field-input" data-f="region" type="text" autocomplete="address-level1" placeholder="State" maxlength="60" value="${v('region')}">
+      <input class="field-input" data-f="city" type="text" name="ship-city" autocomplete="shipping address-level2" placeholder="City" maxlength="60" value="${v('city')}">
+      <input class="field-input" data-f="region" type="text" name="ship-region" autocomplete="shipping address-level1" placeholder="State" maxlength="60" value="${v('region')}">
     </div>
     <div class="seller-row">
-      <input class="field-input" data-f="postal" type="text" autocomplete="postal-code" placeholder="ZIP code" maxlength="10" inputmode="numeric" value="${escapeHtml(formatZip(a && a.postal))}">
-      <input class="field-input" data-f="phone" type="tel" autocomplete="tel" placeholder="Phone (optional)" maxlength="30" value="${escapeHtml(formatPhone(a && a.phone))}" inputmode="tel">
+      <input class="field-input" data-f="postal" type="text" name="ship-postal" autocomplete="shipping postal-code" placeholder="ZIP code" maxlength="10" inputmode="numeric" value="${escapeHtml(formatZip(a && a.postal))}">
+      <input class="field-input" data-f="phone" type="tel" name="ship-phone" autocomplete="shipping tel" placeholder="Phone (optional)" maxlength="30" value="${escapeHtml(formatPhone(a && a.phone))}" inputmode="tel">
     </div>
     <p class="field-hint">We ship within the United States for now.</p></div>`;
 }
 
-/** Tidies the phone and ZIP as they are typed (call once after the fields are on the page). */
-export function wireAddressForm(root) {
+/**
+ * Addresses worth offering while someone types: the one saved for next time and the seller profile's (their name, address and
+ * phone), without repeats. Each is { name, phone, line1, line2, city, region, postal, country }.
+ */
+export function addressSuggestions(saved, seller) {
+  const out = [];
+  const seen = new Set();
+  const add = (a) => {
+    if (!a || !a.line1 || !a.city) return;
+    const key = [a.name, a.line1, a.line2, a.city, a.postal].join('|').toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ name: a.name || '', phone: a.phone || '', line1: a.line1, line2: a.line2 || '', city: a.city, region: a.region || '', postal: a.postal || '', country: 'US' });
+  };
+  add(saved);
+  if (seller && seller.address && seller.address.country === 'US') add({ ...seller.address, name: seller.legalName, phone: seller.phone });
+  return out;
+}
+
+/** The suggestions whose `field` ("name" or "line1") starts with what has been typed so far (and is not already all of it). */
+export function matchSuggestions(suggestions, field, typed) {
+  const t = String(typed || '').trim().toLowerCase();
+  if (!t) return [];
+  return (suggestions || []).filter((a) => {
+    const value = String(a[field] || '').toLowerCase();
+    return value.startsWith(t) && value !== t;
+  });
+}
+
+/**
+ * Tidies the phone and ZIP as they are typed, and offers a saved address under the name and street fields once what is typed
+ * matches the start of one (a tap fills every field). Call once after the fields are on the page.
+ */
+export function wireAddressForm(root, suggestions = []) {
   const tidy = (key, format) => {
     const el = root.querySelector(`[data-f="${key}"]`);
     if (el) el.addEventListener('input', () => { const next = format(el.value); if (next !== el.value) el.value = next; });
   };
   tidy('phone', formatPhone);
   tidy('postal', formatZip);
+  const form = root.querySelector('.address-form');
+  if (!suggestions.length || !form) return;
+  const box = document.createElement('div');
+  box.className = 'address-suggest hidden';
+  form.insertBefore(box, root.querySelector('[data-f="line2"]'));
+  const fill = (a) => {
+    for (const key of ['name', 'phone', 'line1', 'line2', 'city', 'region', 'postal']) {
+      const el = root.querySelector(`[data-f="${key}"]`);
+      if (el) el.value = key === 'phone' ? formatPhone(a[key]) : key === 'postal' ? formatZip(a[key]) : a[key] || '';
+    }
+    box.classList.add('hidden');
+  };
+  const show = (field) => {
+    const el = root.querySelector(`[data-f="${field}"]`);
+    const found = matchSuggestions(suggestions, field, el && el.value);
+    box.replaceChildren(...found.map((a) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'address-suggest-item';
+      b.textContent = addressLine(a);
+      b.addEventListener('click', () => fill(a));
+      return b;
+    }));
+    box.classList.toggle('hidden', !found.length);
+  };
+  for (const field of ['name', 'line1']) {
+    const el = root.querySelector(`[data-f="${field}"]`);
+    if (el) el.addEventListener('input', () => show(field));
+  }
 }
 
 /** The values typed into the fields inside `root`. */
