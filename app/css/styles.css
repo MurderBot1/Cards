@@ -1375,7 +1375,11 @@ html.is-web [data-app-only] { display: none !important; }
 .seller-card.is-ready { border-color: var(--foil-1); }
 .sheet--seller .field-input { margin-bottom: 8px; }
 .sheet--seller .field-label { margin-top: 10px; }
-.seller-row { display: flex; gap: 8px; }
+.setting-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.address-form { display: flex; flex-direction: column; gap: 8px; }
+.address-form .field-label { margin: 8px 0 0; }
+.address-form .field-hint { margin: 2px 0 0; }
+.address-form .seller-row, .seller-row { display: flex; gap: 8px; }
 .seller-row .field-input { flex: 1 1 0; min-width: 0; }
 .seller-gap { margin-top: 0; }
 .sheet--seller .segmented { margin-bottom: 8px; }

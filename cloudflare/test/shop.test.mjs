@@ -406,6 +406,9 @@ test('saved cards are listed from Stripe (brand and last four only) and can be r
   assert.equal((await shop.call('GET', '/api/shop/buyer')).data.address, null);
   assert.equal((await shop.call('POST', '/api/shop/buyer', { address: { name: 'x' } })).status, 400);
   assert.equal((await shop.call('POST', '/api/shop/buyer', { address: ADDRESS })).data.address.city, 'Austin');
+  assert.equal((await shop.call('POST', '/api/shop/buyer/address/remove', {}, null)).status, 401);
+  assert.equal((await shop.call('POST', '/api/shop/buyer/address/remove', {})).data.address, null, 'the saved address can be deleted');
+  await shop.call('POST', '/api/shop/buyer', { address: ADDRESS });
   await cartWith(shop, 1);
   await shop.call('POST', '/api/shop/checkout', {});   // creates the Stripe customer, using the saved address
   shop.world.state.methods = [{ id: 'pm_1', card: { brand: 'visa', last4: '4242', exp_month: 12, exp_year: 2030 } }];

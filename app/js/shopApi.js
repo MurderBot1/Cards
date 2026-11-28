@@ -34,6 +34,7 @@ export const shopApi = {
   // checking out
   buyer: () => get('/shop/buyer'),
   saveAddress: (address) => post('/shop/buyer', { address }),
+  removeAddress: () => post('/shop/buyer/address/remove'),
   removeMethod: (id) => post('/shop/buyer/method/remove', { id }),
   quote: (address) => post('/shop/checkout/quote', address ? { address } : {}),
   checkout: (address, provider) => post('/shop/checkout', { ...(address ? { address } : {}), provider }),

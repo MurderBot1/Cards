@@ -1,6 +1,7 @@
 // A buyer's saved details: the address orders are sent to, and the cards they chose to save on Stripe.
 //   GET  /api/shop/buyer                     -> { address: null | {...}, methods: [{ id, brand, last4, expMonth, expYear }], payments }
 //   POST /api/shop/buyer                     { address } -> the same as GET        save the shipping address
+//   POST /api/shop/buyer/address/remove      -> the same as GET        forget the saved shipping address
 //   POST /api/shop/buyer/method/remove       { id } -> the same as GET             forget a saved card
 // Only Stripe ever sees card numbers (on its own page). What is shown here is what Stripe says about a saved card: its brand,
 // last four digits and expiry.
@@ -52,6 +53,14 @@ export async function onBuyerSave({ request, env }) {
   const checked = cleanShipTo(body && body.address);
   if (checked.error) return fail(checked.error, 400);
   await saveAddress(env.DB, user.id, checked.address);
+  return respond(env, user.id);
+}
+
+export async function onAddressRemove({ request, env }) {
+  const user = await sessionUser(env.DB, request);
+  if (!user) return fail('Not signed in', 401);
+  // orders keep their own copy of where they were sent, so only what is saved for next time goes
+  await env.DB.prepare("UPDATE buyers SET ship_name = '', ship_phone = '', ship_line1 = '', ship_line2 = '', ship_city = '', ship_region = '', ship_postal = '', ship_country = '', updated_at = ? WHERE user_id = ?").bind(nowSeconds(), user.id).run();
   return respond(env, user.id);
 }
 
