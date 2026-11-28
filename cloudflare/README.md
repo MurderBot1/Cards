@@ -75,7 +75,7 @@ pages. Someone with no account, a list that isn't public and a deleted list are 
 (full legal name, phone, address, how they want to be paid) is in `sellers`, readable only by its owner and never shown or logged.
 Card and bank numbers are never accepted here: Stripe collects them on its own pages, and the Worker keeps only Stripe's account id.
 Stripe is called server-side with the secret `STRIPE_SECRET_KEY` (`wrangler secret put STRIPE_SECRET_KEY`, a **test** key to begin
-with). A live key is refused unless `PAYMENTS_LIVE` is `true`. Without a key the endpoints say payments aren't available yet.
+with). A live key is refused unless `PAYMENTS_LIVE` is `true`. To try a whole sale with one account in test mode, set `SELF_PURCHASE_USERS` (e.g. `Test-Account`; comma separated, exact usernames, default none): those accounts may buy their own listings. Without a key the endpoints say payments aren't available yet.
 
 **Shop** (`src/listings.js`, `cart.js`, `buyer.js`, `orders.js`, `shipping.js`, `webhooks.js`, `paypal.js`, `money.js`, `shopInput.js`): listings tied to
 catalog cards, a server-side cart, checkout through Stripe Checkout (PayPal/Venmo built and **off** until `PAYPAL_*` are set), one

@@ -81,6 +81,15 @@ test('a seller edits and removes only their own listings', async () => {
 
 // ---- the cart -----------------------------------------------------------------------------------------------------------------
 
+test('only an account named in SELF_PURCHASE_USERS (exact, whole username) may buy its own listing', async () => {
+  const named = await shopWithListings({ SELF_PURCHASE_USERS: ' Bob , bob ' });
+  assert.equal((await named.call('POST', '/api/shop/cart/set', { listingId: named.bolt.id, qty: 1 }, 'bob')).status, 200, 'named account');
+  const partial = await shopWithListings({ SELF_PURCHASE_USERS: 'bo,bobby' });
+  assert.equal((await partial.call('POST', '/api/shop/cart/set', { listingId: partial.bolt.id, qty: 1 }, 'bob')).status, 400, 'no partial matches');
+  const other = await shopWithListings({ SELF_PURCHASE_USERS: 'carol' });
+  assert.equal((await other.call('POST', '/api/shop/cart/set', { listingId: other.bolt.id, qty: 1 }, 'bob')).status, 400, 'a different account is not exempt');
+});
+
 test('the cart: add, change, clamp to stock, flag what sold out, and never your own listing', async () => {
   const { call, bolt, DB } = await shopWithListings();
   assert.equal((await call('GET', '/api/shop/cart', undefined, null)).status, 401);
