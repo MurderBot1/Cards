@@ -3,7 +3,7 @@
  * "Shipping & saved cards" in Settings: the address orders go to, and the cards the person chose to save on Stripe's payment page.
  * Binder never sees a card number: Stripe tells us only the brand, last four digits and expiry, which is all that is shown here.
  */
-import { addressFormHtml, addressLine, readAddressForm } from './addressForm.js';
+import { addressFormHtml, addressLine, readAddressForm, wireAddressForm } from './addressForm.js';
 import { escapeHtml } from './dom.js';
 import { getSession } from './session.js';
 import { openSheet } from './sheet.js';
@@ -30,7 +30,10 @@ function draw() {
   root.innerHTML = `
     <div class="setting-row">
       <div class="setting-label"><span>Shipping address</span><span class="setting-hint">${buyer.address ? escapeHtml(addressLine(buyer.address)) : 'None saved yet. It is saved when you check out.'}</span></div>
-      <button class="btn btn-secondary btn-small" type="button" data-act="edit-address">${buyer.address ? 'Change' : 'Add an address'}</button>
+      <div class="setting-actions">
+        <button class="btn btn-secondary btn-small" type="button" data-act="edit-address">${buyer.address ? 'Change' : 'Add an address'}</button>
+        ${buyer.address ? '<button class="link-btn link-btn--danger" type="button" data-act="remove-address">Delete</button>' : ''}
+      </div>
     </div>
     <div class="setting-row setting-row--stack"><div class="setting-label"><span>Saved cards</span></div>${cards}</div>`;
 }
@@ -53,6 +56,7 @@ function editAddress() {
     <div data-role="form">${addressFormHtml(buyer && buyer.address)}</div>
     <p class="field-hint field-hint--error hidden" data-role="error"></p>
     <div class="sheet-actions"><button class="btn btn-secondary" type="button" data-role="cancel">Cancel</button><button class="btn btn-primary" type="button" data-role="save">Save</button></div>`;
+  wireAddressForm(sheet.body.querySelector('[data-role="form"]'));
   const err = sheet.body.querySelector('[data-role="error"]');
   sheet.body.querySelector('[data-role="cancel"]').addEventListener('click', () => sheet.close());
   const save = sheet.body.querySelector('[data-role="save"]');
@@ -80,6 +84,21 @@ export function initPayment() {
     const button = e.target.closest('[data-act]');
     if (!button) return;
     if (button.dataset.act === 'edit-address') editAddress();
+    if (button.dataset.act === 'remove-address') {
+      if (button.dataset.armed !== '1') {
+        button.dataset.armed = '1';
+        button.textContent = 'Tap again';
+        setTimeout(() => { button.dataset.armed = ''; if (button.isConnected) button.textContent = 'Delete'; }, 3500);
+        return;
+      }
+      try {
+        buyer = await shopApi.removeAddress();
+        draw();
+        showToast('Address deleted', 2400);
+      } catch (err) {
+        showToast(err.message || "Couldn't delete it", 3500);
+      }
+    }
     if (button.dataset.act === 'remove-card') {
       if (button.dataset.armed !== '1') {
         button.dataset.armed = '1';

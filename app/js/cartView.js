@@ -4,7 +4,7 @@
  * badge on the market page and draws the cart and checkout sheets. Paying happens on Stripe's own page (or PayPal's): the person
  * is sent there and comes back to "/?checkout=success&order=..." (handleCheckoutReturn). Card numbers are never typed into Binder.
  */
-import { addressFormHtml, readAddressForm } from './addressForm.js';
+import { addressFormHtml, readAddressForm, wireAddressForm } from './addressForm.js';
 import { artHtml, escapeHtml, usd } from './dom.js';
 import { goToPayment } from './links.js';
 import { getSession } from './session.js';
@@ -203,6 +203,7 @@ export async function openCheckout(cartSheet) {
       <div id="checkout-address">${addressFormHtml(address)}</div>
       <p class="field-hint field-hint--error ${error ? '' : 'hidden'}" id="checkout-error">${escapeHtml(error)}</p>
       <div class="sheet-actions"><button class="btn btn-primary" type="button" id="checkout-review">Review shipping and total</button></div>`;
+    wireAddressForm(sheet.body.querySelector('#checkout-address'));
     sheet.body.querySelector('#checkout-review').addEventListener('click', review);
   };
 
