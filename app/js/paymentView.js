@@ -3,10 +3,11 @@
  * "Shipping & saved cards" in Settings: the address orders go to, and the cards the person chose to save on Stripe's payment page.
  * Binder never sees a card number: Stripe tells us only the brand, last four digits and expiry, which is all that is shown here.
  */
-import { addressFormHtml, addressLine, readAddressForm, wireAddressForm } from './addressForm.js';
+import { addressFormHtml, addressLine, addressSuggestions, readAddressForm, wireAddressForm } from './addressForm.js';
 import { escapeHtml } from './dom.js';
 import { getSession } from './session.js';
 import { openSheet } from './sheet.js';
+import { getSellerState } from './shop.js';
 import { shopApi } from './shopApi.js';
 import { cleanShipTo } from './shopInput.js';
 import { showToast } from './ui.js';
@@ -56,7 +57,7 @@ function editAddress() {
     <div data-role="form">${addressFormHtml(buyer && buyer.address)}</div>
     <p class="field-hint field-hint--error hidden" data-role="error"></p>
     <div class="sheet-actions"><button class="btn btn-secondary" type="button" data-role="cancel">Cancel</button><button class="btn btn-primary" type="button" data-role="save">Save</button></div>`;
-  wireAddressForm(sheet.body.querySelector('[data-role="form"]'));
+  wireAddressForm(sheet.body.querySelector('[data-role="form"]'), addressSuggestions(null, getSellerState().seller));
   const err = sheet.body.querySelector('[data-role="error"]');
   sheet.body.querySelector('[data-role="cancel"]').addEventListener('click', () => sheet.close());
   const save = sheet.body.querySelector('[data-role="save"]');

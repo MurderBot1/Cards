@@ -23,3 +23,19 @@ test('a saved address fills the form, already formatted', () => {
   assert.match(html, /value="78701-1234"/);
   assert.match(html, /class="address-form"/);
 });
+
+test('saved and seller addresses are offered once each, and only when they start with what was typed', async () => {
+  const { addressSuggestions, matchSuggestions } = await import('../js/addressForm.js');
+  const saved = { name: 'Julie Buyer', phone: '5551230000', line1: '9 Buyer Lane', line2: '', city: 'Austin', region: 'TX', postal: '78701', country: 'US' };
+  const seller = { legalName: 'Julie Buyer', phone: '5551230000', address: { line1: '9 Buyer Lane', line2: '', city: 'Austin', region: 'TX', postal: '78701', country: 'US' } };
+  assert.equal(addressSuggestions(saved, seller).length, 1, 'the same address is not repeated');
+  assert.equal(addressSuggestions(null, null).length, 0);
+  const other = { ...seller, legalName: 'Bob Seller', address: { ...seller.address, line1: '1 Bob Road' } };
+  const both = addressSuggestions(saved, other);
+  assert.equal(both.length, 2);
+  assert.deepEqual(matchSuggestions(both, 'name', 'ju').map((a) => a.line1), ['9 Buyer Lane']);
+  assert.deepEqual(matchSuggestions(both, 'line1', '1 b').map((a) => a.name), ['Bob Seller']);
+  assert.deepEqual(matchSuggestions(both, 'name', ''), [], 'nothing typed, nothing offered');
+  assert.deepEqual(matchSuggestions(both, 'name', 'julie buyer'), [], 'already fully typed');
+  assert.equal(addressSuggestions(saved, { ...seller, address: { ...seller.address, country: 'CA' } }).length, 1, 'only US seller addresses');
+});

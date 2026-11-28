@@ -1378,6 +1378,9 @@ html.is-web [data-app-only] { display: none !important; }
 .setting-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 .address-form { display: flex; flex-direction: column; gap: 8px; }
 .address-form .field-label { margin: 8px 0 0; }
+.address-suggest { display: flex; flex-direction: column; gap: 4px; }
+.address-suggest-item { text-align: left; padding: 9px 12px; border-radius: var(--radius-sm); border: 1px solid var(--foil-1); background: var(--surface-2); color: var(--text); font-size: 0.85rem; cursor: pointer; }
+.address-suggest-item::before { content: "Use "; color: var(--text-dim); }
 .address-form .field-hint { margin: 2px 0 0; }
 .address-form .seller-row, .seller-row { display: flex; gap: 8px; }
 .seller-row .field-input { flex: 1 1 0; min-width: 0; }
