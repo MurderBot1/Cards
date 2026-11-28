@@ -74,7 +74,7 @@ export function matchSuggestions(suggestions, field, typed) {
  * Tidies the phone and ZIP as they are typed, and offers a saved address under the name and street fields once what is typed
  * matches the start of one (a tap fills every field). Call once after the fields are on the page.
  */
-export function wireAddressForm(root, suggestions = []) {
+export function wireAddressForm(root, suggestions = [], lookup = null) {
   const tidy = (key, format) => {
     const el = root.querySelector(`[data-f="${key}"]`);
     if (el) el.addEventListener('input', () => { const next = format(el.value); if (next !== el.value) el.value = next; });
@@ -82,20 +82,23 @@ export function wireAddressForm(root, suggestions = []) {
   tidy('phone', formatPhone);
   tidy('postal', formatZip);
   const form = root.querySelector('.address-form');
-  if (!suggestions.length || !form) return;
+  if (!form || (!suggestions.length && !lookup)) return;
   const box = document.createElement('div');
   box.className = 'address-suggest hidden';
   form.insertBefore(box, root.querySelector('[data-f="line2"]'));
+  const field = (key) => root.querySelector(`[data-f="${key}"]`);
+  // a saved address fills every field; a street found by the lookup fills only the street, city, state and ZIP
   const fill = (a) => {
     for (const key of ['name', 'phone', 'line1', 'line2', 'city', 'region', 'postal']) {
-      const el = root.querySelector(`[data-f="${key}"]`);
+      if (!(key in a)) continue;
+      const el = field(key);
       if (el) el.value = key === 'phone' ? formatPhone(a[key]) : key === 'postal' ? formatZip(a[key]) : a[key] || '';
     }
     box.classList.add('hidden');
   };
-  const show = (field) => {
-    const el = root.querySelector(`[data-f="${field}"]`);
-    const found = matchSuggestions(suggestions, field, el && el.value);
+  let shown = [];
+  const draw = (found) => {
+    shown = found;
     box.replaceChildren(...found.map((a) => {
       const b = document.createElement('button');
       b.type = 'button';
@@ -106,10 +109,27 @@ export function wireAddressForm(root, suggestions = []) {
     }));
     box.classList.toggle('hidden', !found.length);
   };
-  for (const field of ['name', 'line1']) {
-    const el = root.querySelector(`[data-f="${field}"]`);
-    if (el) el.addEventListener('input', () => show(field));
+  let timer = 0;
+  let asked = 0;
+  const onType = (key) => {
+    const saved = matchSuggestions(suggestions, key, field(key) && field(key).value);
+    draw(saved);
+    clearTimeout(timer);
+    const typed = key === 'line1' && field('line1') ? field('line1').value.trim() : '';
+    if (!lookup || typed.length < 5) return;
+    const ticket = ++asked;
+    timer = setTimeout(async () => {
+      let found = [];
+      try { found = await lookup(typed); } catch (e) { /* no lookup, no suggestions: typing still works */ }
+      if (ticket !== asked || !Array.isArray(found)) return;   // the person kept typing: this answer is stale
+      draw([...saved, ...found].slice(0, 6));
+    }, 350);
+  };
+  for (const key of ['name', 'line1']) {
+    const el = field(key);
+    if (el) el.addEventListener('input', () => onType(key));
   }
+  return { suggestionsShown: () => shown };
 }
 
 /** The values typed into the fields inside `root`. */

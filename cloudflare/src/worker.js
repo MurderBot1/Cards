@@ -7,6 +7,7 @@ import { onRequestPost as logout } from './auth/logout.js';
 import { onRequestGet as me } from './auth/me.js';
 import { onRequestPost as register } from './auth/register.js';
 import { ensureSchema } from './schema.js';
+import { onAddressSuggest } from './addressLookup.js';
 import { onBuyerGet, onBuyerSave, onAddressRemove, onMethodRemove } from './buyer.js';
 import { onCartClear, onCartGet, onCartSet } from './cart.js';
 import { onBrowse, onListingRemove, onListingSave, onMine, onPrices } from './listings.js';
@@ -42,6 +43,7 @@ const ROUTES = {
   'POST /api/shop/cart/clear': onCartClear,
   'GET /api/shop/buyer': onBuyerGet,
   'POST /api/shop/buyer': onBuyerSave,
+  'GET /api/shop/address/suggest': onAddressSuggest,
   'POST /api/shop/buyer/address/remove': onAddressRemove,
   'POST /api/shop/buyer/method/remove': onMethodRemove,
   'POST /api/shop/checkout/quote': onQuote,

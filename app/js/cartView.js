@@ -204,7 +204,7 @@ export async function openCheckout(cartSheet) {
       <div id="checkout-address">${addressFormHtml(address)}</div>
       <p class="field-hint field-hint--error ${error ? '' : 'hidden'}" id="checkout-error">${escapeHtml(error)}</p>
       <div class="sheet-actions"><button class="btn btn-primary" type="button" id="checkout-review">Review shipping and total</button></div>`;
-    wireAddressForm(sheet.body.querySelector('#checkout-address'), addressSuggestions(buyer.address, getSellerState().seller));
+    wireAddressForm(sheet.body.querySelector('#checkout-address'), addressSuggestions(buyer.address, getSellerState().seller), shopApi.suggestAddress);
     sheet.body.querySelector('#checkout-review').addEventListener('click', review);
   };
 

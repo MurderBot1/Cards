@@ -57,7 +57,7 @@ function editAddress() {
     <div data-role="form">${addressFormHtml(buyer && buyer.address)}</div>
     <p class="field-hint field-hint--error hidden" data-role="error"></p>
     <div class="sheet-actions"><button class="btn btn-secondary" type="button" data-role="cancel">Cancel</button><button class="btn btn-primary" type="button" data-role="save">Save</button></div>`;
-  wireAddressForm(sheet.body.querySelector('[data-role="form"]'), addressSuggestions(null, getSellerState().seller));
+  wireAddressForm(sheet.body.querySelector('[data-role="form"]'), addressSuggestions(null, getSellerState().seller), shopApi.suggestAddress);
   const err = sheet.body.querySelector('[data-role="error"]');
   sheet.body.querySelector('[data-role="cancel"]').addEventListener('click', () => sheet.close());
   const save = sheet.body.querySelector('[data-role="save"]');

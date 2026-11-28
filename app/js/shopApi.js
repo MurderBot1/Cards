@@ -33,6 +33,7 @@ export const shopApi = {
   clearCart: () => post('/shop/cart/clear'),
   // checking out
   buyer: () => get('/shop/buyer'),
+  suggestAddress: (q) => get(`/shop/address/suggest${qs({ q })}`).then((r) => r.results || []),
   saveAddress: (address) => post('/shop/buyer', { address }),
   removeAddress: () => post('/shop/buyer/address/remove'),
   removeMethod: (id) => post('/shop/buyer/method/remove', { id }),
